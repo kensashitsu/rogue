@@ -28,7 +28,7 @@ from typing import Optional
 from ui import UI, run_with_curses, MOVE_DELTAS
 from dungeon import new_level, Dungeon
 from player import Player
-from monsters import spawn_from_placed, spawn_monster, rand_monster_letter, Monster
+from monsters import spawn_from_placed, spawn_monster, rand_monster_letter, Monster, _get_spread
 from items import (
     init_knowledge, set_knowledge, GameKnowledge, Item,
     make_potion, make_scroll, make_weapon, make_armor,
@@ -158,6 +158,11 @@ def _add_score(entry: ScoreEntry) -> tuple[list[ScoreEntry], int]:
     return entries, (rank if rank <= _MAX_SCORES else 0)
 
 
+def _wandertime() -> int:
+    """次に徘徊モンスターの判定を始めるまでのターン数（WANDERTIME = spread(70)）。"""
+    return _get_spread('WANDERTIME')
+
+
 def _get_player_name() -> str:
     """システムのログイン名を取得する。取得できない場合は 'Rogue'。"""
     try:
@@ -204,7 +209,8 @@ class Game:
         self._player_name:    str               = _get_player_name()
         self._in_extra_turn:   bool              = False   # 加速中の追加行動中フラグ
         self._turn_count:      int               = 0
-        self._next_wander_turn: int              = 70 + random.randint(0, 69)
+        self._next_wander_turn: int              = _wandertime()
+        self._wander_between:  int               = 0
 
     # -------------------------------------------------------------------------
     # フロア生成
@@ -215,7 +221,6 @@ class Game:
         self.player.y     = self.dungeon.player_start.y
         self.player.x     = self.dungeon.player_start.x
         self.player.floor = self.floor
-        self._next_wander_turn = self._turn_count + 70 + random.randint(0, 69)
 
         self.monsters = [
             spawn_from_placed(p, self.floor)
@@ -305,6 +310,7 @@ class Game:
             'player_name':  self._player_name,
             'turn_count':        self._turn_count,
             'next_wander_turn':  self._next_wander_turn,
+            'wander_between':    self._wander_between,
         }
         with open(_SAVE_FILE, 'wb') as f:
             pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
@@ -332,6 +338,7 @@ class Game:
         g._in_extra_turn = False
         g._turn_count        = data.get('turn_count', 0)
         g._next_wander_turn  = data.get('next_wander_turn', g._turn_count + 70)
+        g._wander_between    = data.get('wander_between', 0)
         return g
 
     # -------------------------------------------------------------------------
@@ -1236,14 +1243,36 @@ class Game:
         ):
             self.player.status.held = False
 
+    def _roll_wanderer(self) -> None:
+        """
+        徘徊モンスターの出現判定（5.4 daemons.c swander / rollwand）。
+        spread(WANDERTIME) ターン待ってから、4 ターンごとに 1d6 を振り、4 が出たら 1 体出す。
+        出たらまた spread(WANDERTIME) ターン待つ。階を移動してもタイマーは引き継ぐ。
+        """
+        if self._turn_count < self._next_wander_turn:
+            return
+        self._wander_between += 1
+        if self._wander_between < 4:
+            return
+        self._wander_between = 0
+        if random.randint(1, 6) == 4:
+            self._try_periodic_spawn()
+            self._next_wander_turn = self._turn_count + _wandertime()
+
     def _try_periodic_spawn(self) -> None:
-        """spread(70) ターンごとに wanderer を 1 体スポーンする（原作 fuse(wanderer, spread(70)) 準拠）。"""
+        """wanderer を 1 体出す。プレイヤーのいる部屋には出さない（5.4 monsters.c wanderer）。"""
         letter = rand_monster_letter(self.floor, wander=True)
         occupied = {(self.player.y, self.player.x)} | {
             (m.y, m.x) for m in self.monsters if m.is_alive
         }
-        pos = self.dungeon.find_empty_floor(occupied)
-        if pos is None:
+        proom = self.dungeon.find_room_at(self.player.y, self.player.x)
+        for _ in range(100):
+            pos = self.dungeon.find_empty_floor(occupied)
+            if pos is None:
+                return
+            if proom is None or self.dungeon.find_room_at(pos.y, pos.x) is not proom:
+                break
+        else:
             return
         m = spawn_monster(letter, self.floor, pos.y, pos.x)
         if any(getattr(r, 'o_which', -1) == R_AGGR
@@ -1254,10 +1283,11 @@ class Game:
 
     def _end_turn(self, ui: UI) -> None:
         """プレイヤーターン終了: 食料消費・状態異常 → モンスター AI。死因を記録する。"""
+        # 加速中の2回目の行動は同じターン内なので、時間経過の処理もモンスターAIも行わない
+        if self._in_extra_turn:
+            return
         self._turn_count += 1
-        if self._turn_count >= self._next_wander_turn:
-            self._next_wander_turn = self._turn_count + 70 + random.randint(0, 69)
-            self._try_periodic_spawn()
+        self._roll_wanderer()
         msgs = self.player.tick()
         ui.add_messages(msgs)
 
@@ -1290,10 +1320,6 @@ class Game:
             self._in_extra_turn = False
             if not self.player.is_alive or not self._running:
                 return
-
-        # 追加行動中（加速の2回目）はモンスターAIをスキップ
-        if self._in_extra_turn:
-            return
 
         # モンスター AI（各モンスターの行動後に死亡チェック）
         def _run_monsters() -> bool:
