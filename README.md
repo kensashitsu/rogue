@@ -5,7 +5,7 @@ Python implementation of Rogue 5.4 using curses.
 ## Requirements
 
 - Python 3.12+
-- Windows: `pip install windows-curses`
+- Windows 10 or later (Windows Terminal recommended). No extra packages needed.
 - Terminal: **80 x 24 characters minimum**
 
 ## Starting the Game
