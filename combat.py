@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Optional
 
 from constants import (
     VS_POISON, VS_PARALYZATION, VS_DEATH, VS_BREATH, VS_MAGIC,
-    HUHDURATION, ISHELD, BOLT_LENGTH, ISCANC,
+    HUHDURATION, ISHELD, ISRUN, BOLT_LENGTH, ISCANC, BORE_LEVEL,
     R_SUSTSTR, R_SUSTARM, ISPROT, CH_AMULET, LEATHER,
 )
 
@@ -159,6 +159,10 @@ def player_attacks_monster(
     result = CombatResult(hit=False, damage=0)
     vname = monster.display_name(player.status.can_see_invisible)
 
+    # 攻撃された相手は起きて追ってくる（5.4 fight.c → runto: ISHELD 解除）
+    monster.flags &= ~ISHELD
+    monster.flags |= ISRUN
+
     if not _player_hits(player, monster):
         result.messages.append(f"You miss the {vname}.")
         return result
@@ -288,12 +292,13 @@ def _apply_special(
     msgs:     list[str] = []
     teleport: bool      = False
 
-    # ── I Ice Monster: 凍結（既に凍結中なら重複しない）────────────────
+    # ── I Ice Monster: 凍結 rnd(2)+2 ターンを加算（5.4 fight.c）────────
     if letter == 'I':
         if player.status.paralyzed == 0:
-            freeze = 6 + random.randint(0, 5)   # spread(6): 6–11 ターン
-            player.apply_paralysis(freeze)
-            msgs.append("You are frozen by the ice monster!")
+            msgs.append("You are frozen by the Ice Monster!")
+        player.status.paralyzed += random.randint(0, 1) + 2
+        if player.status.paralyzed > BORE_LEVEL and not player.godmode:
+            player.hp = 0
 
     # ── R Rattlesnake: 毒（現在 STR 減少、restore strength で回復可）────
     elif letter == 'R':

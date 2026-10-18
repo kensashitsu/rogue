@@ -41,8 +41,8 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 
 def _spread(n: int) -> int:
-    """Rogue の spread(n) = n + rnd(n) = [n, 2n-1] の一様乱数。"""
-    return n + random.randint(0, max(0, n - 1))
+    """Rogue 5.4 misc.c spread(nm) = nm - nm/20 + rnd(nm/10)（±5% の揺らぎ）。"""
+    return n - n // 20 + (random.randint(0, n // 10 - 1) if n >= 10 else 0)
 
 
 def _get_spread(name: str, default: int = 70) -> int:
@@ -76,36 +76,36 @@ class MonsterStats:
 
 
 # ---------------------------------------------------------------------------
-# 26種モンスター定義（LVL_MONS 順: K E B S H I R O Z L C Q A N Y F T W P X U M V G J D）
+# 26種モンスター定義（Rogue 5.4.4 extern.c monsters[] の値を LVL_MONS 順に並べたもの）
 # ---------------------------------------------------------------------------
 
 MONSTER_DB: dict[str, MonsterStats] = {
-    'K': MonsterStats("Kobold",          25, ISMEAN,                        1,    1,  10, "1x4"),
-    'E': MonsterStats("Emu",             15, ISMEAN,                        1,    2,   7, "1x2"),
+    'K': MonsterStats("Kestrel",          0, ISMEAN | ISFLY,                1,    1,   7, "1x4"),
+    'E': MonsterStats("Emu",              0, ISMEAN,                        1,    2,   7, "1x2"),
     'B': MonsterStats("Bat",              0, ISFLY,                         1,    1,   3, "1x2"),
-    'S': MonsterStats("Snake",           35, ISMEAN | ISREGEN,              1,    2,   5, "1x3"),
-    'H': MonsterStats("Hobgoblin",       10, ISMEAN,                        1,    3,   5, "1x8"),
-    'I': MonsterStats("Ice Monster",      0, ISMEAN,                        5,   15,   9, "0x0"),
-    'R': MonsterStats("Rattlesnake",     20, ISMEAN,                        2,    9,   3, "1x6"),
-    'O': MonsterStats("Orc",            15, ISGREED | ISMEAN,               1,    5,   6, "1x8"),
-    'Z': MonsterStats("Zombie",          10, ISMEAN,                        2,    7,   8, "1x8"),
-    'L': MonsterStats("Leprechaun",      20, 0,                             3,   10,   8, "1x1"),
-    'C': MonsterStats("Centaur",         15, 0,                             4,   15,   4, "1x6/1x6"),
-    'Q': MonsterStats("Quasit",          30, ISMEAN,                        3,   32,   2, "1x2/1x2/1x4"),
+    'S': MonsterStats("Snake",            0, ISMEAN,                        1,    2,   5, "1x3"),
+    'H': MonsterStats("Hobgoblin",        0, ISMEAN,                        1,    3,   5, "1x8"),
+    'I': MonsterStats("Ice Monster",      0, 0,                             1,    5,   9, "0x0"),
+    'R': MonsterStats("Rattlesnake",      0, ISMEAN,                        2,    9,   3, "1x6"),
+    'O': MonsterStats("Orc",             15, ISGREED,                       1,    5,   6, "1x8"),
+    'Z': MonsterStats("Zombie",           0, ISMEAN,                        2,    6,   8, "1x8"),
+    'L': MonsterStats("Leprechaun",       0, 0,                             3,   10,   8, "1x1"),
+    'C': MonsterStats("Centaur",         15, 0,                             4,   17,   4, "1x2/1x5/1x5"),
+    'Q': MonsterStats("Quagga",           0, ISMEAN,                        3,   15,   3, "1x5/1x5"),
     'A': MonsterStats("Aquator",          0, ISMEAN,                        5,   20,   2, "0x0/0x0"),
     'N': MonsterStats("Nymph",          100, 0,                             3,   37,   9, "0x0"),
     'Y': MonsterStats("Yeti",            30, 0,                             4,   50,   6, "1x6/1x6"),
     'F': MonsterStats("Venus Flytrap",    0, ISMEAN,                        8,   80,   3, "0x0"),
-    'T': MonsterStats("Troll",           10, ISMEAN | ISREGEN,              6,  120,   4, "1x8/1x8/2x6"),
-    'W': MonsterStats("Wraith",           0, ISMEAN,                        5,   55,   4, "1x6"),
+    'T': MonsterStats("Troll",           50, ISMEAN | ISREGEN,              6,  120,   4, "1x8/1x8/2x6"),
+    'W': MonsterStats("Wraith",           0, 0,                             5,   55,   4, "1x6"),
     'P': MonsterStats("Phantom",          0, ISINVIS,                       8,  120,   3, "4x4"),
-    'X': MonsterStats("Xeroc",           25, 0,                             7,  100,   7, "4x4"),
-    'U': MonsterStats("Ur-vile",         10, ISMEAN,                        7,  200,   2, "1x3/1x3/1x3/4x6"),
-    'M': MonsterStats("Medusa",          40, ISMEAN | CANHUH,               8,  250,   2, "3x4/3x4/2x5"),
+    'X': MonsterStats("Xeroc",           30, 0,                             7,  100,   7, "4x4"),
+    'U': MonsterStats("Black Unicorn",    0, ISMEAN,                        7,  190,  -2, "1x9/1x9/2x9"),
+    'M': MonsterStats("Medusa",          40, ISMEAN,                        8,  200,   2, "3x4/3x4/2x5"),
     'V': MonsterStats("Vampire",         20, ISMEAN | ISREGEN,              8,  350,   1, "1x10"),
     'G': MonsterStats("Griffin",         20, ISMEAN | ISFLY | ISREGEN,     13, 2000,   2, "4x3/3x5"),
-    'J': MonsterStats("Jabberwock",      20, ISMEAN,                       15, 3000,   6, "2x12/2x4"),
-    'D': MonsterStats("Dragon",          10, ISMEAN,                       10, 5000,  -1, "1x8/1x8/3x10"),
+    'J': MonsterStats("Jabberwock",      70, 0,                            15, 3000,   6, "2x12/2x4"),
+    'D': MonsterStats("Dragon",         100, ISMEAN,                       10, 5000,  -1, "1x8/1x8/3x10"),
 }
 
 # Xeroc が変装に使う文字セット
@@ -177,7 +177,8 @@ class Monster:
 
     @property
     def can_confuse(self) -> bool:
-        return bool(self.flags & CANHUH)
+        """Medusa の目つき（5.4 では種別 'M' で判定し、フラグは持たない）。"""
+        return self.letter == 'M'
 
     @property
     def regenerates(self) -> bool:
@@ -240,8 +241,11 @@ class Monster:
         if self._held_turns > 0:
             self._held_turns -= 1
             if self._held_turns == 0:
-                from constants import ISHELD as _ISHELD
-                self.flags &= ~_ISHELD
+                self.flags &= ~ISHELD
+            return msgs
+
+        # ---- hold monster で止められている（攻撃されるまで動かない: 5.4 chase.c）----
+        if self.flags & ISHELD:
             return msgs
 
         # ---- 自動再生 ----

@@ -48,7 +48,7 @@ from constants import (
     WS_TELTO, WS_CANCEL,
     # ゲームパラメータ
     HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, BOLT_LENGTH,
-    ISHASTE, ISSLOW, ISRUN, ISHUH, ISINVIS, ISMEAN, ISCANC,
+    ISHASTE, ISSLOW, ISRUN, ISHUH, ISINVIS, ISMEAN, ISCANC, ISHELD,
     VS_MAGIC, VS_POISON,
     LEFT, RIGHT,
     _TIMING_RAW,
@@ -64,26 +64,12 @@ if TYPE_CHECKING:
 
 
 # ===========================================================================
-# 仕様準拠ローカル定数
-# ===========================================================================
-
-# 武器テーブル追加インデックス（MAXWEAPONS=9 以降の実武器スロット）
-_SHIRAKEN_IDX      = SHIRAKEN  # 7
-_ROCK_IDX          = 9
-_CROSSBOW_IDX      = 10
-_CROSSBOW_BOLT_IDX = 11
-
-# スクロールスロット流用エイリアス
-S_LIGHT    = S_HOLD      # 2: "light" スクロール
-S_GENOCIDE = S_ID_R_OR_S # 9: "genocide" スクロール
-
-
-# ===========================================================================
 # spread() ヘルパー
 # ===========================================================================
 
 def _spread(n: int) -> int:
-    return n + random.randint(0, max(0, n - 1))
+    """Rogue 5.4 misc.c spread(nm) = nm - nm/20 + rnd(nm/10)（±5% の揺らぎ）。"""
+    return n - n // 20 + (random.randint(0, n // 10 - 1) if n >= 10 else 0)
 
 
 def _get_spread(name: str, default: int) -> int:
@@ -197,75 +183,68 @@ class StickInfo(NamedTuple):
 # ポーション情報テーブル（MAXPOTIONS=14）  合計=100
 # ---------------------------------------------------------------------------
 # assert sum(p.prob for p in POTION_INFO) == 100
-POTION_INFO: list[PotionInfo] = [
-    PotionInfo("confusion",            8,  100),   # 0  P_CONFUSE       ( 8)
-    PotionInfo("paralysis",           10,  100),   # 1  P_LSD           (10)
-    PotionInfo("poison",               8,  100),   # 2  P_POISON        ( 8)
-    PotionInfo("gain strength",       15,  150),   # 3  P_STRENGTH      (15)
-    PotionInfo("see invisible",        2,  100),   # 4  P_SEEINVIS      ( 2)
-    PotionInfo("healing",             15,  130),   # 5  P_HEALING       (15)
-    PotionInfo("monster detection",    6,  130),   # 6  P_MFIND         ( 6)
-    PotionInfo("magic detection",      6,  130),   # 7  P_TFIND         ( 6)
-    PotionInfo("raise level",          2,  250),   # 8  P_RAISE         ( 2)
-    PotionInfo("extra healing",        5,  200),   # 9  P_XHEAL         ( 5)
-    PotionInfo("haste self",           4,  150),   # 10 P_HASTE         ( 4)
-    PotionInfo("restore strength",    14,  130),   # 11 P_RESTORE       (14)
-    PotionInfo("blindness",            4,  100),   # 12 P_BLIND         ( 4)
-    PotionInfo("thirst quenching",     1,  100),   # 13 P_LEVIT         ( 1)
+POTION_INFO: list[PotionInfo] = [   # Rogue 5.4.4 extern.c pot_info[]
+    PotionInfo("confusion",            7,    5),   # 0  P_CONFUSE
+    PotionInfo("hallucination",        8,    5),   # 1  P_LSD
+    PotionInfo("poison",               8,    5),   # 2  P_POISON
+    PotionInfo("gain strength",       13,  150),   # 3  P_STRENGTH
+    PotionInfo("see invisible",        3,  100),   # 4  P_SEEINVIS
+    PotionInfo("healing",             13,  130),   # 5  P_HEALING
+    PotionInfo("monster detection",    6,  130),   # 6  P_MFIND
+    PotionInfo("magic detection",      6,  105),   # 7  P_TFIND
+    PotionInfo("raise level",          2,  250),   # 8  P_RAISE
+    PotionInfo("extra healing",        5,  200),   # 9  P_XHEAL
+    PotionInfo("haste self",           5,  190),   # 10 P_HASTE
+    PotionInfo("restore strength",    13,  130),   # 11 P_RESTORE
+    PotionInfo("blindness",            5,    5),   # 12 P_BLIND
+    PotionInfo("levitation",           6,   75),   # 13 P_LEVIT
 ]
 assert sum(p.prob for p in POTION_INFO) == 100, f"POTION_INFO prob sum={sum(p.prob for p in POTION_INFO)}"
 
 # ---------------------------------------------------------------------------
-# スクロール情報テーブル（MAXSCROLLS=18）  合計=98
-# 仕様指定値合計: 98（IDENTIFY=21, LIGHT=10, ENCHANT_WEAPON=10, ENCHANT_ARMOR=8,
-#   REMOVE_CURSE=8, CONFUSE_MONSTER=8, TELEPORT=7, CREATE_MONSTER=5,
-#   MAGIC_MAPPING=5, SLEEP=5, GOLD_DETECTION=4, SCARE_MONSTER=4,
-#   GENOCIDE=1, AGGRAVATE_MONSTER=1, PROTECT_ARMOR=1  計98）
-# スロット流用: S_HOLD(2)→LIGHT, S_ID_R_OR_S(9)→GENOCIDE
+# スクロール情報テーブル（MAXSCROLLS=18）  合計=100  Rogue 5.4.4 extern.c scr_info[]
+# 遊びやすさのための改変: 識別の巻物5種（S_ID_*）は1種類 "identify" に統合し、
+# 生成時に S_ID_POTION へ正規化する（出現率は5種の合計 43）。
 # ---------------------------------------------------------------------------
 SCROLL_INFO: list[ScrollInfo] = [
-    ScrollInfo("monster confusion",     8,  140),   # 0  S_CONFUSE
-    ScrollInfo("magic mapping",         5,  150),   # 1  S_MAP
-    ScrollInfo("light",                10,  100),   # 2  S_HOLD→S_LIGHT
-    ScrollInfo("sleep",                 5,  100),   # 3  S_SLEEP
-    ScrollInfo("enchant armor",         8,  160),   # 4  S_ARMOR
-    ScrollInfo("identify",              6,  100),   # 5  S_ID_POTION (統合識別 先頭)
-    ScrollInfo("identify",              5,  100),   # 6  S_ID_SCROLL (→正規化)
-    ScrollInfo("identify",              5,  100),   # 7  S_ID_WEAPON (→正規化)
-    ScrollInfo("identify",              5,  100),   # 8  S_ID_ARMOR  (→正規化)
-    ScrollInfo("genocide",              1,  300),   # 9  S_ID_R_OR_S→S_GENOCIDE
-    ScrollInfo("scare monster",         4,  200),   # 10 S_SCARE
-    ScrollInfo("gold detection",        4,  100),   # 11 S_FDET
-    ScrollInfo("teleportation",         7,  165),   # 12 S_TELEP
-    ScrollInfo("enchant weapon",       10,  150),   # 13 S_ENCH
-    ScrollInfo("create monster",        5,  100),   # 14 S_CREATE
-    ScrollInfo("remove curse",          8,  235),   # 15 S_REMOVE
-    ScrollInfo("aggravate monster",     1,  100),   # 16 S_AGGR
-    ScrollInfo("protect armor",          1,  250),   # 17 S_PROTECT
+    ScrollInfo("monster confusion",     7,  140),   # 0  S_CONFUSE
+    ScrollInfo("magic mapping",         4,  150),   # 1  S_MAP
+    ScrollInfo("hold monster",          2,  180),   # 2  S_HOLD
+    ScrollInfo("sleep",                 3,    5),   # 3  S_SLEEP
+    ScrollInfo("enchant armor",         7,  160),   # 4  S_ARMOR
+    ScrollInfo("identify",             10,   80),   # 5  S_ID_POTION (統合識別 先頭)
+    ScrollInfo("identify",             10,   80),   # 6  S_ID_SCROLL (→正規化)
+    ScrollInfo("identify",              6,   80),   # 7  S_ID_WEAPON (→正規化)
+    ScrollInfo("identify",              7,  100),   # 8  S_ID_ARMOR  (→正規化)
+    ScrollInfo("identify",             10,  115),   # 9  S_ID_R_OR_S (→正規化)
+    ScrollInfo("scare monster",         3,  200),   # 10 S_SCARE
+    ScrollInfo("food detection",        2,   60),   # 11 S_FDET
+    ScrollInfo("teleportation",         5,  165),   # 12 S_TELEP
+    ScrollInfo("enchant weapon",        8,  150),   # 13 S_ENCH
+    ScrollInfo("create monster",        4,   75),   # 14 S_CREATE
+    ScrollInfo("remove curse",          7,  105),   # 15 S_REMOVE
+    ScrollInfo("aggravate monsters",    3,   20),   # 16 S_AGGR
+    ScrollInfo("protect armor",         2,  250),   # 17 S_PROTECT
 ]
-# IDENTIFY合計=6+5+5+5=21、全体合計=98（仕様記載は100だが内訳合計は98）
-assert sum(s.prob for s in SCROLL_INFO) == 98, f"SCROLL_INFO prob sum={sum(s.prob for s in SCROLL_INFO)}"
+assert sum(s.prob for s in SCROLL_INFO) == 100, f"SCROLL_INFO prob sum={sum(s.prob for s in SCROLL_INFO)}"
 
 # ---------------------------------------------------------------------------
-# 武器情報テーブル（12種、均等出現 prob=1）  合計=12
-# Rogue 5.4 仕様準拠。MAXWEAPONS=9 は FLAME 番兵に使用するため変更不可。
-# 表示上限は len(WEAPON_INFO) で判定する（_weapon_display_name 参照）。
+# 武器情報テーブル（MAXWEAPONS=9）  合計=100
+# Rogue 5.4.4 extern.c weap_info[] / weapons.c init_dam[]。
+# MAXWEAPONS=9 は FLAME 番兵（ドラゴンのブレス）に使用するため実武器は 0〜8。
 # ---------------------------------------------------------------------------
 WEAPON_INFO: list[WeaponInfo] = [
-    WeaponInfo("mace",              14,  8,  "2d4", "2d4", 0,                           -1),   # 0 MACE
-    WeaponInfo("long sword",        11, 15,  "3d4", "1d8", 0,                           -1),   # 1 SWORD
+    WeaponInfo("mace",              11,  8,  "2d4", "1d3", 0,                           -1),   # 0 MACE
+    WeaponInfo("long sword",        11, 15,  "3d4", "1d2", 0,                           -1),   # 1 SWORD
     WeaponInfo("short bow",         12, 15,  "1d1", "1d1", 0,                           -1),   # 2 BOW
-    WeaponInfo("arrow",             12,  1,  "1d1", "1d6", ISMANY|ISMISL,               BOW),  # 3 ARROW
-    WeaponInfo("dagger",             8,  2,  "1d6", "1d6", ISMISL,                      -1),   # 4 DAGGER
-    WeaponInfo("two-handed sword",   8, 30,  "4d4", "2d6", 0,                           -1),   # 5 TWOSWORD
-    WeaponInfo("dart",              10,  1,  "1d1", "1d3", ISMANY|ISMISL,               -1),   # 6 DART
-    WeaponInfo("shuriken",           5,  2,  "1d2", "2d4", ISMANY|ISMISL,               -1),   # 7 SHIRAKEN
-    WeaponInfo("spear",             10,  5,  "2d3", "1d8", ISMISL,                      -1),   # 8 SPEAR
-    WeaponInfo("rock",               1,  1,  "1d2", "1d4", ISMANY|ISMISL,               -1),   # 9 _ROCK_IDX
-    WeaponInfo("crossbow",           1, 15,  "1d1", "1d1", 0,                           -1),   # 10 _CROSSBOW_IDX
-    WeaponInfo("crossbow bolt",      1,  1,  "1d2", "1d10",ISMANY|ISMISL, _CROSSBOW_IDX),     # 11 _CROSSBOW_BOLT_IDX
+    WeaponInfo("arrow",             12,  1,  "1d1", "2d3", ISMANY|ISMISL,               BOW),  # 3 ARROW
+    WeaponInfo("dagger",             8,  3,  "1d6", "1d4", ISMISL,                      -1),   # 4 DAGGER
+    WeaponInfo("two handed sword",  10, 75,  "4d4", "1d2", 0,                           -1),   # 5 TWOSWORD
+    WeaponInfo("dart",              12,  2,  "1d1", "1d3", ISMANY|ISMISL,               -1),   # 6 DART
+    WeaponInfo("shuriken",          12,  5,  "1d2", "2d4", ISMANY|ISMISL,               -1),   # 7 SHIRAKEN
+    WeaponInfo("spear",             12,  5,  "2d3", "1d6", ISMISL,                      -1),   # 8 SPEAR
 ]
-assert sum(w.prob for w in WEAPON_INFO) == 93, f"WEAPON_INFO prob sum={sum(w.prob for w in WEAPON_INFO)}"
+assert sum(w.prob for w in WEAPON_INFO) == 100, f"WEAPON_INFO prob sum={sum(w.prob for w in WEAPON_INFO)}"
 
 # ---------------------------------------------------------------------------
 # 防具情報テーブル（MAXARMORS=8）  合計=100
@@ -285,56 +264,56 @@ assert sum(a.prob for a in ARMOR_INFO) == 100, f"ARMOR_INFO prob sum={sum(a.prob
 # ---------------------------------------------------------------------------
 # 指輪情報テーブル（MAXRINGS=14）  有効13種合計=100、R_SUSTARM(13)はprob=0
 # ---------------------------------------------------------------------------
-RING_INFO: list[RingInfo] = [
-    RingInfo("protection",          9, 200),   # 0  R_PROTECT
-    RingInfo("add strength",        9, 200),   # 1  R_ADDSTR
-    RingInfo("sustain strength",    5, 250),   # 2  R_SUSTSTR
-    RingInfo("searching",          10, 200),   # 3  R_SEARCH
-    RingInfo("see invisible",      10, 175),   # 4  R_SEEINVIS
-    RingInfo("adornment",           1,  50),   # 5  R_NOP
-    RingInfo("aggravate monster",  11,  50),   # 6  R_AGGR      (必ず呪い)
-    RingInfo("dexterity",           8, 220),   # 7  R_ADDHIT
-    RingInfo("increase damage",     8, 200),   # 8  R_ADDDAM
-    RingInfo("regeneration",        4, 250),   # 9  R_REGEN
-    RingInfo("slow digestion",      9, 200),   # 10 R_DIGEST
-    RingInfo("teleportation",       9,  50),   # 11 R_TELEPORT  (必ず呪い)
-    RingInfo("stealth",             7, 200),   # 12 R_STEALTH
-    RingInfo("maintain armor",      0, 200),   # 13 R_SUSTARM   (仕様未掲載→prob=0)
+RING_INFO: list[RingInfo] = [   # Rogue 5.4.4 extern.c ring_info[]
+    RingInfo("protection",          9, 400),   # 0  R_PROTECT
+    RingInfo("add strength",        9, 400),   # 1  R_ADDSTR
+    RingInfo("sustain strength",    5, 280),   # 2  R_SUSTSTR
+    RingInfo("searching",          10, 420),   # 3  R_SEARCH
+    RingInfo("see invisible",      10, 310),   # 4  R_SEEINVIS
+    RingInfo("adornment",           1,  10),   # 5  R_NOP
+    RingInfo("aggravate monster",  10,  10),   # 6  R_AGGR      (必ず呪い)
+    RingInfo("dexterity",           8, 440),   # 7  R_ADDHIT
+    RingInfo("increase damage",     8, 400),   # 8  R_ADDDAM
+    RingInfo("regeneration",        4, 460),   # 9  R_REGEN
+    RingInfo("slow digestion",      9, 240),   # 10 R_DIGEST
+    RingInfo("teleportation",       5,  30),   # 11 R_TELEPORT  (必ず呪い)
+    RingInfo("stealth",             7, 470),   # 12 R_STEALTH
+    RingInfo("maintain armor",      5, 380),   # 13 R_SUSTARM
 ]
 assert sum(r.prob for r in RING_INFO) == 100, f"RING_INFO prob sum={sum(r.prob for r in RING_INFO)}"
 
 # ---------------------------------------------------------------------------
 # 杖/ワンド情報テーブル（MAXSTICKS=14）  合計=100
 # charges フィールドは make_stick() で上書きされる（LIGHT=10-19、他=3-7）
-# WS_INVIS(1) スロットを "striking" として流用
+# Rogue 5.4.4 extern.c ws_info[]
 # ---------------------------------------------------------------------------
 STICK_INFO: list[StickInfo] = [
     StickInfo("light",             12, 250, False, 10),   # 0  WS_LIGHT
-    StickInfo("striking",           9, 220, False,  5),   # 1  WS_INVIS→striking
+    StickInfo("invisibility",       6,   5, False,  5),   # 1  WS_INVIS
     StickInfo("lightning",          3, 330, False,  5),   # 2  WS_ELECT
     StickInfo("fire",               3, 330, False,  5),   # 3  WS_FIRE
     StickInfo("cold",               3, 330, False,  5),   # 4  WS_COLD
     StickInfo("polymorph",         15, 310,  True,  5),   # 5  WS_POLYMORPH
     StickInfo("magic missile",     10, 170, False,  5),   # 6  WS_MISSILE
-    StickInfo("haste monster",      9, 100,  True,  5),   # 7  WS_HASTE_M
-    StickInfo("slow monster",      11, 320,  True,  5),   # 8  WS_SLOW_M
+    StickInfo("haste monster",     10,   5,  True,  5),   # 7  WS_HASTE_M
+    StickInfo("slow monster",      11, 350,  True,  5),   # 8  WS_SLOW_M
     StickInfo("drain life",         9, 300, False,  5),   # 9  WS_DRAIN
-    StickInfo("nothing",            1,  50, False,  5),   # 10 WS_NOP
-    StickInfo("teleport away",      5, 340,  True,  5),   # 11 WS_TELAWAY
-    StickInfo("teleport to",        5, 100,  True,  5),   # 12 WS_TELTO
+    StickInfo("nothing",            1,   5, False,  5),   # 10 WS_NOP
+    StickInfo("teleport away",      6, 340,  True,  5),   # 11 WS_TELAWAY
+    StickInfo("teleport to",        6,  50,  True,  5),   # 12 WS_TELTO
     StickInfo("cancellation",       5, 280, False,  5),   # 13 WS_CANCEL
 ]
 assert sum(s.prob for s in STICK_INFO) == 100, f"STICK_INFO prob sum={sum(s.prob for s in STICK_INFO)}"
 
-# アイテム種別出現確率（合計 100）  Rogue 5.4 仕様準拠
+# アイテム種別出現確率（合計 100）  Rogue 5.4.4 extern.c things[]
 _THING_PROBS: list[tuple[str, int]] = [
-    (CH_POTION, 27),
-    (CH_SCROLL, 27),
-    (CH_FOOD,   18),
-    (CH_WEAPON,  9),
-    (CH_ARMOR,   9),
-    (CH_RING,    5),
-    (CH_STICK,   5),
+    (CH_POTION, 26),
+    (CH_SCROLL, 36),
+    (CH_FOOD,   16),
+    (CH_WEAPON,  7),
+    (CH_ARMOR,   7),
+    (CH_RING,    4),
+    (CH_STICK,   4),
 ]
 assert sum(w for _, w in _THING_PROBS) == 100, f"_THING_PROBS sum={sum(w for _, w in _THING_PROBS)}"
 
@@ -650,8 +629,8 @@ def make_potion(which: Optional[int] = None) -> Item:
 def make_scroll(which: Optional[int] = None) -> Item:
     if which is None:
         which = _weighted_choice(SCROLL_INFO)
-    # S_ID_R_OR_S スロットは GENOCIDE に流用済みのため正規化リストから除外
-    if which in (S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR):
+    # 識別の巻物5種は1種類に統合（遊びやすさのための改変）
+    if which in (S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
         which = S_ID_POTION
     return Item(o_type=CH_SCROLL, o_which=which, o_count=1)
 
@@ -673,7 +652,7 @@ def make_weapon(which: Optional[int] = None, cursed: bool = False) -> Item:
         elif r <= 3:        # 10% 呪い
             hplus = -random.randint(1, 3)
             flags |= ISCURSED
-    cnt = random.randint(0, 6) + 4 if (info.flags & ISMANY) else 1
+    cnt = random.randint(0, 7) + 8 if (info.flags & ISMANY) else 1   # rnd(8)+8
     return Item(
         o_type=CH_WEAPON, o_which=which,
         o_damage=info.damage, o_hurldmg=info.hurldmg,
@@ -737,7 +716,7 @@ def make_food(which: int = 0) -> Item:
 
 
 def make_gold(floor_level: int) -> Item:
-    amount = random.randint(2, 50 + 10 * floor_level) + 2
+    amount = random.randint(0, 49 + 10 * floor_level) + 2   # GOLDCALC
     return Item(o_type=CH_GOLD, o_which=0, o_arm=amount)
 
 
@@ -787,7 +766,8 @@ def use_potion(
         msgs.append(player.apply_confusion(HUHDURATION))
 
     elif which == P_LSD:
-        msgs.append(player.apply_paralysis(_get_spread('SLEEPTIME', 5)))
+        player.apply_hallucination(_spread(SEEDURATION))
+        msgs.append("Oh, wow!  Everything seems so cosmic!")
 
     elif which == P_POISON:
         if player._has_ring(R_SUSTSTR):
@@ -923,12 +903,24 @@ def use_scroll(
         _reveal_map(dungeon)
         msgs.append("You feel a sense of presence.")
 
-    elif which == S_HOLD:  # S_LIGHT: 現在の部屋を照らす
-        msgs.extend(_ws_light(dungeon, player))
+    elif which == S_HOLD:
+        # 周囲2マス以内の追跡中モンスターを止める（攻撃されるまで動かない）
+        held = 0
+        for m in monsters:
+            if (m.is_alive and m.flags & ISRUN
+                    and abs(m.y - player.y) <= 2 and abs(m.x - player.x) <= 2):
+                m.flags &= ~ISRUN
+                m.flags |= ISHELD
+                held += 1
+        if held:
+            msgs.append("The monsters around you freeze." if held > 1
+                        else "The monster freezes.")
+        else:
+            msgs.append("You feel a strange sense of loss.")
 
     elif which == S_SLEEP:
-        turns = _get_spread('SLEEPTIME', 5)
-        player.status.paralyzed = max(player.status.paralyzed, turns)
+        turns = random.randint(0, _get_spread('SLEEPTIME', 5) - 1) + 4   # rnd(SLEEPTIME)+4
+        player.status.paralyzed += turns
         msgs.append("You fall asleep.")
 
     elif which == S_ARMOR:
@@ -945,21 +937,15 @@ def use_scroll(
         else:
             msgs.append("You feel a magical aura around you.")
 
-    elif which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR):
+    elif which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
         msgs.extend(_do_identify(player, knowledge, target_item))
 
     elif which == S_SCARE:
-        item.o_flags |= OBJ_ISFOUND
-        room = dungeon.find_room_at(player.y, player.x)
-        for m in monsters:
-            if m.is_alive:
-                m_room = dungeon.find_room_at(m.y, m.x)
-                if m_room is not None and m_room is room:
-                    m.flags |= ISRUN
+        # 読むのは間違い。笑い声が聞こえるだけ（5.4 scrolls.c）
         msgs.append("You hear maniacal laughter in the distance.")
 
     elif which == S_FDET:
-        pass   # game.py で ui.show_all_objects() を呼び出す
+        pass   # game.py で食料の位置を表示する
 
     elif which == S_TELEP:
         old_y, old_x = player.y, player.x
@@ -1000,9 +986,6 @@ def use_scroll(
                 count += 1
         msgs.append("You feel as if somebody is watching over you."
                     if count else "You feel protected.")
-
-    elif which == S_ID_R_OR_S:  # S_GENOCIDE: ランダム1種族を全滅
-        msgs.extend(_do_genocide(monsters))
 
     elif which == S_AGGR:
         for m in monsters:
@@ -1045,20 +1028,6 @@ def _do_identify(
     target_item.o_flags |= ISKNOW
     knowledge.know(target_item.o_type, target_item.o_which)
     return [f"You identify it as {knowledge.display_name(target_item)}."]
-
-
-def _do_genocide(monsters: list['Monster']) -> list[str]:
-    """フロア上のランダムな1モンスター種族を全滅させる（GENOCIDE scroll）。"""
-    alive = [m for m in monsters if m.is_alive]
-    if not alive:
-        return ["The scroll speaks of creatures not present."]
-    target_letter = random.choice(alive).letter
-    count = 0
-    for m in monsters:
-        if m.is_alive and m.letter == target_letter:
-            m.hp = 0
-            count += 1
-    return [f"You hear screams of the dying!  ({count} creature(s) destroyed)"]
 
 
 def _create_monster_near(
@@ -1119,19 +1088,13 @@ def use_stick(
         msgs.extend(_ws_light(dungeon, player))
         knowledge.know(CH_STICK, which)
 
-    elif which == WS_INVIS:  # "striking": 直接ダメージ
+    elif which == WS_INVIS:
+        # 当たったモンスターを不可視にする（5.4 sticks.c）。見た目では分からないので識別しない
         target = _find_target(dungeon, monsters, player, direction)
         if target:
-            dmg = roll(2, 8)
-            target.hp -= dmg
-            msgs.append(f"The wand strikes the {target.name} for {dmg} damage.")
-            if not target.is_alive:
-                msgs.append(f"The {target.name} is killed!")
-                from combat import calc_exp
-                msgs.extend(player.gain_exp(calc_exp(target)))
+            target.flags |= ISINVIS
         else:
-            msgs.append("The wand flashes.")
-        knowledge.know(CH_STICK, which)
+            msgs.append("Nothing happens.")
 
     elif which == WS_ELECT:
         msgs.extend(_ws_bolt(dungeon, monsters, player, direction,

@@ -657,7 +657,7 @@ class UI:
         # 空腹状態を目立つ色でハイライト描画
         hunger = player.hunger_state
         if hunger:
-            if hunger == "Starving":
+            if hunger == "Faint":
                 h_attr = self._cp(_CP_MONSTER) | curses.A_BOLD | curses.A_REVERSE
             elif hunger == "Weak":
                 h_attr = self._cp(_CP_MONSTER) | curses.A_BOLD

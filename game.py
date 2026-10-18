@@ -48,7 +48,7 @@ from constants import (
     STOMACHSIZE,
     R_AGGR, R_TELEPORT,
     MACE, BOW, ARROW, RING_MAIL,
-    S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_FDET, S_SCARE, P_MFIND, P_TFIND,
+    S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_FDET, S_SCARE, P_MFIND, P_TFIND,
     OBJ_ISFOUND,
     T_DOOR, T_ARROW, T_SLEEP, T_BEAR, T_TELEP, T_DART, T_RUST, T_MYST, NTRAPS,
 )
@@ -251,7 +251,7 @@ class Game:
         )
         self.player.add_to_pack(bow)
 
-        arrow_count = random.randint(25, 35)
+        arrow_count = random.randint(0, 14) + 25   # rnd(15)+25
         arrows = Item(
             o_type=CH_WEAPON, o_which=ARROW,
             o_damage=WEAPON_INFO[ARROW].damage,
@@ -264,7 +264,7 @@ class Game:
 
         ring_mail = Item(
             o_type=CH_ARMOR, o_which=RING_MAIL,
-            o_arm=ARMOR_INFO[RING_MAIL].ac,
+            o_arm=ARMOR_INFO[RING_MAIL].ac - 1,   # +1 のリングメイル
             o_flags=ISKNOW,
         )
         self.player.equip_armor(ring_mail)
@@ -720,7 +720,7 @@ class Game:
         if item is None:
             return
         target_item: Optional[Item] = None
-        if item.o_which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR):
+        if item.o_which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
             tslot = ui.show_inventory(
                 self.player, title="Identify which item?",
             )
@@ -735,7 +735,12 @@ class Game:
         )
         ui.add_messages(msgs)
         if item.o_which == S_FDET:
-            ui.show_all_objects(self.dungeon, self.player, self.monsters, self.floor_items)
+            food = [fi for fi in self.floor_items if fi.item.o_type == CH_FOOD]
+            if food:
+                ui.show_all_objects(self.dungeon, self.player, self.monsters, food,
+                                    title_msg="Your nose tingles and you smell food.")
+            else:
+                ui.add_message("Your nose tingles.")
         self._end_turn(ui)
 
     def _do_wield(self, ui: UI, slot: Optional[str] = None) -> None:
