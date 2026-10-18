@@ -19,6 +19,7 @@ import re as _re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, NamedTuple
 
+from i18n import tr, name as tr_name, is_ja
 from constants import (
     # オブジェクトフラグ
     ISCURSED, ISKNOW, ISMISL, ISMANY, OBJ_ISFOUND, ISPROT,
@@ -380,7 +381,7 @@ class GameKnowledge:
             return self._r_appear[o_which]
         if o_type == CH_STICK  and 0 <= o_which < MAXSTICKS:
             return self._ws_appear[o_which]
-        return "unknown"
+        return tr('unknown')
 
     # ---- 推測ラベル ----
 
@@ -410,38 +411,39 @@ class GameKnowledge:
 
         if ot == CH_POTION:
             if self.is_known(ot, ow):
-                return f"a potion of {POTION_INFO[ow].name}"
-            app = self.get_appearance(ot, ow)
+                return tr('a potion of {name}', name=tr_name('potion', POTION_INFO[ow].name))
+            app = tr_name('color', self.get_appearance(ot, ow))
             guess = self.get_guess(ot, ow)
-            return (f"a {app} potion called {guess}" if guess
-                    else f"a {app} potion")
+            return (tr('a {app} potion called {guess}', app=app, guess=guess) if guess
+                    else tr('a {app} potion', app=app))
 
         if ot == CH_SCROLL:
             if self.is_known(ot, ow):
-                return f"a scroll of {SCROLL_INFO[ow].name}"
+                return tr('a scroll of {name}', name=tr_name('scroll', SCROLL_INFO[ow].name))
             title = self.get_appearance(ot, ow)
             guess = self.get_guess(ot, ow)
-            return (f"a scroll titled '{title}' called {guess}" if guess
-                    else f"a scroll titled '{title}'")
+            return (tr("a scroll titled '{title}' called {guess}", title=title, guess=guess) if guess
+                    else tr("a scroll titled '{title}'", title=title))
 
         if ot == CH_RING:
             if self.is_known(ot, ow):
                 enc = _enchant_str(item.o_arm, item.o_flags)
-                return f"{enc}a ring of {RING_INFO[ow].name}"
-            app = self.get_appearance(ot, ow)
+                return tr('{enc}a ring of {name}', enc=enc, name=tr_name('ring', RING_INFO[ow].name))
+            app = tr_name('gem', self.get_appearance(ot, ow))
             guess = self.get_guess(ot, ow)
-            return (f"a {app} ring called {guess}" if guess
-                    else f"a {app} ring")
+            return (tr('a {app} ring called {guess}', app=app, guess=guess) if guess
+                    else tr('a {app} ring', app=app))
 
         if ot == CH_STICK:
             info = STICK_INFO[ow]
-            kind = "staff" if info.is_staff else "wand"
+            kind = tr_name('stick_kind', "staff" if info.is_staff else "wand")
             if self.is_known(ot, ow):
-                return f"a {kind} of {info.name} [{item.o_arm} charges]"
-            app = self.get_appearance(ot, ow)
+                return tr('a {kind} of {name} [{o_arm} charges]',
+                          kind=kind, name=tr_name('stick', info.name), o_arm=item.o_arm)
+            app = tr_name('wood', self.get_appearance(ot, ow))
             guess = self.get_guess(ot, ow)
-            return (f"a {app} {kind} called {guess}" if guess
-                    else f"a {app} {kind}")
+            return (tr('a {app} {kind} called {guess}', app=app, kind=kind, guess=guess) if guess
+                    else tr('a {app} {kind}', app=app, kind=kind))
 
         if ot == CH_WEAPON:
             return _weapon_display_name(item)
@@ -450,20 +452,20 @@ class GameKnowledge:
             return _armor_display_name(item)
 
         if ot == CH_FOOD:
-            return "a ration of food" if item.o_which == 0 else "some slime-mold"
+            return tr('a ration of food') if item.o_which == 0 else tr('some slime-mold')
 
         if ot == CH_GOLD:
-            return f"{item.o_arm} gold pieces"
+            return tr('{o_arm} gold pieces', o_arm=item.o_arm)
 
         if ot == CH_AMULET:
-            return "the Amulet of Yendor"
+            return tr('the Amulet of Yendor')
 
-        return "unknown item"
+        return tr('unknown item')
 
 
 def _enchant_str(o_arm: int, o_flags: int) -> str:
     if o_flags & ISCURSED:
-        return "cursed "
+        return tr('cursed ')
     return ""
 
 
@@ -473,28 +475,31 @@ def _a_or_n(name: str) -> str:
 
 def _weapon_display_name(item: 'Item') -> str:
     if not (0 <= item.o_which < len(WEAPON_INFO)):
-        return "unknown weapon"
+        return tr('unknown weapon')
     info = WEAPON_INFO[item.o_which]
     cnt = item.o_count
-    if not (item.o_flags & ISKNOW):
-        return f"{cnt} {info.name}s" if cnt > 1 else f"a {info.name}"
-    h, d = item.o_hplus, item.o_dplus
-    cursed = "cursed " if (item.o_flags & ISCURSED) else ""
-    bonus = f"{h:+d},{d:+d}"
+    known = bool(item.o_flags & ISKNOW)
+    cursed = tr("cursed ") if known and (item.o_flags & ISCURSED) else ""
+    bonus = f"{item.o_hplus:+d},{item.o_dplus:+d} " if known else ""
+    if is_ja():
+        # 例: 「+1,+1のメイス」「25本の+0,+0の矢」「呪われた-1,+0のメイス」
+        wname = tr_name('weapon', info.name)
+        count = tr_name('counter', info.name).format(n=cnt) if cnt > 1 else ""
+        return f"{count}{cursed}{bonus.strip()}{'の' if bonus else ''}{wname}"
     if cnt > 1:
-        return f"{cnt} {cursed}{bonus} {info.name}s"
-    return f"a {cursed}{bonus} {info.name}"
+        return f"{cnt} {cursed}{bonus}{info.name}s"
+    return f"a {cursed}{bonus}{info.name}"
 
 
 def _armor_display_name(item: 'Item') -> str:
     if item.o_which >= MAXARMORS:
-        return "unknown armor"
+        return tr('unknown armor')
     info = ARMOR_INFO[item.o_which]
     if not (item.o_flags & ISKNOW):
-        return info.name
-    cursed = "cursed " if (item.o_flags & ISCURSED) else ""
-    prot   = "protected " if (item.o_flags & ISPROT) else ""
-    return f"{cursed}{prot}{info.name} [{item.o_arm}]"
+        return tr_name('armor', info.name)
+    cursed = tr("cursed ") if (item.o_flags & ISCURSED) else ""
+    prot   = tr("protected ") if (item.o_flags & ISPROT) else ""
+    return f"{cursed}{prot}{tr_name('armor', info.name)} [{item.o_arm}]"
 
 
 # ===========================================================================
@@ -767,13 +772,13 @@ def use_potion(
 
     elif which == P_LSD:
         player.apply_hallucination(_spread(SEEDURATION))
-        msgs.append("Oh, wow!  Everything seems so cosmic!")
+        msgs.append(tr('Oh, wow!  Everything seems so cosmic!'))
 
     elif which == P_POISON:
         if player._has_ring(R_SUSTSTR):
-            msgs.append("You feel momentarily sick.")
+            msgs.append(tr('You feel momentarily sick.'))
         else:
-            msgs.append("You feel very sick now.")
+            msgs.append(tr('You feel very sick now.'))
             delta = -random.randint(1, 3)
             msg = player.modify_str(delta)
             if msg:
@@ -781,7 +786,7 @@ def use_potion(
 
     elif which == P_STRENGTH:
         player.increase_max_str(1)
-        msgs.append(f"You feel stronger! (STR {player.str_max})")
+        msgs.append(tr('You feel stronger! (STR {str_max})', str_max=player.str_max))
 
     elif which == P_SEEINVIS:
         msgs.append(player.apply_see_invisible(SEEDURATION))
@@ -794,7 +799,7 @@ def use_potion(
             player.max_hp += 1
         if player.status.blind > 0:
             msgs.append(player.cure_blindness())
-        msgs.append(f"You begin to feel better. (HP {player.hp}/{player.max_hp})")
+        msgs.append(tr('You begin to feel better. (HP {hp}/{max_hp})', hp=player.hp, max_hp=player.max_hp))
 
     elif which == P_MFIND:
         alive = [m for m in monsters if m.is_alive]
@@ -802,7 +807,7 @@ def use_potion(
             for m in alive:
                 m.flags |= ISFOUND
         else:
-            msgs.append("You sense no monsters nearby.")
+            msgs.append(tr('You sense no monsters nearby.'))
 
     elif which == P_TFIND:
         pass   # game.py で ui.show_all_objects() を呼び出す
@@ -813,7 +818,7 @@ def use_potion(
             hp_gain = roll(1, 10)
             player.max_hp += hp_gain
             player.hp = min(player.max_hp, player.hp + hp_gain)
-            msgs.append("You feel a surge of power!")
+            msgs.append(tr('You feel a surge of power!'))
         else:
             needed = _next_level_exp(player)
             lvl_msgs = player.gain_exp(max(0, needed - player.exp))
@@ -823,7 +828,7 @@ def use_potion(
                 hp_gain = roll(1, 10)
                 player.max_hp += hp_gain
                 player.hp = min(player.max_hp, player.hp + hp_gain)
-                msgs.append("You feel a surge of power!")
+                msgs.append(tr('You feel a surge of power!'))
 
     elif which == P_XHEAL:
         was_full = player.hp >= player.max_hp
@@ -835,19 +840,19 @@ def use_potion(
             msgs.append(player.cure_blindness())
         if player.status.confused > 0:
             msgs.append(player.cure_confusion())
-        msgs.append(f"You feel much better! (HP {player.hp}/{player.max_hp})")
+        msgs.append(tr('You feel much better! (HP {hp}/{max_hp})', hp=player.hp, max_hp=player.max_hp))
 
     elif which == P_HASTE:
         if player.status.is_slowed:
             player.status.slowed = 0
-            msgs.append("You feel yourself speeding up.")
+            msgs.append(tr('You feel yourself speeding up.'))
         else:
             turns = HUHDURATION + random.randint(0, HUHDURATION // 2)
             msgs.append(player.apply_haste(turns))
 
     elif which == P_RESTORE:
         msg = player.restore_str()
-        msgs.append(msg if msg else "You feel your strength returning.")
+        msgs.append(msg if msg else tr('You feel your strength returning.'))
 
     elif which == P_BLIND:
         msgs.append(player.apply_blindness(_spread(SEEDURATION)))   # 5.4: SEEDURATION
@@ -857,7 +862,7 @@ def use_potion(
         msgs.append(player.apply_levitation(turns))
 
     if not was_known:
-        msgs.append(f"That was a potion of {POTION_INFO[which].name}.")
+        msgs.append(tr('That was a potion of {name}.', name=tr_name('potion', POTION_INFO[which].name)))
 
     return msgs
 
@@ -896,11 +901,11 @@ def use_scroll(
     if which == S_CONFUSE:
         # 次に攻撃したモンスターを混乱させるフラグをプレイヤーに付ける
         player.status.confuse_next_attack = True
-        msgs.append("Your hands begin to glow red.")
+        msgs.append(tr('Your hands begin to glow red.'))
 
     elif which == S_MAP:
         _reveal_map(dungeon)
-        msgs.append("You feel a sense of presence.")
+        msgs.append(tr('You feel a sense of presence.'))
 
     elif which == S_HOLD:
         # 周囲2マス以内の追跡中モンスターを止める（攻撃されるまで動かない）
@@ -912,36 +917,36 @@ def use_scroll(
                 m.flags |= ISHELD
                 held += 1
         if held:
-            msgs.append("The monsters around you freeze." if held > 1
-                        else "The monster freezes.")
+            msgs.append(tr('The monsters around you freeze.') if held > 1
+                        else tr('The monster freezes.'))
         else:
-            msgs.append("You feel a strange sense of loss.")
+            msgs.append(tr('You feel a strange sense of loss.'))
 
     elif which == S_SLEEP:
         turns = random.randint(0, _get_spread('SLEEPTIME', 5) - 1) + 4   # rnd(SLEEPTIME)+4
         player.status.paralyzed += turns
-        msgs.append("You fall asleep.")
+        msgs.append(tr('You fall asleep.'))
 
     elif which == S_ARMOR:
         if player.armor is not None:
             if player.armor.is_cursed:
                 player.armor.o_flags &= ~ISCURSED
-                msgs.append("Your armor glows silver for a moment.")
+                msgs.append(tr('Your armor glows silver for a moment.'))
             else:
                 old_ac = player.armor.o_arm
                 player.armor.o_arm -= 1
                 msgs.append(
-                    f"Your armor glows faintly for a moment. (AC {old_ac} -> {player.armor.o_arm})"
+                    tr('Your armor glows faintly for a moment. (AC {old_ac} -> {o_arm})', old_ac=old_ac, o_arm=player.armor.o_arm)
                 )
         else:
-            msgs.append("You feel a magical aura around you.")
+            msgs.append(tr('You feel a magical aura around you.'))
 
     elif which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
         msgs.extend(_do_identify(player, knowledge, target_item))
 
     elif which == S_SCARE:
         # 読むのは間違い。笑い声が聞こえるだけ（5.4 scrolls.c）
-        msgs.append("You hear maniacal laughter in the distance.")
+        msgs.append(tr('You hear maniacal laughter in the distance.'))
 
     elif which == S_FDET:
         pass   # game.py で食料の位置を表示する
@@ -950,32 +955,32 @@ def use_scroll(
         old_y, old_x = player.y, player.x
         pos = dungeon.teleport_player(player.y, player.x)
         player.y, player.x = pos.y, pos.x
-        msgs.append(f"You feel a wrenching sensation. ({old_y},{old_x}) -> ({player.y},{player.x})")
+        msgs.append(tr('You feel a wrenching sensation. ({old_y},{old_x}) -> ({y},{x})', old_y=old_y, old_x=old_x, y=player.y, x=player.x))
 
     elif which == S_ENCH:
         if player.weapon is not None:
             if player.weapon.is_cursed:
                 player.weapon.o_flags &= ~ISCURSED
-                msgs.append("Your weapon glows silver for a moment.")
+                msgs.append(tr('Your weapon glows silver for a moment.'))
             else:
                 if random.randint(0, 1) == 0:
                     old = player.weapon.o_hplus
                     player.weapon.o_hplus += 1
                     msgs.append(
-                        f"Your weapon glows blue for a moment. (hit {old:+d} -> {player.weapon.o_hplus:+d})"
+                        tr('Your weapon glows blue for a moment. (hit {old:+d} -> {o_hplus:+d})', old=old, o_hplus=player.weapon.o_hplus)
                     )
                 else:
                     old = player.weapon.o_dplus
                     player.weapon.o_dplus += 1
                     msgs.append(
-                        f"Your weapon glows red for a moment. (dmg {old:+d} -> {player.weapon.o_dplus:+d})"
+                        tr('Your weapon glows red for a moment. (dmg {old:+d} -> {o_dplus:+d})', old=old, o_dplus=player.weapon.o_dplus)
                     )
         else:
-            msgs.append("You feel a momentary surge of power.")
+            msgs.append(tr('You feel a momentary surge of power.'))
 
     elif which == S_CREATE:
         _create_monster_near(dungeon, player, monsters)
-        msgs.append("You hear a strange noise.")
+        msgs.append(tr('You hear a strange noise.'))
 
     elif which == S_REMOVE:
         count = 0
@@ -983,24 +988,24 @@ def use_scroll(
             if eq is not None and eq.is_cursed:
                 eq.o_flags &= ~ISCURSED
                 count += 1
-        msgs.append("You feel as if somebody is watching over you."
-                    if count else "You feel protected.")
+        msgs.append(tr('You feel as if somebody is watching over you.')
+                    if count else tr('You feel protected.'))
 
     elif which == S_AGGR:
         for m in monsters:
             if m.is_alive:
                 m.flags |= ISRUN
-        msgs.append("You hear a high-pitched humming noise.")
+        msgs.append(tr('You hear a high-pitched humming noise.'))
 
     elif which == S_PROTECT:  # 装備中の防具に ISPROT を付与
         if player.armor is not None:
             player.armor.o_flags |= ISPROT
-            msgs.append("Your armor glows golden for a moment.")
+            msgs.append(tr('Your armor glows golden for a moment.'))
         else:
-            msgs.append("You feel protected.")
+            msgs.append(tr('You feel protected.'))
 
     if not was_known:
-        msgs.append(f"That was a scroll of {SCROLL_INFO[which].name}.")
+        msgs.append(tr('That was a scroll of {name}.', name=tr_name('scroll', SCROLL_INFO[which].name)))
 
     return msgs
 
@@ -1023,10 +1028,10 @@ def _do_identify(
     target_item: Optional[Item],
 ) -> list[str]:
     if target_item is None:
-        return ["You feel an urge to identify something."]
+        return [tr('You feel an urge to identify something.')]
     target_item.o_flags |= ISKNOW
     knowledge.know(target_item.o_type, target_item.o_which)
-    return [f"You identify it as {knowledge.display_name(target_item)}."]
+    return [tr('You identify it as {item}.', item=knowledge.display_name(target_item))]
 
 
 def _create_monster_near(
@@ -1076,7 +1081,7 @@ def use_stick(
     """杖/ワンドを使用する。充填数 0 の場合は使用不可。"""
     msgs: list[str] = []
     if item.o_arm <= 0:
-        msgs.append("The wand is empty.")
+        msgs.append(tr('The wand is empty.'))
         return msgs
 
     item.o_arm -= 1
@@ -1093,7 +1098,7 @@ def use_stick(
         if target:
             target.flags |= ISINVIS
         else:
-            msgs.append("Nothing happens.")
+            msgs.append(tr('Nothing happens.'))
 
     elif which == WS_ELECT:
         msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
@@ -1115,7 +1120,7 @@ def use_stick(
         if target:
             msgs.extend(_ws_polymorph(target, player))
         else:
-            msgs.append("The staff pulses.")
+            msgs.append(tr('The staff pulses.'))
         knowledge.know(CH_STICK, which)
 
     elif which == WS_MISSILE:
@@ -1128,9 +1133,9 @@ def use_stick(
         if target:
             target.flags |= ISHASTE
             target.flags &= ~ISSLOW
-            msgs.append(f"The {target.name} starts moving faster!")
+            msgs.append(tr('The {name} starts moving faster!', name=target.name))
         else:
-            msgs.append("The staff pulses.")
+            msgs.append(tr('The staff pulses.'))
         knowledge.know(CH_STICK, which)
 
     elif which == WS_SLOW_M:
@@ -1138,14 +1143,14 @@ def use_stick(
         if target:
             target.flags |= ISSLOW
             target.flags &= ~ISHASTE
-            msgs.append(f"The {target.name} slows down.")
+            msgs.append(tr('The {name} slows down.', name=target.name))
         else:
-            msgs.append("The staff pulses.")
+            msgs.append(tr('The staff pulses.'))
         knowledge.know(CH_STICK, which)
 
     elif which == WS_DRAIN:
         if player.hp <= 1:
-            msgs.append("You feel too weak to use it.")
+            msgs.append(tr('You feel too weak to use it.'))
         else:
             alive = [m for m in monsters if m.is_alive]
             if alive:
@@ -1156,13 +1161,13 @@ def use_stick(
                     if not m.is_alive:
                         from combat import calc_exp
                         msgs.extend(player.gain_exp(calc_exp(m)))
-                msgs.append("You feel your life force draining away!")
+                msgs.append(tr('You feel your life force draining away!'))
                 knowledge.know(CH_STICK, which)
             else:
-                msgs.append("You feel your life force draining away!")
+                msgs.append(tr('You feel your life force draining away!'))
 
     elif which == WS_NOP:
-        msgs.append("Nothing happens.")
+        msgs.append(tr('Nothing happens.'))
 
     elif which == WS_TELAWAY:
         target = _find_target(dungeon, monsters, player, direction)
@@ -1170,9 +1175,9 @@ def use_stick(
             pos = dungeon.teleport_monster(target.y, target.x, monsters)
             if pos:
                 target.y, target.x = pos.y, pos.x
-            msgs.append(f"The {target.name} disappears!")
+            msgs.append(tr('The {name} disappears!', name=target.name))
         else:
-            msgs.append("The staff pulses.")
+            msgs.append(tr('The staff pulses.'))
         knowledge.know(CH_STICK, which)
 
     elif which == WS_TELTO:
@@ -1190,13 +1195,13 @@ def use_stick(
                     ):
                         target.y, target.x = ny, nx
                         target.flags |= ISRUN
-                        msgs.append(f"The {target.name} appears before you!")
+                        msgs.append(tr('The {name} appears before you!', name=target.name))
                         placed = True
                         break
                 if placed:
                     break
         else:
-            msgs.append("The staff pulses.")
+            msgs.append(tr('The staff pulses.'))
         knowledge.know(CH_STICK, which)
 
     elif which == WS_CANCEL:
@@ -1204,15 +1209,15 @@ def use_stick(
         if target:
             target.flags |= ISCANC
             target.flags &= ~(ISHASTE | ISINVIS)
-            msgs.append(f"The {target.name} looks cancelled.")
+            msgs.append(tr('The {name} looks cancelled.', name=target.name))
         else:
-            msgs.append("The wand flashes.")
+            msgs.append(tr('The wand flashes.'))
         knowledge.know(CH_STICK, which)
 
     if not was_known and knowledge.is_known(CH_STICK, which):
         info = STICK_INFO[which]
         kind = "staff" if info.is_staff else "wand"
-        msgs.append(f"That was a {kind} of {info.name}.")
+        msgs.append(tr('That was a {kind} of {name}.', kind=tr_name('stick_kind', kind), name=tr_name('stick', info.name)))
 
     return msgs
 
@@ -1225,8 +1230,8 @@ def _ws_light(dungeon: 'Dungeon', player: 'Player') -> list[str]:
         for r in range(room.top, room.top + room.height):
             for c in range(room.left, room.left + room.width):
                 dungeon.map[r][c].flags |= F_SEEN
-        return ["The room is lit up!"]
-    return ["Your wand glows brightly for a moment."]
+        return [tr('The room is lit up!')]
+    return [tr('Your wand glows brightly for a moment.')]
 
 
 def _ws_bolt(
@@ -1244,7 +1249,7 @@ def _ws_bolt(
     msgs: list[str] = []
     dy, dx = direction
     if dy == 0 and dx == 0:
-        msgs.append(f"The {bolt_name} bolt discharges harmlessly.")
+        msgs.append(tr('The {bolt_name} bolt discharges harmlessly.', bolt_name=tr_name('bolt', bolt_name)))
         return msgs
 
     rows = len(dungeon.map)
@@ -1256,16 +1261,16 @@ def _ws_bolt(
 
     for _ in range(BOLT_LENGTH * 2):
         if not (0 <= y < rows and 0 <= x < cols):
-            msgs.append(f"The {bolt_name} bolt vanishes.")
+            msgs.append(tr('The {bolt_name} bolt vanishes.', bolt_name=tr_name('bolt', bolt_name)))
             return msgs
 
         if not dungeon.is_walkable(y, x):
             if bounced:
-                msgs.append(f"The {bolt_name} bolt vanishes.")
+                msgs.append(tr('The {bolt_name} bolt vanishes.', bolt_name=tr_name('bolt', bolt_name)))
                 return msgs
             bounced = True
             dy, dx = -dy, -dx
-            msgs.append(f"The {bolt_name} bolt bounces off the wall!")
+            msgs.append(tr('The {bolt_name} bolt bounces off the wall!', bolt_name=tr_name('bolt', bolt_name)))
             y += dy
             x += dx
             continue
@@ -1274,9 +1279,9 @@ def _ws_bolt(
         for m in monsters:
             if m.is_alive and m.y == y and m.x == x:
                 m.hp -= dmg
-                msgs.append(f"The {bolt_name} bolt hits the {m.name} for {dmg} damage.")
+                msgs.append(tr('The {bolt_name} bolt hits the {name} for {dmg} damage.', bolt_name=tr_name('bolt', bolt_name), name=m.name, dmg=dmg))
                 if not m.is_alive:
-                    msgs.append(f"The {m.name} is killed!")
+                    msgs.append(tr('The {name} is killed!', name=m.name))
                     from combat import calc_exp
                     msgs.extend(player.gain_exp(calc_exp(m)))
                 return msgs
@@ -1284,13 +1289,13 @@ def _ws_bolt(
         # プレイヤーに命中（反射後）
         if bounced and y == player.y and x == player.x:
             player.take_damage(dmg)
-            msgs.append(f"The {bolt_name} bolt hits you for {dmg} damage!")
+            msgs.append(tr('The {bolt_name} bolt hits you for {dmg} damage!', bolt_name=tr_name('bolt', bolt_name), dmg=dmg))
             return msgs
 
         y += dy
         x += dx
 
-    msgs.append(f"The {bolt_name} bolt vanishes.")
+    msgs.append(tr('The {bolt_name} bolt vanishes.', bolt_name=tr_name('bolt', bolt_name)))
     return msgs
 
 
@@ -1332,7 +1337,7 @@ def _ws_polymorph(monster: 'Monster', player: 'Player') -> list[str]:
     monster.exp        = new_m.exp
     monster.flags      = new_m.flags | ISRUN
     monster.disguise_ch = new_m.disguise_ch
-    return [f"The {old_name} turns into a {monster.name}!"]
+    return [tr('The {old_name} turns into a {name}!', old_name=old_name, name=monster.name)]
 
 
 # ===========================================================================
@@ -1348,10 +1353,10 @@ def put_on_ring(
     msgs: list[str] = []
     old = player.put_on_ring(item, slot)
     if old is not None:
-        msgs.append(f"You remove {knowledge.display_name(old)}.")
+        msgs.append(tr('You remove {item}.', item=knowledge.display_name(old)))
     item.o_flags |= ISKNOW
     knowledge.know(item.o_type, item.o_which)
-    msgs.append(f"You put on {knowledge.display_name(item)}.")
+    msgs.append(tr('You put on {item}.', item=knowledge.display_name(item)))
     return msgs
 
 
@@ -1362,11 +1367,11 @@ def remove_ring(
 ) -> list[str]:
     ring = player.rings[slot]
     if ring is None:
-        return ["You aren't wearing a ring there."]
+        return [tr("You aren't wearing a ring there.")]
     if ring.is_cursed:
-        return ["You can't remove the cursed ring!"]
+        return [tr("You can't remove the cursed ring!")]
     player.remove_ring(slot)
-    return [f"You remove {knowledge.display_name(ring)}."]
+    return [tr('You remove {item}.', item=knowledge.display_name(ring))]
 
 
 # ===========================================================================
@@ -1394,7 +1399,7 @@ def use_item(
         return use_stick(item, player, dungeon, knowledge, monsters, direction)
     if ot == CH_FOOD:
         if player.food >= STOMACHSIZE:
-            return ["You're too full to eat more."]
+            return [tr("You're too full to eat more.")]
         return player.eat(random.randint(1100, 1500))
-    return ["You can't use that."]
+    return [tr("You can't use that.")]
 

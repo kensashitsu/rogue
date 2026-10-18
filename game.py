@@ -28,7 +28,7 @@ from typing import Optional
 from ui import UI, run_with_curses, MOVE_DELTAS
 from dungeon import new_level, Dungeon
 from player import Player
-from monsters import spawn_from_placed, spawn_monster, rand_monster_letter, Monster, _get_spread
+from monsters import spawn_from_placed, spawn_monster, rand_monster_letter, Monster, _get_spread, MONSTER_DB
 from items import (
     init_knowledge, set_knowledge, GameKnowledge, Item,
     make_potion, make_scroll, make_weapon, make_armor,
@@ -38,6 +38,7 @@ from items import (
     remove_ring as _items_remove_ring,
 )
 from combat import player_attacks_monster, calc_exp, roll_damage
+from i18n import tr, load_lang
 from constants import (
     CH_FLOOR, CH_TRAP,
     CH_POTION, CH_SCROLL, CH_WEAPON, CH_ARMOR,
@@ -363,7 +364,7 @@ class Game:
                     self.monsters, self.floor_items,
                 )
                 if self._is_loaded:
-                    ui.add_message(f"Welcome back!  (Floor {self.floor})")
+                    ui.add_message(tr('Welcome back!  (Floor {floor})', floor=self.floor))
                     self._is_loaded = False
 
                 # 行動不能チェック
@@ -423,10 +424,13 @@ class Game:
         elif action == 'save':
             if ui.confirm_save():
                 self.save_game()
-                ui.add_message("Game saved.")
+                ui.add_message(tr('Game saved.'))
                 self._running = False
         elif action == 'help':
             ui.show_help()
+        elif action == 'language':
+            if ui.choose_language():
+                ui.add_message(tr("Language set to English."))
         elif action == 'show_status':
             ui.show_status(self.player)
         elif action == 'inventory':
@@ -477,7 +481,7 @@ class Game:
         elif action == 'godmode':
             self.player.godmode = not self.player.godmode
             state = "ON" if self.player.godmode else "OFF"
-            ui.add_message(f"[DEBUG] God mode {state}.")
+            ui.add_message(tr('[DEBUG] God mode {state}.', state=state))
 
     # -------------------------------------------------------------------------
     # 移動・攻撃
@@ -488,7 +492,7 @@ class Game:
             dy, dx = random.choice([
                 (-1,-1),(-1,0),(-1,1),(0,-1),(0,1),(1,-1),(1,0),(1,1)
             ])
-            ui.add_message("You stumble in confusion.")
+            ui.add_message(tr('You stumble in confusion.'))
         ny = self.player.y + dy
         nx = self.player.x + dx
 
@@ -508,13 +512,13 @@ class Game:
                     gold_item.o_arm = target.stolen_gold
                     self.floor_items.append(FloorItem(item=gold_item, y=target.y, x=target.x))
                     self.dungeon.map[target.y][target.x].ch = CH_GOLD
-                    ui.add_message(f"The Leprechaun drops {target.stolen_gold} gold pieces!")
+                    ui.add_message(tr('The Leprechaun drops {stolen_gold} gold pieces!', stolen_gold=target.stolen_gold))
                 if target.stolen_item is not None:
                     dropped = target.stolen_item
                     self.floor_items.append(FloorItem(item=dropped, y=target.y, x=target.x))
                     self.dungeon.map[target.y][target.x].ch = dropped.o_type
                     name = dropped.display_name(self.knowledge)
-                    ui.add_message(f"The Nymph drops {name}!")
+                    ui.add_message(tr('The Nymph drops {name}!', name=name))
                 if target.has_item:
                     from items import make_random_item
                     dropped = make_random_item(self.floor)
@@ -525,7 +529,7 @@ class Game:
 
         # Flytrap 拘束中は移動不可（攻撃は上の target ブロックで処理済み）
         if self.player.status.held:
-            ui.add_message("The Flytrap's vines hold you fast!")
+            ui.add_message(tr("The Flytrap's vines hold you fast!"))
             self._end_turn(ui)
             return
 
@@ -536,7 +540,7 @@ class Game:
             self._trigger_trap_at(ui)
             self._end_turn(ui)
         else:
-            ui.add_message("You can't go that way.")
+            ui.add_message(tr("You can't go that way."))
 
     def _pickup_items(self, ui: UI) -> None:
         picked = [
@@ -550,14 +554,14 @@ class Game:
             if (getattr(fi.item, 'o_type', '') == CH_SCROLL
                     and getattr(fi.item, 'o_which', -1) == S_SCARE
                     and fi.item.o_flags & OBJ_ISFOUND):
-                ui.add_message("The scroll turns to dust as you pick it up.")
+                ui.add_message(tr('The scroll turns to dust as you pick it up.'))
                 self.floor_items.remove(fi)
                 self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
                 continue
             if fi.item.o_type == CH_GOLD:
                 amount = fi.item.o_arm
                 self.player.gain_gold(amount)
-                ui.add_message(f"You pick up {amount} gold pieces.")
+                ui.add_message(tr('You pick up {amount} gold pieces.', amount=amount))
                 self.floor_items.remove(fi)
                 self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
             else:
@@ -579,21 +583,21 @@ class Game:
                     if merged:
                         continue
                 if self.player.pack_full:
-                    ui.add_message("Your pack is full.")
+                    ui.add_message(tr('Your pack is full.'))
                     break
                 slot = self.player.add_to_pack(fi.item)
                 if slot is not None:
                     if fi.item.o_type == CH_AMULET:
                         self.player.has_amulet = True
                     name = fi.item.display_name(self.knowledge)
-                    ui.add_message(f"You pick up {name} ({slot}).")
+                    ui.add_message(tr('You pick up {name} ({slot}).', name=name, slot=slot))
                     self.floor_items.remove(fi)
                     self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
 
         # ISMANY マージ分をまとめて1件メッセージ
         for slot, (pack_item, added) in _merged_counts.items():
             name = pack_item.display_name(self.knowledge)
-            ui.add_message(f"You pick up {added} {name} ({slot}).")
+            ui.add_message(tr('You pick up {added} {name} ({slot}).', added=added, name=name, slot=slot))
 
     # -------------------------------------------------------------------------
     # 階段
@@ -601,15 +605,15 @@ class Game:
 
     def _descend(self, ui: UI) -> bool:
         if self.player.status.is_levitating:
-            ui.add_message("You float over the stairs and can't descend!")
+            ui.add_message(tr("You float over the stairs and can't descend!"))
             return False
         tile = self.dungeon.get_tile(self.player.y, self.player.x)
         if tile.ch == CH_STAIRS:
             self.floor += 1
             self._load_floor()
-            ui.add_message(f"You descend to floor {self.floor}.")
+            ui.add_message(tr('You descend to floor {floor}.', floor=self.floor))
             return True
-        ui.add_message("You see no stairs here.")
+        ui.add_message(tr('You see no stairs here.'))
         return False
 
     # -------------------------------------------------------------------------
@@ -622,9 +626,9 @@ class Game:
             for fi in self.floor_items
         )
         if occupied:
-            ui.add_message("There is already something there.")
+            ui.add_message(tr('There is already something there.'))
             return
-        slot = ui.show_inventory(self.player, title="Drop which item?")
+        slot = ui.show_inventory(self.player, title=tr('Drop which item?'))
         if slot is None:
             return
         item = self.player.remove_from_pack(slot)
@@ -636,11 +640,11 @@ class Game:
         self.floor_items.append(
             FloorItem(item=item, y=self.player.y, x=self.player.x)
         )
-        ui.add_message(f"You drop {name}.")
+        ui.add_message(tr('You drop {name}.', name=name))
         self._end_turn(ui)
 
     def _do_inventory_use(self, ui: UI) -> None:
-        slot = ui.show_inventory(self.player, title="Use which item?")
+        slot = ui.show_inventory(self.player, title=tr('Use which item?'))
         if slot is None:
             return
         item = self.player.pack.get(slot)
@@ -662,18 +666,18 @@ class Game:
         elif o_type == CH_STICK:
             self._do_zap(ui, slot=slot)
         else:
-            ui.add_message("You can't use that.")
+            ui.add_message(tr("You can't use that."))
 
     def _do_eat(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Eat which food?", type_filter=CH_FOOD
+                self.player, title=tr('Eat which food?'), type_filter=CH_FOOD
             )
         if slot is None:
             return
         # 満腹チェック：食料を消費する前に確認（Rogue 5.4仕様）
         if self.player.food >= STOMACHSIZE:
-            ui.add_messages(["You're too full to eat more."])
+            ui.add_messages([tr("You're too full to eat more.")])
             return
         item = self.player.remove_from_pack(slot)
         if item is None:
@@ -682,20 +686,20 @@ class Game:
         msgs = self.player.eat(food_amount)
         # 味メッセージと経験値（Rogue 5.4仕様）
         if item.o_which == 1:  # スライムモールド: 常においしい、経験値+1
-            msgs.append("Yum, that tasted good.")
+            msgs.append(tr('Yum, that tasted good.'))
             msgs.extend(self.player.gain_exp(1))
         elif random.randint(0, 9) < 7:  # 70%の確率でまずい、経験値+1
-            msgs.append("Yuk, this food tastes awful.")
+            msgs.append(tr('Yuk, this food tastes awful.'))
             msgs.extend(self.player.gain_exp(1))
         else:  # 30%の確率でおいしい
-            msgs.append("Yum, that tasted good.")
+            msgs.append(tr('Yum, that tasted good.'))
         ui.add_messages(msgs)
         self._end_turn(ui)
 
     def _do_quaff(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Quaff which potion?", type_filter=CH_POTION
+                self.player, title=tr('Quaff which potion?'), type_filter=CH_POTION
             )
         slot = self._confused_slot(slot, ui)
         if slot is None:
@@ -718,7 +722,7 @@ class Game:
     def _do_read(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Read which scroll?", type_filter=CH_SCROLL
+                self.player, title=tr('Read which scroll?'), type_filter=CH_SCROLL
             )
         slot = self._confused_slot(slot, ui)
         if slot is None:
@@ -729,7 +733,7 @@ class Game:
         target_item: Optional[Item] = None
         if item.o_which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
             tslot = ui.show_inventory(
-                self.player, title="Identify which item?",
+                self.player, title=tr('Identify which item?'),
             )
             if tslot is None:
                 return
@@ -745,15 +749,15 @@ class Game:
             food = [fi for fi in self.floor_items if fi.item.o_type == CH_FOOD]
             if food:
                 ui.show_all_objects(self.dungeon, self.player, self.monsters, food,
-                                    title_msg="Your nose tingles and you smell food.")
+                                    title_msg=tr('Your nose tingles and you smell food.'))
             else:
-                ui.add_message("Your nose tingles.")
+                ui.add_message(tr('Your nose tingles.'))
         self._end_turn(ui)
 
     def _do_wield(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Wield which weapon?", type_filter=CH_WEAPON
+                self.player, title=tr('Wield which weapon?'), type_filter=CH_WEAPON
             )
         slot = self._confused_slot(slot, ui)
         if slot is None:
@@ -761,7 +765,7 @@ class Game:
         if self.player.weapon is not None and self.player.weapon.is_cursed:
             self.player.weapon.o_flags |= ISKNOW
             name = self.player.weapon.display_name(self.knowledge)
-            ui.add_message(f"You can't put away the {name}!")
+            ui.add_message(tr("You can't put away the {name}!", name=name))
             return
         item = self.player.remove_from_pack(slot)
         if item is None:
@@ -775,24 +779,23 @@ class Game:
                     FloorItem(item=old, y=self.player.y, x=self.player.x)
                 )
                 ui.add_message(
-                    f"No room in pack; "
-                    f"{old.display_name(self.knowledge)} dropped."
+                    tr('No room in pack; {item} dropped.', item=old.display_name(self.knowledge))
                 )
         name = item.display_name(self.knowledge)
-        ui.add_message(f"You are now wielding {name}.")
+        ui.add_message(tr('You are now wielding {name}.', name=name))
         self._end_turn(ui)
 
     def _do_wear(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Wear which armor?", type_filter=CH_ARMOR
+                self.player, title=tr('Wear which armor?'), type_filter=CH_ARMOR
             )
         slot = self._confused_slot(slot, ui)
         if slot is None:
             return
         if self.player.armor is not None and self.player.armor.is_cursed:
             self.player.armor.o_flags |= ISKNOW
-            ui.add_message("You can't remove the cursed armor!")
+            ui.add_message(tr("You can't remove the cursed armor!"))
             return
         item = self.player.remove_from_pack(slot)
         if item is None:
@@ -806,18 +809,17 @@ class Game:
                     FloorItem(item=old, y=self.player.y, x=self.player.x)
                 )
                 ui.add_message(
-                    f"No room in pack; "
-                    f"{old.display_name(self.knowledge)} dropped."
+                    tr('No room in pack; {item} dropped.', item=old.display_name(self.knowledge))
                 )
         name = item.display_name(self.knowledge)
-        ui.add_message(f"You are now wearing {name}.")
+        ui.add_message(tr('You are now wearing {name}.', name=name))
         self._end_turn(ui)
 
     def _do_takeoff(self, ui: UI) -> None:
         if self.player.armor is not None:
             if self.player.armor.is_cursed:
                 self.player.armor.o_flags |= ISKNOW
-                ui.add_message("You can't remove the cursed armor!")
+                ui.add_message(tr("You can't remove the cursed armor!"))
                 return
             old = self.player.unequip_armor()
             if old is not None:
@@ -826,16 +828,16 @@ class Game:
                     self.floor_items.append(
                         FloorItem(item=old, y=self.player.y, x=self.player.x)
                     )
-                    ui.add_message("No room in pack; armor dropped.")
+                    ui.add_message(tr('No room in pack; armor dropped.'))
                 else:
                     ui.add_message(
-                        f"You take off {old.display_name(self.knowledge)}."
+                        tr('You take off {item}.', item=old.display_name(self.knowledge))
                     )
             self._end_turn(ui)
         elif self.player.weapon is not None:
             if self.player.weapon.is_cursed:
                 self.player.weapon.o_flags |= ISKNOW
-                ui.add_message("You can't put away the cursed weapon!")
+                ui.add_message(tr("You can't put away the cursed weapon!"))
                 return
             old = self.player.unequip_weapon()
             if old is not None:
@@ -844,19 +846,19 @@ class Game:
                     self.floor_items.append(
                         FloorItem(item=old, y=self.player.y, x=self.player.x)
                     )
-                    ui.add_message("No room in pack; weapon dropped.")
+                    ui.add_message(tr('No room in pack; weapon dropped.'))
                 else:
                     ui.add_message(
-                        f"You put away {old.display_name(self.knowledge)}."
+                        tr('You put away {item}.', item=old.display_name(self.knowledge))
                     )
             self._end_turn(ui)
         else:
-            ui.add_message("You are not wearing or wielding anything.")
+            ui.add_message(tr('You are not wearing or wielding anything.'))
 
     def _do_put_on_ring(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Put on which ring?", type_filter=CH_RING
+                self.player, title=tr('Put on which ring?'), type_filter=CH_RING
             )
         if slot is None:
             return
@@ -866,7 +868,7 @@ class Game:
         l_empty = self.player.rings[LEFT] is None
         r_empty = self.player.rings[RIGHT] is None
         if l_empty and r_empty:
-            c = ui.prompt_char("Which hand? (l)eft or (r)ight ", "lr")
+            c = ui.prompt_char(tr('Which hand? (l)eft or (r)ight '), "lr")
             if not c:
                 self.player.add_to_pack(item)
                 return
@@ -876,7 +878,7 @@ class Game:
         elif r_empty:
             ring_slot = RIGHT
         else:
-            c = ui.prompt_char("Replace which ring? (l)eft or (r)ight ", "lr")
+            c = ui.prompt_char(tr('Replace which ring? (l)eft or (r)ight '), "lr")
             if not c:
                 self.player.add_to_pack(item)
                 return
@@ -884,7 +886,7 @@ class Game:
             old_ring = self.player.rings[ring_slot]
             if old_ring is not None and old_ring.is_cursed:
                 old_ring.o_flags |= ISKNOW
-                ui.add_message("You can't remove the cursed ring!")
+                ui.add_message(tr("You can't remove the cursed ring!"))
                 self.player.add_to_pack(item)
                 return
             self.player.remove_ring(ring_slot)
@@ -894,8 +896,7 @@ class Game:
                     FloorItem(item=old_ring, y=self.player.y, x=self.player.x)
                 )
                 ui.add_message(
-                    f"No room in pack; "
-                    f"{old_ring.display_name(self.knowledge)} dropped."
+                    tr('No room in pack; {item} dropped.', item=old_ring.display_name(self.knowledge))
                 )
         msgs = _items_put_on_ring(item, self.player, ring_slot, self.knowledge)
         ui.add_messages(msgs)
@@ -903,18 +904,18 @@ class Game:
             for m in self.monsters:
                 if m.is_alive:
                     m.flags |= ISRUN | ISFOUND
-            ui.add_message("You feel the monsters are angry!")
+            ui.add_message(tr('You feel the monsters are angry!'))
         self._end_turn(ui)
 
     def _do_remove_ring(self, ui: UI) -> None:
         l_ring = self.player.rings[LEFT]
         r_ring = self.player.rings[RIGHT]
         if l_ring is None and r_ring is None:
-            ui.add_message("You are not wearing any rings.")
+            ui.add_message(tr('You are not wearing any rings.'))
             return
         if l_ring is not None and r_ring is not None:
             c = ui.prompt_char(
-                "Remove which ring? (l)eft or (r)ight ", "lr"
+                tr('Remove which ring? (l)eft or (r)ight '), "lr"
             )
             if not c:
                 return
@@ -926,7 +927,7 @@ class Game:
             return
         if ring.is_cursed:
             ring.o_flags |= ISKNOW
-            ui.add_message("You can't remove the cursed ring!")
+            ui.add_message(tr("You can't remove the cursed ring!"))
             return
         self.player.remove_ring(ring_slot)
         name = ring.display_name(self.knowledge)
@@ -935,16 +936,16 @@ class Game:
             self.floor_items.append(
                 FloorItem(item=ring, y=self.player.y, x=self.player.x)
             )
-            ui.add_message(f"You remove {name}, but your pack is full — dropped.")
+            ui.add_message(tr('You remove {name}, but your pack is full — dropped.', name=name))
         else:
-            ui.add_message(f"You remove {name} ({s}).")
+            ui.add_message(tr('You remove {name} ({s}).', name=name, s=s))
         self._end_turn(ui)
 
     def _do_throw(self, ui: UI) -> None:
-        slot = ui.show_inventory(self.player, title="Throw what?")
+        slot = ui.show_inventory(self.player, title=tr('Throw what?'))
         if slot is None:
             return
-        direction = ui.prompt_direction("Throw in which direction? ")
+        direction = ui.prompt_direction(tr('Throw in which direction? '))
         if direction == (0, 0):
             # Return item if direction cancelled
             return
@@ -1016,7 +1017,7 @@ class Game:
                 hit_monster.flags |= ISRUN | ISFOUND
                 vname = hit_monster.display_name(self.player.status.can_see_invisible)
                 ui.add_message(
-                    f"You hit the {vname} with {name} for {dmg} damage."
+                    tr('You hit the {vname} with {name} for {dmg} damage.', vname=vname, name=name, dmg=dmg)
                 )
                 if not hit_monster.is_alive:
                     msgs = self.player.gain_exp(calc_exp(hit_monster))
@@ -1024,9 +1025,9 @@ class Game:
             else:
                 hit_monster.flags |= ISRUN | ISFOUND
                 vname = hit_monster.display_name(self.player.status.can_see_invisible)
-                ui.add_message(f"The {name} misses the {vname}.")
+                ui.add_message(tr('The {name} misses the {vname}.', name=name, vname=vname))
         else:
-            ui.add_message(f"The {name} misses.")
+            ui.add_message(tr('The {name} misses.', name=name))
 
         # 命中した矢は消滅、外れた矢のみ着地点に落ちて回収可能
         drop_on_floor = not bool(hit_monster)
@@ -1054,7 +1055,7 @@ class Game:
     def _do_zap(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
             slot = ui.show_inventory(
-                self.player, title="Zap which wand/staff?", type_filter=CH_STICK
+                self.player, title=tr('Zap which wand/staff?'), type_filter=CH_STICK
             )
         slot = self._confused_slot(slot, ui)
         if slot is None:
@@ -1062,7 +1063,7 @@ class Game:
         item = self.player.pack.get(slot)
         if item is None:
             return
-        direction = ui.prompt_direction("Zap in which direction? ")
+        direction = ui.prompt_direction(tr('Zap in which direction? '))
         msgs = use_stick(
             item, self.player, self.dungeon,
             self.knowledge, self.monsters, direction,
@@ -1071,7 +1072,7 @@ class Game:
         self._end_turn(ui)
 
     def _do_fight(self, ui: UI) -> None:
-        direction = ui.prompt_direction("Fight in which direction? ")
+        direction = ui.prompt_direction(tr('Fight in which direction? '))
         if direction == (0, 0):
             return
         dy, dx = direction
@@ -1100,16 +1101,16 @@ class Game:
         if which == T_DOOR:
             self.floor += 1
             self._load_floor()
-            return ["You fall through a trap door!", f"You are now on floor {self.floor}."]
+            return [tr('You fall through a trap door!'), tr('You are now on floor {floor}.', floor=self.floor)]
 
         if which == T_ARROW:
             dmg = random.randint(1, 6)
-            msgs = ["An arrow shoots out at you!"]
+            msgs = [tr('An arrow shoots out at you!')]
             if random.randint(1, 20) >= 21 - self.player.effective_ac:
                 self.player.take_damage(dmg)
-                msgs.append(f"The arrow hits you for {dmg} damage.")
+                msgs.append(tr('The arrow hits you for {dmg} damage.', dmg=dmg))
             else:
-                msgs.append("The arrow misses.")
+                msgs.append(tr('The arrow misses.'))
                 arrow = make_weapon(ARROW)
                 self.floor_items.append(FloorItem(item=arrow, y=trap.y, x=trap.x))
             return msgs
@@ -1117,52 +1118,52 @@ class Game:
         if which == T_SLEEP:
             duration = 5 + random.randint(0, 4)
             self.player.status.paralyzed = max(self.player.status.paralyzed, duration)
-            return ["A strange gas puts you to sleep!"]
+            return [tr('A strange gas puts you to sleep!')]
 
         if which == T_BEAR:
             duration = 3 + random.randint(0, 2)
             self.player.status.paralyzed = max(self.player.status.paralyzed, duration)
-            return ["You are caught in a bear trap!"]
+            return [tr('You are caught in a bear trap!')]
 
         if which == T_TELEP:
             pos = self.dungeon.teleport_player(self.player.y, self.player.x)
             self.player.y = pos.y
             self.player.x = pos.x
-            return ["You hit a teleport trap!"]
+            return [tr('You hit a teleport trap!')]
 
         if which == T_DART:
             dmg = random.randint(1, 4)
-            msgs = ["A dart hits you!"]
+            msgs = [tr('A dart hits you!')]
             self.player.take_damage(dmg)
             if not save_throw(self.player.level, VS_POISON):
                 if self.player._has_ring(R_SUSTSTR):
-                    msgs.append("The dart was poisoned, but your ring protects you!")
+                    msgs.append(tr('The dart was poisoned, but your ring protects you!'))
                 elif self.player.str_cur > 3:
                     self.player.str_cur -= 1
-                    msgs.append("The dart was poisoned!")
+                    msgs.append(tr('The dart was poisoned!'))
             return msgs
 
         if which == T_RUST:
             if self.player.armor is not None:
                 if self.player.armor.o_which == LEATHER:
-                    return ["A rust trap sprays at your leather armor but it doesn't rust!"]
+                    return [tr("A rust trap sprays at your leather armor but it doesn't rust!")]
                 if self.player.armor.o_flags & ISPROT:
-                    return ["A rust trap hits your armor but it is protected!"]
+                    return [tr('A rust trap hits your armor but it is protected!')]
                 if self.player._has_ring(R_SUSTARM):
-                    return ["A rust trap sprays rust, but your ring repels it!"]
+                    return [tr('A rust trap sprays rust, but your ring repels it!')]
                 self.player.armor.o_arm += 1
-                return ["A rust trap corrodes your armor!"]
-            return ["A rust trap sprays at you, but you have no armor."]
+                return [tr('A rust trap corrodes your armor!')]
+            return [tr('A rust trap sprays at you, but you have no armor.')]
 
-        return ["You stumble over something."]
+        return [tr('You stumble over something.')]
 
     def _do_search(self, ui: UI) -> None:
         found_doors = self.dungeon.search(self.player.y, self.player.x)
         found_traps = self.dungeon.search_traps(self.player.y, self.player.x)
         if found_doors:
-            ui.add_message("You found a secret door!")
+            ui.add_message(tr('You found a secret door!'))
         if found_traps:
-            ui.add_message("You found a trap!")
+            ui.add_message(tr('You found a trap!'))
         self._end_turn(ui)
 
     # -------------------------------------------------------------------------
@@ -1172,22 +1173,22 @@ class Game:
     def _ascend(self, ui: UI) -> bool:
         tile = self.dungeon.get_tile(self.player.y, self.player.x)
         if tile.ch != CH_STAIRS:
-            ui.add_message("You see no stairs here.")
+            ui.add_message(tr('You see no stairs here.'))
             return False
         if self.floor <= 1:
             if self.player.has_amulet:
                 self._handle_win(ui)
                 return True
             ui.add_message(
-                "There is no way out — you haven't found the Amulet of Yendor!"
+                tr("There is no way out — you haven't found the Amulet of Yendor!")
             )
             return False
         if not self.player.has_amulet:
-            ui.add_message("You can't go up — you haven't found the Amulet of Yendor!")
+            ui.add_message(tr("You can't go up — you haven't found the Amulet of Yendor!"))
             return False
         self.floor -= 1
         self._load_floor()
-        ui.add_message(f"You ascend to floor {self.floor}.")
+        ui.add_message(tr('You ascend to floor {floor}.', floor=self.floor))
         return True
 
     def _handle_win(self, ui: UI) -> None:
@@ -1196,7 +1197,7 @@ class Game:
         entry = ScoreEntry(
             score = score,
             name  = self._player_name,
-            cause = "escaped with the Amulet!",
+            cause = 'escaped with the Amulet!',
             floor = self.floor,
             gold  = self.player.gold,
         )
@@ -1224,7 +1225,7 @@ class Game:
             return slot
         wrong = random.choice(slots)
         if wrong != slot:
-            ui.add_message("You are confused and use the wrong item!")
+            ui.add_message(tr('You are confused and use the wrong item!'))
         return wrong
 
     # -------------------------------------------------------------------------
@@ -1301,7 +1302,7 @@ class Game:
         for _ in range(self.player.search_bonus):
             found = self.dungeon.search(self.player.y, self.player.x)
             if found:
-                ui.add_message("You found a secret door!")
+                ui.add_message(tr('You found a secret door!'))
 
         # R_TELEPORT 指輪: 1/33 の確率でランダムテレポート
         if any(getattr(r, 'o_which', -1) == R_TELEPORT
@@ -1309,7 +1310,7 @@ class Game:
             if random.randint(0, 32) == 0:
                 pos = self.dungeon.teleport_player(self.player.y, self.player.x)
                 self.player.y, self.player.x = pos.y, pos.x
-                ui.add_message("The ring teleports you!")
+                ui.add_message(tr('The ring teleports you!'))
 
         # 加速中: モンスターAI前に追加行動を1回与える（再帰は1段まで）
         if self.player.status.is_hasted and not self._in_extra_turn and self.player.status.is_mobile:
@@ -1329,7 +1330,7 @@ class Game:
                     msgs = m.do_turn(self.dungeon, self.player, self.monsters, self.floor_items)
                     ui.add_messages(msgs)
                     if not self.player.is_alive:
-                        self._death_cause = f"killed by a {m.name}"
+                        self._death_cause = f"killed by a {MONSTER_DB[m.letter].name}"
                         self._running = False
                         return True
             return False
@@ -1362,4 +1363,5 @@ def run_game() -> None:
             game = Game()
     else:
         game = Game()
+    load_lang()
     run_with_curses(game.run)

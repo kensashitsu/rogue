@@ -1,6 +1,6 @@
 # Rogue
 
-Python implementation of Rogue 5.4 using curses.
+Python implementation of Rogue 5.4 for the terminal, in English or Japanese.
 
 ## Requirements
 
@@ -15,6 +15,12 @@ python main.py
 ```
 
 If a save file (`rogue.sav`) exists from a previous session it is loaded automatically and the title screen is skipped.
+
+## Language
+
+Press `Tab` on the name entry screen, or `o` during play, to switch between English and Japanese.
+The choice is saved in `rogue.cfg`. For Japanese, a font with Japanese glyphs (e.g. BIZ UDGothic)
+in Windows Terminal gives the cleanest spacing.
 
 ## Objective
 
@@ -52,6 +58,7 @@ Descend to floor 26, retrieve the **Amulet of Yendor** (`,`), then ascend back t
 | `Q` | Quit without saving |
 | `Ctrl-P` | Repeat last message |
 | `Ctrl-R` | Redraw screen |
+| `o` | Switch language (English / Japanese) |
 
 ## Map Symbols
 
@@ -92,7 +99,10 @@ Descend to floor 26, retrieve the **Amulet of Yendor** (`,`), then ascend back t
 ```
 main.py          Entry point
 game.py          Game loop, save/load, high scores
-ui.py            curses display and input
+ui.py            Screens, messages and input
+term.py          VT-sequence drawing layer (curses-compatible, full-width aware)
+i18n.py          Language switching (tr / name)
+i18n_ja.py       Japanese translations
 dungeon.py       Dungeon generation
 player.py        Player stats and inventory
 monsters.py      Monster definitions and AI

@@ -15,6 +15,7 @@ import re as _re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+from i18n import tr, name as tr_name
 from constants import (
     # クリーチャーフラグ
     ISMEAN, ISFLY, ISGREED, ISRUN, ISHASTE, ISSLOW,
@@ -149,7 +150,7 @@ class Monster:
 
     @property
     def name(self) -> str:
-        return MONSTER_DB[self.letter].name
+        return tr_name('monster', MONSTER_DB[self.letter].name)
 
     @property
     def damage(self) -> str:
@@ -195,7 +196,7 @@ class Monster:
     def display_name(self, can_see_invisible: bool) -> str:
         """不可視かつ看破できない場合は "something" を返す。"""
         if (self.flags & ISINVIS) and not can_see_invisible:
-            return "something"
+            return tr('something')
         return self.name
 
     @property
@@ -348,7 +349,7 @@ class Monster:
         if not save_throw(player.level, VS_MAGIC, player.protect_bonus):
             player.apply_confusion(HUHDURATION)
             return [
-                "You are confused by the Medusa's hideous visage!"
+                tr("You are confused by the Medusa's hideous visage!")
             ]
         return []
 
@@ -368,7 +369,7 @@ class Monster:
         # Dragon: 同室・一直線・射程内なら 1/5 で炎を吐く（5.4 chase.c）
         if self.letter == 'D' and self._can_breathe(dungeon, player, monsters) \
                 and random.randint(0, 4) == 0:
-            msgs.append("The Dragon breathes fire!")
+            msgs.append(tr('The Dragon breathes fire!'))
             msgs.extend(dragon_breath(player))
             return msgs
 
@@ -576,8 +577,7 @@ class Monster:
     def __repr__(self) -> str:
         state = "awake" if self.is_awake else "asleep"
         return (
-            f"<Monster {self.letter}({self.name}) "
-            f"HP:{self.hp}/{self.max_hp} L{self.level} "
+            f"<Monster {self.letter}({self.name}) HP:{self.hp}/{self.max_hp} L{self.level} "
             f"at({self.y},{self.x}) {state}>"
         )
 

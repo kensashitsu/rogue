@@ -16,6 +16,8 @@ import term as curses
 import random
 from typing import TYPE_CHECKING, Optional
 
+from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause
+from term import text_width, char_width
 from constants import F_SEEN, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
 from items import get_knowledge
 
@@ -53,6 +55,7 @@ KEY_MAP: dict[str, str] = {
     '.': 'rest',      '@': 'show_status', '?': 'help',
     # システム
     'Q': 'quit',      'S': 'save',
+    'o': 'language',  # 表示言語（英語 / 日本語）の切り替え
     '\x10': 'repeat_msg',    # Ctrl-P: 直前のメッセージを再表示
     '\x12': 'redraw',        # Ctrl-R: 画面再描画
     '\x07': 'godmode',       # Ctrl-G: デバッグ無敵モード切替
@@ -201,9 +204,33 @@ _HELP_LINES = [
     "  S  Save & quit      Q  Quit (no save)",
     "  Ctrl-P  Repeat last message",
     "  Ctrl-R  Redraw screen",
+    "  o  Language (English / Japanese)",
     " " + "─" * 38,
     "  Press any key to continue...",
 ]
+
+
+# タイトルのロゴ
+_TITLE_BANNER = [
+    "  ██████╗  ██████╗  ██████╗ ██╗   ██╗███████╗",
+    "  ██╔══██╗██╔═══██╗██╔════╝ ██║   ██║██╔════╝",
+    "  ██████╔╝██║   ██║██║  ███╗██║   ██║█████╗  ",
+    "  ██╔══██╗██║   ██║██║   ██║██║   ██║██╔══╝  ",
+    "  ██║  ██║╚██████╔╝╚██████╔╝╚██████╔╝███████╗",
+    "  ╚═╝  ╚═╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝",
+]
+
+
+def _fit(s: str, width: int = 79) -> str:
+    """見た目の幅（全角 = 2）で width に切り詰め、足りなければ空白で埋める。"""
+    out, w = [], 0
+    for c in s:
+        cw = char_width(c)
+        if w + cw > width:
+            break
+        out.append(c)
+        w += cw
+    return "".join(out) + " " * (width - w)
 
 
 # ===========================================================================
@@ -331,7 +358,7 @@ class UI:
             msg = self._msgs.pop(0)
             self._last_msg = msg
             if self._msgs:
-                self._raw_message((msg + "  --More--")[:79])
+                self._raw_message(self._with_more(msg))
                 if self.stdscr:
                     self._wait_advance()
             else:
@@ -345,10 +372,16 @@ class UI:
         try:
             self.stdscr.move(self.MSG_ROW, 0)
             self.stdscr.clrtoeol()
-            self.stdscr.addstr(self.MSG_ROW, 0, msg[:79], attr)
+            self.stdscr.addstr(self.MSG_ROW, 0, _fit(msg).rstrip(), attr)
         except curses.error:
             pass
         self.stdscr.refresh()
+
+    @staticmethod
+    def _with_more(msg: str) -> str:
+        """メッセージ末尾に --More-- を付ける。長すぎる場合は本文を削って必ず見えるようにする。"""
+        more = "  " + tr("--More--")
+        return _fit(msg, 79 - text_width(more)).rstrip() + more
 
     def clear_message(self) -> None:
         """メッセージ行を消去する。"""
@@ -648,22 +681,24 @@ class UI:
         """Row 23 にステータスバーを描画する。"""
         if self.stdscr is None:
             return
-        line = player.status_line().ljust(80)[:80]
+        line = _fit(player.status_line(), 80)
         attr = self._cp(_CP_STATUS) | curses.A_BOLD
         try:
             self.stdscr.addstr(self.STATUS_ROW, 0, line, attr)
         except curses.error:
             pass
-        # 空腹状態を目立つ色でハイライト描画
-        hunger = player.hunger_state
-        if hunger:
-            if hunger == "Faint":
+        # 空腹状態を目立つ色でハイライト描画（判定は英語のキー、表示は訳語）
+        state = player.hunger_state
+        if state:
+            hunger = tr(state)
+            if state == "Faint":
                 h_attr = self._cp(_CP_MONSTER) | curses.A_BOLD | curses.A_REVERSE
-            elif hunger == "Weak":
+            elif state == "Weak":
                 h_attr = self._cp(_CP_MONSTER) | curses.A_BOLD
             else:  # Hungry
                 h_attr = self._cp(_CP_GOLD) | curses.A_BOLD
-            col = line.find(hunger)
+            idx = line.find(hunger)
+            col = text_width(line[:idx]) if idx >= 0 else -1
             if col >= 0:
                 try:
                     self.stdscr.addstr(self.STATUS_ROW, col, hunger, h_attr)
@@ -677,7 +712,7 @@ class UI:
     def show_inventory(
         self,
         player:           "Player",
-        title:            str  = "Inventory",
+        title:            str  = "",
         type_filter:      str  = "",
         display_only:     bool = False,
         include_equipped: bool = False,
@@ -704,19 +739,20 @@ class UI:
         if include_equipped:
             if player.weapon is not None:
                 name = getattr(player.weapon, 'name', repr(player.weapon))
-                equip_slots.append(('=', f"Wielding: {name}"))
+                equip_slots.append(('=', tr("Wielding: {name}", name=name)))
             if player.armor is not None:
                 name = getattr(player.armor, 'name', repr(player.armor))
-                equip_slots.append(('[', f"Wearing:  {name}"))
+                equip_slots.append(('[', tr("Wearing:  {name}", name=name)))
             for slot_idx, ring in enumerate(player.rings):
                 if ring is not None:
-                    hand = "Left" if slot_idx == 0 else "Right"
                     key  = '(' if slot_idx == 0 else ')'
                     name = getattr(ring, 'name', repr(ring))
-                    equip_slots.append((key, f"{hand} ring: {name}"))
+                    label = (tr("Left ring: {name}", name=name) if slot_idx == 0
+                             else tr("Right ring: {name}", name=name))
+                    equip_slots.append((key, label))
 
         if not items and not equip_slots:
-            self.add_message("You are carrying nothing.")
+            self.add_message(tr('You are carrying nothing.'))
             self.flush_messages()
             return None
 
@@ -736,11 +772,12 @@ class UI:
         offset = 0  # スクロールオフセット
 
         if display_only:
-            footer = "── Press any key to continue ──"
+            footer = tr("── Press any key to continue ──")
         elif include_equipped:
-            footer = "── Select slot (a–z / = [ ( )) or ESC ──"
+            footer = tr("── Select slot (a–z / = [ ( )) or ESC ──")
         else:
-            footer = "── ↑↓ to scroll  Select slot (a–w) or ESC ──"
+            footer = tr("── ↑↓ to scroll  Select slot (a–w) or ESC ──")
+        title = title or tr("Inventory")
 
         while True:
             self.stdscr.clear()
@@ -794,12 +831,12 @@ class UI:
             # スクロールインジケータ
             if offset > 0:
                 try:
-                    self.stdscr.addstr(21, 42, "(↑ more)")
+                    self.stdscr.addstr(21, 42, tr("(↑ more)"))
                 except curses.error:
                     pass
             if offset + page_size < len(items):
                 try:
-                    self.stdscr.addstr(21, 52, "(↓ more)")
+                    self.stdscr.addstr(21, 52, tr("(↓ more)"))
                 except curses.error:
                     pass
 
@@ -847,7 +884,7 @@ class UI:
         player:      "Player",
         monsters:    list,
         floor_items: list,
-        title_msg:   str = "You sense the presence of objects.",
+        title_msg:   str = "",
     ) -> None:
         """
         全フロアアイテムをマップ上に重ねて表示し、キー入力待ちする。
@@ -868,13 +905,12 @@ class UI:
                 self.stdscr.addch(y, x, ch, self._cp(_CP_ITEM) | curses.A_BOLD | curses.A_REVERSE)
             except curses.error:
                 pass
+        title_msg = title_msg or tr("You sense the presence of objects.")
         if not floor_items:
-            title_msg = "You sense no objects nearby."
+            title_msg = tr("You sense no objects nearby.")
         try:
             self.stdscr.addstr(
-                self.MSG_ROW, 0,
-                f"{title_msg} --More--".ljust(80),
-                curses.A_BOLD,
+                self.MSG_ROW, 0, _fit(self._with_more(title_msg)), curses.A_BOLD,
             )
         except curses.error:
             pass
@@ -914,7 +950,7 @@ class UI:
         try:
             self.stdscr.addstr(
                 self.MSG_ROW, 0,
-                "You can sense the presence of monsters. --More--".ljust(80),
+                _fit(self._with_more(tr("You can sense the presence of monsters."))),
                 curses.A_BOLD,
             )
         except curses.error:
@@ -935,7 +971,7 @@ class UI:
             if i >= 23:
                 break
             try:
-                self.stdscr.addstr(i, 0, line)
+                self.stdscr.addstr(i, 0, _fit(tr(line)).rstrip())
             except curses.error:
                 pass
         self.stdscr.refresh()
@@ -947,7 +983,7 @@ class UI:
             return
         self.stdscr.clear()
         try:
-            self.stdscr.addstr(0, 0, " Character Status", curses.A_BOLD)
+            self.stdscr.addstr(0, 0, tr(" Character Status"), curses.A_BOLD)
             self.stdscr.addstr(1, 0, " " + "─" * 30)
         except curses.error:
             pass
@@ -958,7 +994,7 @@ class UI:
                 pass
         try:
             self.stdscr.addstr(
-                len(player.detail_lines()) + 3, 0, " Press any key..."
+                len(player.detail_lines()) + 3, 0, tr(" Press any key...")
             )
         except curses.error:
             pass
@@ -967,13 +1003,13 @@ class UI:
 
     def identify_symbol(self) -> None:
         """'/' コマンド: 入力されたシンボルの意味を説明する。"""
-        ch = self.prompt_char("What symbol would you like explained? ")
+        ch = self.prompt_char(tr('What symbol would you like explained? '))
         if not ch:
             return
         if 'A' <= ch <= 'Z':
-            desc = "A monster"
+            desc = tr("A monster")
         else:
-            desc = _SYMBOL_DESC.get(ch, "Unknown symbol")
+            desc = tr(_SYMBOL_DESC.get(ch, "Unknown symbol"))
         self.add_message(f"'{ch}' -- {desc}")
         self.flush_messages()
 
@@ -985,10 +1021,11 @@ class UI:
                 "trap door", "arrow trap", "sleeping gas trap", "bear trap",
                 "teleport trap", "dart trap", "rust trap", "mystery trap",
             ]
-            name = _TRAP_NAMES[trap.which] if 0 <= trap.which < len(_TRAP_NAMES) else "trap"
-            self.add_message(f"There is a {name} here!")
+            name = tr_name('trap', _TRAP_NAMES[trap.which]
+                           if 0 <= trap.which < len(_TRAP_NAMES) else "trap")
+            self.add_message(tr('There is a {name} here!', name=name))
         else:
-            self.add_message("You don't see any traps.")
+            self.add_message(tr("You don't see any traps."))
         self.flush_messages()
 
     # =========================================================================
@@ -997,7 +1034,7 @@ class UI:
 
     def name_entry_screen(self) -> str:
         """
-        名前入力画面。最大 23 文字、Enter で確定。
+        名前入力画面。最大 23 文字、Enter で確定。Tab で表示言語（英語 / 日本語）を切り替える。
         空のまま Enter した場合は空文字を返す。
         """
         if self.stdscr is None:
@@ -1011,40 +1048,29 @@ class UI:
         except curses.error:
             pass
 
-        title_lines = [
-            "  \u2588\u2588\u2588\u2588\u2588\u2588\u2563  \u2588\u2588\u2588\u2588\u2588\u2588\u2563  \u2588\u2588\u2588\u2588\u2588\u2588\u2563 \u2588\u2588\u2557   \u2588\u2588\u2557\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2563",
-            "  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2563\u2588\u2588\u2554\u2550\u2550\u2550\u2588\u2588\u2563\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d \u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u2550\u2550\u255d",
-            "  \u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551  \u2588\u2588\u2588\u2563\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2588\u2588\u2588\u2563  ",
-            "  \u2588\u2588\u2554\u2550\u2550\u2588\u2588\u2563\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2551   \u2588\u2588\u2551\u2588\u2588\u2554\u2550\u2550\u255d  ",
-            "  \u2588\u2588\u2551  \u2588\u2588\u2551\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u255a\u2588\u2588\u2588\u2588\u2588\u2588\u2554\u255d\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2563",
-            "  \u255a\u2550\u255d  \u255a\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d  \u255a\u2550\u2550\u2550\u2550\u2550\u255d \u255a\u2550\u2550\u2550\u2550\u2550\u2550\u255d",
-        ]
-
         while True:
             self.stdscr.clear()
-            for i, line in enumerate(title_lines):
+            for i, line in enumerate(_TITLE_BANNER):
                 try:
-                    self.stdscr.addstr(
-                        i + 3, 0, line,
-                        self._cp(_CP_PLAYER) | curses.A_BOLD,
-                    )
+                    self.stdscr.addstr(i + 3, 0, line, self._cp(_CP_PLAYER) | curses.A_BOLD)
                 except curses.error:
                     pass
 
-            prompt   = "  Enter your name: "
+            prompt   = tr("  Enter your name: ")
             name_str = ''.join(buf)
             try:
                 self.stdscr.addstr(12, 0, prompt, curses.A_BOLD)
-                self.stdscr.addstr(12, len(prompt), name_str)
+                self.stdscr.addstr(12, text_width(prompt), name_str)
                 self.stdscr.addstr(
                     14, 0,
-                    f"  (Up to {_MAX_NAME} characters  |  Enter to confirm)",
+                    tr("  (Up to {n} characters  |  Enter to confirm)", n=_MAX_NAME),
                 )
+                self.stdscr.addstr(16, 0, tr("  Tab: 日本語で遊ぶ"))
             except curses.error:
                 pass
 
             try:
-                self.stdscr.move(12, len(prompt) + len(name_str))
+                self.stdscr.move(12, text_width(prompt) + len(name_str))
             except curses.error:
                 pass
 
@@ -1053,6 +1079,9 @@ class UI:
             ch = self._getch()
             if ch in (10, 13):          # Enter
                 break
+            if ch == 9:                 # Tab: 言語切り替え
+                set_lang('ja' if get_lang() == 'en' else 'en')
+                continue
             if ch in (8, 127, curses.KEY_BACKSPACE):
                 if buf:
                     buf.pop()
@@ -1066,24 +1095,25 @@ class UI:
 
         return ''.join(buf)
 
+    def choose_language(self) -> bool:
+        """'o' コマンド: 表示言語を切り替える。切り替えたら True。"""
+        c = self.prompt_char(tr("Language: (e)nglish or (j)apanese? "), "ej")
+        if not c:
+            return False
+        set_lang('ja' if c == 'j' else 'en')
+        return True
+
     def title_screen(self) -> None:
         """タイトル画面を表示する。"""
         if self.stdscr is None:
             return
         self.stdscr.clear()
-        lines = [
+        lines = [""] + _TITLE_BANNER + [
             "",
-            "  ██████╗  ██████╗  ██████╗ ██╗   ██╗███████╗",
-            "  ██╔══██╗██╔═══██╗██╔════╝ ██║   ██║██╔════╝",
-            "  ██████╔╝██║   ██║██║  ███╗██║   ██║█████╗  ",
-            "  ██╔══██╗██║   ██║██║   ██║██║   ██║██╔══╝  ",
-            "  ██║  ██║╚██████╔╝╚██████╔╝╚██████╔╝███████╗",
-            "  ╚═╝  ╚═╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝",
+            tr("     Explore the Dungeon of Doom."),
+            tr("     Retrieve the Amulet of Yendor from floor 26."),
             "",
-            "     Explore the Dungeon of Doom.",
-            "     Retrieve the Amulet of Yendor from floor 26.",
-            "",
-            "              Press any key to begin...",
+            tr("              Press any key to begin..."),
         ]
         for i, line in enumerate(lines):
             try:
@@ -1113,21 +1143,21 @@ class UI:
         # ---- 死亡情報画面 ----
         self.stdscr.clear()
         lines = [
-            "  You have died.",
+            tr("  You have died."),
             "",
-            f"  Cause:        {cause}",
+            tr("  Cause:        {cause}", cause=tr_cause(cause)),
             "",
-            f"  Floor:        {player.floor}",
-            f"  Level:        {player.level}",
-            f"  Experience:   {player.exp}",
-            f"  Gold:         {player.gold}",
-            f"  Final Score:  {score}",
+            tr("  Floor:        {n}", n=player.floor),
+            tr("  Level:        {n}", n=player.level),
+            tr("  Experience:   {n}", n=player.exp),
+            tr("  Gold:         {n}", n=player.gold),
+            tr("  Final Score:  {n}", n=score),
             "",
-            (f"  You placed #{rank} on the high score list!"
+            (tr("  You placed #{rank} on the high score list!", rank=rank)
              if rank > 0
-             else "  You did not make the high score list."),
+             else tr("  You did not make the high score list.")),
             "",
-            "  Press any key to continue...",
+            tr("  Press any key to continue..."),
         ]
         for i, line in enumerate(lines, 5):
             if i >= 23:
@@ -1154,18 +1184,18 @@ class UI:
         self.stdscr.clear()
 
         sep = " " + "─" * 76
-        hdr = (f"  {'#':>2}  {'Score':>6}  {'Name':<14}  "
-               f"{'Cause':<26}  {'Fl':>2}  {'Gold':>6}")
+        hdr = (f"  {'#':>2}  {tr('Score'):>6}  {_fit(tr('Name'), 14)}  "
+               f"{_fit(tr('Cause'), 26)}  {tr('Fl'):>2}  {tr('Gold'):>6}")
 
         row = 0
         for text, attr in [
-            (" Top 10 Rogues of the Dungeon of Doom", curses.A_BOLD),
+            (tr(" Top 10 Rogues of the Dungeon of Doom"), curses.A_BOLD),
             (sep,  0),
             (hdr,  curses.A_UNDERLINE),
             (sep,  0),
         ]:
             try:
-                self.stdscr.addstr(row, 0, text[:79], attr)
+                self.stdscr.addstr(row, 0, _fit(text).rstrip(), attr)
             except curses.error:
                 pass
             row += 1
@@ -1174,14 +1204,14 @@ class UI:
             if row >= 22:
                 break
             rank_n = i + 1
-            line = (f"  {rank_n:>2}  {e.score:>6}  {e.name:<14.14}  "
-                    f"{e.cause:<26.26}  {e.floor:>2}  {e.gold:>6}")
+            line = (f"  {rank_n:>2}  {e.score:>6}  {_fit(e.name, 14)}  "
+                    f"{_fit(tr_cause(e.cause), 26)}  {e.floor:>2}  {e.gold:>6}")
             if rank_n == highlight_rank:
                 attr = self._cp(_CP_GOLD) | curses.A_BOLD
             else:
                 attr = 0
             try:
-                self.stdscr.addstr(row, 0, line[:79], attr)
+                self.stdscr.addstr(row, 0, _fit(line).rstrip(), attr)
             except curses.error:
                 pass
             row += 1
@@ -1189,7 +1219,7 @@ class UI:
         try:
             self.stdscr.addstr(
                 min(row + 1, 23), 0,
-                " Press any key to exit...",
+                tr(" Press any key to exit..."),
                 curses.A_BOLD,
             )
         except curses.error:
@@ -1204,17 +1234,17 @@ class UI:
         self.stdscr.clear()
         score = player.gold + player.level * 100 + player.exp
         lines = [
-            "  Congratulations!",
+            tr("  Congratulations!"),
             "",
-            "  You have retrieved the Amulet of Yendor",
-            "  and escaped the Dungeon of Doom!",
+            tr("  You have retrieved the Amulet of Yendor"),
+            tr("  and escaped the Dungeon of Doom!"),
             "",
-            f"  Final score:    {score}",
-            f"  Deepest floor:  {player.floor}",
-            f"  Level:          {player.level}",
-            f"  Gold:           {player.gold}",
+            tr("  Final score:    {n}", n=score),
+            tr("  Deepest floor:  {n}", n=player.floor),
+            tr("  Level:          {n}", n=player.level),
+            tr("  Gold:           {n}", n=player.gold),
             "",
-            "  Press any key to exit.",
+            tr("  Press any key to exit."),
         ]
         for i, line in enumerate(lines, 5):
             try:
@@ -1230,20 +1260,20 @@ class UI:
     def confirm_quit(self) -> bool:
         """'Q' コマンドの確認ダイアログ。'y' で True を返す。"""
         curses.flushinp()
-        ch = self.prompt_char("Do you really want to quit? (y/n) ", "yn")
+        ch = self.prompt_char(tr('Do you really want to quit? (y/n) '), "yn")
         return ch == 'y'
 
     def confirm_save(self) -> bool:
         """'S' コマンドの確認ダイアログ。"""
         curses.flushinp()
-        ch = self.prompt_char("Save and quit? (y/n) ", "yn")
+        ch = self.prompt_char(tr('Save and quit? (y/n) '), "yn")
         return ch == 'y'
 
     # =========================================================================
     # 方向入力
     # =========================================================================
 
-    def prompt_direction(self, msg: str = "Which direction? ") -> tuple[int, int]:
+    def prompt_direction(self, msg: str = "") -> tuple[int, int]:
         """
         方向入力プロンプト。hjklyubn・矢印キー・テンキーから (dy, dx) を返す。
         ESC / スペース / Q でキャンセル → (0, 0) を返す。
@@ -1260,7 +1290,7 @@ class UI:
             '7': (-1, -1), '9': (-1,  1),
             '1': ( 1, -1), '3': ( 1,  1),
         }
-        self._raw_message(msg)
+        self._raw_message(msg or tr("Which direction? "))
         while True:
             ch = self._getch()
             if ch in (27, ord(' '), ord('Q')):
