@@ -21,14 +21,14 @@ from constants import (
     ISFOUND, ISHUH, ISINVIS, ISREGEN, ISLEVIT, ISHELD, CANHUH, ISCANC,
     # ゲームパラメータ
     AMULETLEVEL, LVL_MONS, WAND_MONS,
-    LAMPDIST,
+    LAMPDIST, BOLT_LENGTH,
     # タイミング（spread() 形式は _TIMING_RAW から解析）
     _TIMING_RAW,
 )
 from combat import (
     CombatResult,
     roll, roll_damage, calc_exp,
-    player_attacks_monster, monster_attacks_player,
+    player_attacks_monster, monster_attacks_player, dragon_breath,
 )
 
 if TYPE_CHECKING:
@@ -365,6 +365,13 @@ class Monster:
     ) -> list[str]:
         msgs: list[str] = []
 
+        # Dragon: 同室・一直線・射程内なら 1/5 で炎を吐く（5.4 chase.c）
+        if self.letter == 'D' and self._can_breathe(dungeon, player, monsters) \
+                and random.randint(0, 4) == 0:
+            msgs.append("The Dragon breathes fire!")
+            msgs.extend(dragon_breath(player))
+            return msgs
+
         # 隣接 → 攻撃（不可視プレイヤーには CANSEE 持ちのみ攻撃可）
         adjacent = _cheby(self.y, self.x, player.y, player.x) <= 1
         can_target = (not player.status.invisible) or bool(self.flags & CANSEE)
@@ -379,6 +386,37 @@ class Monster:
             self._move(dungeon, player, monsters, floor_items)
 
         return msgs
+
+    def _can_breathe(
+        self,
+        dungeon:  "Dungeon",
+        player:   "Player",
+        monsters: list["Monster"],
+    ) -> bool:
+        """
+        ドラゴンが炎を吐ける位置か。
+        5.4: キャンセルされていない・同じ部屋・縦横斜めの一直線上・距離² <= BOLT_LENGTH²。
+        炎の通り道に壁や他のモンスターがあれば吐かない（跳ね返りは再現しない）。
+        """
+        if self.flags & ISCANC:
+            return False
+        dy, dx = player.y - self.y, player.x - self.x
+        if not (dy == 0 or dx == 0 or abs(dy) == abs(dx)):
+            return False
+        if dy * dy + dx * dx > BOLT_LENGTH * BOLT_LENGTH:
+            return False
+        room = dungeon.find_room_at(self.y, self.x)
+        if room is None or room is not dungeon.find_room_at(player.y, player.x):
+            return False
+        sy = (dy > 0) - (dy < 0)
+        sx = (dx > 0) - (dx < 0)
+        y, x = self.y + sy, self.x + sx
+        while (y, x) != (player.y, player.x):
+            if not dungeon.is_walkable(y, x) or any(
+                    m.is_alive and m.y == y and m.x == x for m in monsters):
+                return False
+            y, x = y + sy, x + sx
+        return True
 
     # =========================================================================
     # 移動 AI

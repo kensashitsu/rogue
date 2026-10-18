@@ -850,8 +850,7 @@ def use_potion(
         msgs.append(msg if msg else "You feel your strength returning.")
 
     elif which == P_BLIND:
-        turns = HUHDURATION + _get_spread('HOLDTIME', 2) * 2
-        msgs.append(player.apply_blindness(turns))
+        msgs.append(player.apply_blindness(_spread(SEEDURATION)))   # 5.4: SEEDURATION
 
     elif which == P_LEVIT:
         turns = HUHDURATION + random.randint(0, HUHDURATION)
