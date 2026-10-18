@@ -1,0 +1,323 @@
+{
+  "constants": {
+    "MAXPACK":    23,
+    "MAXOBJ":      9,
+    "NUMTHINGS":   7,
+    "MAXPOTIONS": 14,
+    "MAXSCROLLS": 18,
+    "MAXWEAPONS":  9,
+    "MAXARMORS":   8,
+    "MAXRINGS":   14,
+    "MAXSTICKS":  14,
+    "ESCAPE":     27,
+    "LEFT":        0,
+    "RIGHT":       1
+  },
+
+  "screen_chars": {
+    "PASSAGE": "#",
+    "DOOR":    "+",
+    "FLOOR":   ".",
+    "PLAYER":  "@",
+    "TRAP":    "^",
+    "STAIRS":  "%",
+    "GOLD":    "*",
+    "POTION":  "!",
+    "SCROLL":  "?",
+    "MAGIC":   "$",
+    "FOOD":    ":",
+    "WEAPON":  ")",
+    "ARMOR":   "]",
+    "AMULET":  ",",
+    "RING":    "=",
+    "STICK":   "/"
+  },
+
+  "special_type_values": {
+    "CALLABLE": -1,
+    "R_OR_S":   -2
+  },
+
+  "struct_obj_info": {
+    "description": "Stuff about objects",
+    "fields": {
+      "oi_name":  "char*  (object name)",
+      "oi_prob":  "int    (probability)",
+      "oi_worth": "int    (value in gold)",
+      "oi_guess": "char*  (player's guess at name)",
+      "oi_know":  "bool   (player knows the true name)"
+    }
+  },
+
+  "struct_thing_object": {
+    "description": "Object fields of the THING union",
+    "fields": {
+      "o_type":    "int    (What kind of object it is)",
+      "o_pos":     "coord  (Where it lives on the screen)",
+      "o_text":    "char*  (What it says if you read it)",
+      "o_launch":  "int    (What you need to launch it)",
+      "o_packch":  "char   (What character it is in the pack)",
+      "o_damage":  "char[8](Damage if used like sword)",
+      "o_hurldmg": "char[8](Damage if thrown)",
+      "o_count":   "int    (count for plural objects)",
+      "o_which":   "int    (Which object of a type it is)",
+      "o_hplus":   "int    (Plusses to hit)",
+      "o_dplus":   "int    (Plusses to damage)",
+      "o_arm":     "int    (Armor protection / charges / gold value)",
+      "o_flags":   "int    (information about objects)",
+      "o_group":   "int    (group number for this object)",
+      "o_label":   "char*  (Label for object)"
+    },
+    "aliases": {
+      "o_charges":  "o_arm",
+      "o_goldval":  "o_arm"
+    }
+  },
+
+  "object_flags": {
+    "ISCURSED": { "value":  1, "description": "object is cursed" },
+    "ISKNOW":   { "value":  2, "description": "player knows details about the object" },
+    "ISMISL":   { "value":  4, "description": "object is a missile type" },
+    "ISMANY":   { "value":  8, "description": "object comes in groups" },
+    "ISFOUND":  { "value": 16, "description": "object has been found (shared with creature flag)" },
+    "ISPROT":   { "value": 32, "description": "armor is permanently protected" }
+  },
+
+  "potions": {
+    "P_CONFUSE":  0,
+    "P_LSD":      1,
+    "P_POISON":   2,
+    "P_STRENGTH": 3,
+    "P_SEEINVIS": 4,
+    "P_HEALING":  5,
+    "P_MFIND":    6,
+    "P_TFIND":    7,
+    "P_RAISE":    8,
+    "P_XHEAL":    9,
+    "P_HASTE":   10,
+    "P_RESTORE": 11,
+    "P_BLIND":   12,
+    "P_LEVIT":   13,
+    "MAXPOTIONS":14
+  },
+
+  "scrolls": {
+    "S_CONFUSE":   0,
+    "S_MAP":       1,
+    "S_HOLD":      2,
+    "S_SLEEP":     3,
+    "S_ARMOR":     4,
+    "S_ID_POTION": 5,
+    "S_ID_SCROLL": 6,
+    "S_ID_WEAPON": 7,
+    "S_ID_ARMOR":  8,
+    "S_ID_R_OR_S": 9,
+    "S_SCARE":    10,
+    "S_FDET":     11,
+    "S_TELEP":    12,
+    "S_ENCH":     13,
+    "S_CREATE":   14,
+    "S_REMOVE":   15,
+    "S_AGGR":     16,
+    "S_PROTECT":  17,
+    "MAXSCROLLS": 18
+  },
+
+  "weapons": {
+    "MACE":      0,
+    "SWORD":     1,
+    "BOW":       2,
+    "ARROW":     3,
+    "DAGGER":    4,
+    "TWOSWORD":  5,
+    "DART":      6,
+    "SHIRAKEN":  7,
+    "SPEAR":     8,
+    "FLAME":     9,
+    "MAXWEAPONS":9,
+    "note": "FLAME is a fake entry for dragon breath; MAXWEAPONS == FLAME"
+  },
+
+  "armors": {
+    "LEATHER":         0,
+    "RING_MAIL":       1,
+    "STUDDED_LEATHER": 2,
+    "SCALE_MAIL":      3,
+    "CHAIN_MAIL":      4,
+    "SPLINT_MAIL":     5,
+    "BANDED_MAIL":     6,
+    "PLATE_MAIL":      7,
+    "MAXARMORS":       8
+  },
+
+  "rings": {
+    "R_PROTECT":  0,
+    "R_ADDSTR":   1,
+    "R_SUSTSTR":  2,
+    "R_SEARCH":   3,
+    "R_SEEINVIS": 4,
+    "R_NOP":      5,
+    "R_AGGR":     6,
+    "R_ADDHIT":   7,
+    "R_ADDDAM":   8,
+    "R_REGEN":    9,
+    "R_DIGEST":  10,
+    "R_TELEPORT":11,
+    "R_STEALTH": 12,
+    "R_SUSTARM": 13,
+    "MAXRINGS":  14
+  },
+
+  "sticks": {
+    "WS_LIGHT":      0,
+    "WS_INVIS":      1,
+    "WS_ELECT":      2,
+    "WS_FIRE":       3,
+    "WS_COLD":       4,
+    "WS_POLYMORPH":  5,
+    "WS_MISSILE":    6,
+    "WS_HASTE_M":    7,
+    "WS_SLOW_M":     8,
+    "WS_DRAIN":      9,
+    "WS_NOP":       10,
+    "WS_TELAWAY":   11,
+    "WS_TELTO":     12,
+    "WS_CANCEL":    13,
+    "MAXSTICKS":    14
+  },
+
+  "misc_constants": {
+    "GOLDCALC":    "rnd(50 + 10 * level) + 2",
+    "ISMULT_types":["POTION", "SCROLL", "FOOD"],
+    "HUNGERTIME":  1300,
+    "MORETIME":    150,
+    "STOMACHSIZE": 2000
+  },
+
+  "room_flags": {
+    "ISDARK": { "value": 1, "description": "room is dark" },
+    "ISGONE": { "value": 2, "description": "room is gone (a corridor)" },
+    "ISMAZE": { "value": 4, "description": "room is a maze" }
+  },
+
+  "map_flags": {
+    "F_PASS":    { "value": 128, "description": "is a passageway" },
+    "F_SEEN":    { "value":  64, "description": "have seen this spot before" },
+    "F_DROPPED": { "value":  32, "description": "object was dropped here" },
+    "F_LOCKED":  { "value":  32, "description": "door is locked" },
+    "F_REAL":    { "value":  16, "description": "what you see is what you get" },
+    "F_PNUM":    { "value":  15, "description": "passage number mask" },
+    "F_TMASK":   { "value":   7, "description": "trap number mask" }
+  },
+
+  "inventory_types": {
+    "INV_OVER":  0,
+    "INV_SLOW":  1,
+    "INV_CLEAR": 2
+  },
+
+  "functions": {
+    "add_pack": {
+      "description": "Pick up an object and add it to the pack.",
+      "scare_scroll": {
+        "type":      "SCROLL",
+        "which":     "S_SCARE",
+        "condition": "ISFOUND",
+        "action":    "detach, set FLOOR, discard, msg 'turns to dust'"
+      },
+      "grouping": {
+        "ISMULT":  "increment o_count, discard duplicate",
+        "o_group": "merge o_count, decrement inpack"
+      },
+      "monster_reaction": "if tp->t_dest == &obj->o_pos, redirect t_dest to &hero",
+      "amulet":           "if o_type == AMULET, set amulet = TRUE"
+    },
+
+    "pack_room": {
+      "description": "See if there's room in the pack.",
+      "max_pack":    "MAXPACK (23)",
+      "overflow":    "inpack reset to MAXPACK, return FALSE"
+    },
+
+    "leave_pack": {
+      "description": "Take an item out of the pack.",
+      "split": {
+        "condition": "o_count > 1 && !all",
+        "action":    "decrement o_count; if newobj, allocate copy with o_count=1"
+      },
+      "remove": {
+        "condition": "o_count == 1 || all",
+        "action":    "detach from pack, pack_used[o_packch - 'a'] = FALSE"
+      }
+    },
+
+    "pack_char": {
+      "description": "Return the next unused pack character.",
+      "range":       "a-z",
+      "method":      "first FALSE entry in pack_used[] array"
+    },
+
+    "inventory": {
+      "description": "List what is in the pack. Return TRUE if something of given type.",
+      "filter": {
+        "0":        "show all",
+        "CALLABLE": "exclude FOOD and AMULET",
+        "R_OR_S":   "include RING or STICK only"
+      }
+    },
+
+    "pick_up": {
+      "description": "Add something to character's pack.",
+      "levitation_check": "if ISLEVIT, return immediately",
+      "GOLD": {
+        "action": "money(o_goldval), detach and discard, r_goldval = 0"
+      },
+      "default": {
+        "types":  ["ARMOR","POTION","FOOD","WEAPON","SCROLL","AMULET","RING","STICK"],
+        "action": "add_pack(NULL, FALSE)"
+      }
+    },
+
+    "money": {
+      "description": "Add or subtract gold from the pack.",
+      "operation":   "purse += value",
+      "display":     "if value > 0, msg '%d gold pieces'"
+    },
+
+    "floor_ch": {
+      "description": "Return the appropriate floor character for current room.",
+      "ISGONE":  "return PASSAGE ('#')",
+      "default": "show_floor() ? FLOOR ('.') : ' '"
+    },
+
+    "floor_at": {
+      "description": "Return the character at hero's position, accounting for see_floor.",
+      "substitution": "if ch == FLOOR, ch = floor_ch()"
+    },
+
+    "reset_last": {
+      "description": "Reset the last command when the current one is aborted.",
+      "fields": ["last_comm", "last_dir", "last_pick"]
+    },
+
+    "move_msg": {
+      "description": "Print out the message when moving onto an object.",
+      "terse":   "msg 'moved onto <name>'",
+      "verbose": "msg 'you moved onto <name>'"
+    },
+
+    "picky_inven": {
+      "description": "Allow player to inventory a single item.",
+      "empty":       "msg 'you aren't carrying anything'",
+      "single":      "msg 'a) <name>'",
+      "multi":       "prompt for pack character, then msg '<ch>) <name>'"
+    },
+
+    "get_item": {
+      "description": "Pick something out of a pack for a purpose.",
+      "abort_key":   "ESCAPE (27)",
+      "list_key":    "*",
+      "again":       "return last_pick, or msg 'you ran out'"
+    }
+  }
+}

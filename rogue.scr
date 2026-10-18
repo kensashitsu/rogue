@@ -1,0 +1,72 @@
+[
+  {
+    "score": 110778,
+    "name": "i",
+    "cause": "quit",
+    "floor": 15,
+    "gold": 2138
+  },
+  {
+    "score": 1769,
+    "name": "o",
+    "cause": "quit",
+    "floor": 8,
+    "gold": 1564
+  },
+  {
+    "score": 1356,
+    "name": "yh",
+    "cause": "killed by a Centaur",
+    "floor": 8,
+    "gold": 1123
+  },
+  {
+    "score": 1070,
+    "name": "aa",
+    "cause": "starved to death",
+    "floor": 7,
+    "gold": 999
+  },
+  {
+    "score": 612,
+    "name": "aaa",
+    "cause": "killed by a Zombie",
+    "floor": 6,
+    "gold": 580
+  },
+  {
+    "score": 544,
+    "name": "aaa",
+    "cause": "quit",
+    "floor": 3,
+    "gold": 532
+  },
+  {
+    "score": 506,
+    "name": "ppp",
+    "cause": "killed by a Rattlesnake",
+    "floor": 6,
+    "gold": 434
+  },
+  {
+    "score": 480,
+    "name": "aaa",
+    "cause": "starved to death",
+    "floor": 3,
+    "gold": 457
+  },
+  {
+    "score": 465,
+    "name": "a",
+    "cause": "killed by a Invisible Stalker",
+    "floor": 3,
+    "gold": 447
+  },
+  {
+    "score": 458,
+    "name": "aaa",
+    "cause": "starved to death",
+    "floor": 5,
+    "gold": 431
+  }
+]

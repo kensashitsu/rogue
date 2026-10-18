@@ -1,0 +1,1438 @@
+# アイテム定義・効果
+"""
+Rogue 5.4 準拠のアイテム定義・識別システム・使用効果モジュール。
+
+識別システム:
+  ポーション → ランダムな色
+  スクロール → ランダムな呪文タイトル（音節結合）
+  指輪       → ランダムな宝石
+  杖/ワンド  → ランダムな素材
+
+アイテムフラグ（data/items.json object_flags 準拠）:
+  ISCURSED=1, ISKNOW=2, ISMISL=4, ISMANY=8, OBJ_ISFOUND=16, ISPROT=32
+"""
+
+from __future__ import annotations
+
+import random
+import re as _re
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional, NamedTuple
+
+from constants import (
+    # オブジェクトフラグ
+    ISCURSED, ISKNOW, ISMISL, ISMANY, OBJ_ISFOUND, ISPROT,
+    # アイテム種別文字
+    CH_POTION, CH_SCROLL, CH_WEAPON, CH_ARMOR, CH_RING, CH_STICK,
+    CH_FOOD, CH_GOLD, CH_AMULET,
+    # 個数上限
+    MAXPOTIONS, MAXSCROLLS, MAXWEAPONS, MAXARMORS, MAXRINGS, MAXSTICKS,
+    # ポーション種別
+    P_CONFUSE, P_LSD, P_POISON, P_STRENGTH, P_SEEINVIS, P_HEALING,
+    P_MFIND, P_TFIND, P_RAISE, P_XHEAL, P_HASTE, P_RESTORE, P_BLIND, P_LEVIT,
+    # スクロール種別
+    S_CONFUSE, S_MAP, S_HOLD, S_SLEEP, S_ARMOR, S_ID_POTION, S_ID_SCROLL,
+    S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_SCARE, S_FDET, S_TELEP,
+    S_ENCH, S_CREATE, S_REMOVE, S_AGGR, S_PROTECT,
+    # 武器種別
+    MACE, SWORD, BOW, ARROW, DAGGER, TWOSWORD, DART, SHIRAKEN, SPEAR, FLAME,
+    # 防具種別
+    LEATHER, RING_MAIL, STUDDED_LEATHER, SCALE_MAIL, CHAIN_MAIL,
+    SPLINT_MAIL, BANDED_MAIL, PLATE_MAIL,
+    # 指輪種別
+    R_PROTECT, R_ADDSTR, R_SUSTSTR, R_SEARCH, R_SEEINVIS, R_NOP, R_AGGR,
+    R_ADDHIT, R_ADDDAM, R_REGEN, R_DIGEST, R_TELEPORT, R_STEALTH, R_SUSTARM,
+    # 杖/ワンド種別
+    WS_LIGHT, WS_INVIS, WS_ELECT, WS_FIRE, WS_COLD, WS_POLYMORPH,
+    WS_MISSILE, WS_HASTE_M, WS_SLOW_M, WS_DRAIN, WS_NOP, WS_TELAWAY,
+    WS_TELTO, WS_CANCEL,
+    # ゲームパラメータ
+    HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, BOLT_LENGTH,
+    ISHASTE, ISSLOW, ISRUN, ISHUH, ISINVIS, ISMEAN, ISCANC,
+    VS_MAGIC, VS_POISON,
+    LEFT, RIGHT,
+    _TIMING_RAW,
+    ISDARK, AMULETLEVEL,
+    ISFOUND,
+)
+from combat import roll, roll_damage, save_throw
+
+if TYPE_CHECKING:
+    from player  import Player
+    from dungeon import Dungeon
+    from monsters import Monster
+
+
+# ===========================================================================
+# 仕様準拠ローカル定数
+# ===========================================================================
+
+# 武器テーブル追加インデックス（MAXWEAPONS=9 以降の実武器スロット）
+_SHIRAKEN_IDX      = SHIRAKEN  # 7
+_ROCK_IDX          = 9
+_CROSSBOW_IDX      = 10
+_CROSSBOW_BOLT_IDX = 11
+
+# スクロールスロット流用エイリアス
+S_LIGHT    = S_HOLD      # 2: "light" スクロール
+S_GENOCIDE = S_ID_R_OR_S # 9: "genocide" スクロール
+
+
+# ===========================================================================
+# spread() ヘルパー
+# ===========================================================================
+
+def _spread(n: int) -> int:
+    return n + random.randint(0, max(0, n - 1))
+
+
+def _get_spread(name: str, default: int) -> int:
+    raw = _TIMING_RAW.get(name, f"spread({default})")
+    m = _re.match(r'spread\((\d+)\)', raw)
+    return _spread(int(m.group(1))) if m else default
+
+
+# ===========================================================================
+# 出現外観プール（Rogue 5.4 準拠）
+# ===========================================================================
+
+_POTION_COLORS: list[str] = [
+    "amber", "aquamarine", "black", "blue", "brown", "clear", "crimson",
+    "cyan", "ecru", "gold", "green", "grey", "magenta", "orange",
+    "pink", "plaid", "purple", "red", "silver", "tan", "turquoise",
+    "vermilion", "violet", "white", "yellow",
+]
+
+_SCROLL_SYLLABLES: list[str] = [
+    "a", "ab", "ag", "aks", "ala", "an", "app", "arg", "arze", "ash",
+    "bek", "bled", "bot", "bu", "byt", "comp", "con", "cos", "cre",
+    "dalf", "dan", "den", "do", "e", "eep", "el", "eng", "er", "ere",
+    "erk", "esh", "evs", "fa", "fid", "fore", "fri", "fu", "gan",
+    "gar", "glen", "gox", "gunn", "gym", "ge", "hal", "hoy", "hu",
+    "hum", "ig", "ist", "jad", "jan", "jar", "jef", "jo", "jum",
+    "jun", "ka", "kel", "kra", "ku", "la", "lech", "lon", "mep",
+    "mer", "mi", "mog", "mon", "mung", "mur", "nag", "nej",
+    "nelg", "nep", "ner", "nes", "nih", "nin", "o", "od", "ood",
+    "org", "orn", "ox", "oxy", "pay", "ple", "plu", "po", "pot",
+    "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol",
+    "ron", "rox", "ru", "sed", "ser", "shan", "shar", "sher", "shu",
+    "ski", "sna", "sne", "sno", "so", "sol", "sri", "sta", "sun",
+    "ta", "tab", "tem", "ther", "ti", "tox", "trol", "tue", "turs",
+    "u", "ulk", "um", "un", "uni", "ur", "val", "viv", "vly", "vom",
+    "wah", "wed", "werg", "wex", "whon", "wun", "xo", "yot", "yu",
+    "zant", "zap", "zeb", "zer", "zy", "zyme", "zon",
+]
+
+_RING_GEMS: list[str] = [
+    "agate", "alexandrite", "amethyst", "carnelian", "diamond", "emerald",
+    "garnet", "jade", "kryptonite", "lapis lazuli", "moonstone", "obsidian",
+    "onyx", "opal", "pearl", "peridot", "ruby", "sapphire", "tiger eye",
+    "topaz", "turquoise", "zircon",
+]
+
+_WAND_MATERIALS: list[str] = [
+    "avocado wood", "balsa", "bamboo", "birch", "cedar", "cherry",
+    "cinnibar", "curved", "cypress", "dogwood", "driftwood", "ebony",
+    "elm", "eucalyptus", "glass", "iron", "knotty", "larch", "leather",
+    "maple", "marble", "mithril", "muddy", "oak", "ornate", "pine",
+    "poplar", "redwood", "rough", "runed", "rusty", "silver", "slime",
+    "spruce", "steel", "strange", "teak", "titanium", "twisted", "willow",
+]
+
+
+def _make_scroll_title() -> str:
+    """ランダムな呪文タイトルを 2〜4 音節で生成する。"""
+    n = random.randint(2, 4)
+    return " ".join(random.choice(_SCROLL_SYLLABLES) for _ in range(n))
+
+
+# ===========================================================================
+# アイテム情報テーブル（NamedTuple）
+# ===========================================================================
+
+class PotionInfo(NamedTuple):
+    name:  str
+    prob:  int   # 出現確率（合計 100）
+    worth: int   # 基本金貨価値
+
+
+class ScrollInfo(NamedTuple):
+    name:  str
+    prob:  int
+    worth: int
+
+
+class WeaponInfo(NamedTuple):
+    name:    str
+    prob:    int
+    worth:   int
+    damage:  str    # 近接ダメージ文字列
+    hurldmg: str    # 投擲ダメージ文字列
+    flags:   int    # ISMISL / ISMANY
+    launch:  int    # 発射に必要な武器インデックス（-1=不要）
+
+
+class ArmorInfo(NamedTuple):
+    name:  str
+    prob:  int
+    worth: int
+    ac:    int   # 基本アーマークラス
+
+
+class RingInfo(NamedTuple):
+    name:  str
+    prob:  int
+    worth: int
+
+
+class StickInfo(NamedTuple):
+    name:     str
+    prob:     int
+    worth:    int
+    is_staff: bool   # True=スタッフ, False=ワンド
+    charges:  int    # デフォルト充填数
+
+
+# ---------------------------------------------------------------------------
+# ポーション情報テーブル（MAXPOTIONS=14）  合計=100
+# ---------------------------------------------------------------------------
+# assert sum(p.prob for p in POTION_INFO) == 100
+POTION_INFO: list[PotionInfo] = [
+    PotionInfo("confusion",            8,  100),   # 0  P_CONFUSE       ( 8)
+    PotionInfo("paralysis",           10,  100),   # 1  P_LSD           (10)
+    PotionInfo("poison",               8,  100),   # 2  P_POISON        ( 8)
+    PotionInfo("gain strength",       15,  150),   # 3  P_STRENGTH      (15)
+    PotionInfo("see invisible",        2,  100),   # 4  P_SEEINVIS      ( 2)
+    PotionInfo("healing",             15,  130),   # 5  P_HEALING       (15)
+    PotionInfo("monster detection",    6,  130),   # 6  P_MFIND         ( 6)
+    PotionInfo("magic detection",      6,  130),   # 7  P_TFIND         ( 6)
+    PotionInfo("raise level",          2,  250),   # 8  P_RAISE         ( 2)
+    PotionInfo("extra healing",        5,  200),   # 9  P_XHEAL         ( 5)
+    PotionInfo("haste self",           4,  150),   # 10 P_HASTE         ( 4)
+    PotionInfo("restore strength",    14,  130),   # 11 P_RESTORE       (14)
+    PotionInfo("blindness",            4,  100),   # 12 P_BLIND         ( 4)
+    PotionInfo("thirst quenching",     1,  100),   # 13 P_LEVIT         ( 1)
+]
+assert sum(p.prob for p in POTION_INFO) == 100, f"POTION_INFO prob sum={sum(p.prob for p in POTION_INFO)}"
+
+# ---------------------------------------------------------------------------
+# スクロール情報テーブル（MAXSCROLLS=18）  合計=98
+# 仕様指定値合計: 98（IDENTIFY=21, LIGHT=10, ENCHANT_WEAPON=10, ENCHANT_ARMOR=8,
+#   REMOVE_CURSE=8, CONFUSE_MONSTER=8, TELEPORT=7, CREATE_MONSTER=5,
+#   MAGIC_MAPPING=5, SLEEP=5, GOLD_DETECTION=4, SCARE_MONSTER=4,
+#   GENOCIDE=1, AGGRAVATE_MONSTER=1, PROTECT_ARMOR=1  計98）
+# スロット流用: S_HOLD(2)→LIGHT, S_ID_R_OR_S(9)→GENOCIDE
+# ---------------------------------------------------------------------------
+SCROLL_INFO: list[ScrollInfo] = [
+    ScrollInfo("monster confusion",     8,  140),   # 0  S_CONFUSE
+    ScrollInfo("magic mapping",         5,  150),   # 1  S_MAP
+    ScrollInfo("light",                10,  100),   # 2  S_HOLD→S_LIGHT
+    ScrollInfo("sleep",                 5,  100),   # 3  S_SLEEP
+    ScrollInfo("enchant armor",         8,  160),   # 4  S_ARMOR
+    ScrollInfo("identify",              6,  100),   # 5  S_ID_POTION (統合識別 先頭)
+    ScrollInfo("identify",              5,  100),   # 6  S_ID_SCROLL (→正規化)
+    ScrollInfo("identify",              5,  100),   # 7  S_ID_WEAPON (→正規化)
+    ScrollInfo("identify",              5,  100),   # 8  S_ID_ARMOR  (→正規化)
+    ScrollInfo("genocide",              1,  300),   # 9  S_ID_R_OR_S→S_GENOCIDE
+    ScrollInfo("scare monster",         4,  200),   # 10 S_SCARE
+    ScrollInfo("gold detection",        4,  100),   # 11 S_FDET
+    ScrollInfo("teleportation",         7,  165),   # 12 S_TELEP
+    ScrollInfo("enchant weapon",       10,  150),   # 13 S_ENCH
+    ScrollInfo("create monster",        5,  100),   # 14 S_CREATE
+    ScrollInfo("remove curse",          8,  235),   # 15 S_REMOVE
+    ScrollInfo("aggravate monster",     1,  100),   # 16 S_AGGR
+    ScrollInfo("protect armor",          1,  250),   # 17 S_PROTECT
+]
+# IDENTIFY合計=6+5+5+5=21、全体合計=98（仕様記載は100だが内訳合計は98）
+assert sum(s.prob for s in SCROLL_INFO) == 98, f"SCROLL_INFO prob sum={sum(s.prob for s in SCROLL_INFO)}"
+
+# ---------------------------------------------------------------------------
+# 武器情報テーブル（12種、均等出現 prob=1）  合計=12
+# Rogue 5.4 仕様準拠。MAXWEAPONS=9 は FLAME 番兵に使用するため変更不可。
+# 表示上限は len(WEAPON_INFO) で判定する（_weapon_display_name 参照）。
+# ---------------------------------------------------------------------------
+WEAPON_INFO: list[WeaponInfo] = [
+    WeaponInfo("mace",              14,  8,  "2d4", "2d4", 0,                           -1),   # 0 MACE
+    WeaponInfo("long sword",        11, 15,  "3d4", "1d8", 0,                           -1),   # 1 SWORD
+    WeaponInfo("short bow",         12, 15,  "1d1", "1d1", 0,                           -1),   # 2 BOW
+    WeaponInfo("arrow",             12,  1,  "1d1", "1d6", ISMANY|ISMISL,               BOW),  # 3 ARROW
+    WeaponInfo("dagger",             8,  2,  "1d6", "1d6", ISMISL,                      -1),   # 4 DAGGER
+    WeaponInfo("two-handed sword",   8, 30,  "4d4", "2d6", 0,                           -1),   # 5 TWOSWORD
+    WeaponInfo("dart",              10,  1,  "1d1", "1d3", ISMANY|ISMISL,               -1),   # 6 DART
+    WeaponInfo("shuriken",           5,  2,  "1d2", "2d4", ISMANY|ISMISL,               -1),   # 7 SHIRAKEN
+    WeaponInfo("spear",             10,  5,  "2d3", "1d8", ISMISL,                      -1),   # 8 SPEAR
+    WeaponInfo("rock",               1,  1,  "1d2", "1d4", ISMANY|ISMISL,               -1),   # 9 _ROCK_IDX
+    WeaponInfo("crossbow",           1, 15,  "1d1", "1d1", 0,                           -1),   # 10 _CROSSBOW_IDX
+    WeaponInfo("crossbow bolt",      1,  1,  "1d2", "1d10",ISMANY|ISMISL, _CROSSBOW_IDX),     # 11 _CROSSBOW_BOLT_IDX
+]
+assert sum(w.prob for w in WEAPON_INFO) == 93, f"WEAPON_INFO prob sum={sum(w.prob for w in WEAPON_INFO)}"
+
+# ---------------------------------------------------------------------------
+# 防具情報テーブル（MAXARMORS=8）  合計=100
+# ---------------------------------------------------------------------------
+ARMOR_INFO: list[ArmorInfo] = [
+    ArmorInfo("leather armor",     20,  20, 8),   # 0 LEATHER
+    ArmorInfo("ring mail",         15,  25, 7),   # 1 RING_MAIL
+    ArmorInfo("studded leather",   15,  20, 7),   # 2 STUDDED_LEATHER
+    ArmorInfo("scale mail",        13,  30, 6),   # 3 SCALE_MAIL
+    ArmorInfo("chain mail",        12,  75, 5),   # 4 CHAIN_MAIL
+    ArmorInfo("splint mail",       10,  80, 4),   # 5 SPLINT_MAIL
+    ArmorInfo("banded mail",       10,  90, 4),   # 6 BANDED_MAIL
+    ArmorInfo("plate mail",         5, 150, 3),   # 7 PLATE_MAIL
+]
+assert sum(a.prob for a in ARMOR_INFO) == 100, f"ARMOR_INFO prob sum={sum(a.prob for a in ARMOR_INFO)}"
+
+# ---------------------------------------------------------------------------
+# 指輪情報テーブル（MAXRINGS=14）  有効13種合計=100、R_SUSTARM(13)はprob=0
+# ---------------------------------------------------------------------------
+RING_INFO: list[RingInfo] = [
+    RingInfo("protection",          9, 200),   # 0  R_PROTECT
+    RingInfo("add strength",        9, 200),   # 1  R_ADDSTR
+    RingInfo("sustain strength",    5, 250),   # 2  R_SUSTSTR
+    RingInfo("searching",          10, 200),   # 3  R_SEARCH
+    RingInfo("see invisible",      10, 175),   # 4  R_SEEINVIS
+    RingInfo("adornment",           1,  50),   # 5  R_NOP
+    RingInfo("aggravate monster",  11,  50),   # 6  R_AGGR      (必ず呪い)
+    RingInfo("dexterity",           8, 220),   # 7  R_ADDHIT
+    RingInfo("increase damage",     8, 200),   # 8  R_ADDDAM
+    RingInfo("regeneration",        4, 250),   # 9  R_REGEN
+    RingInfo("slow digestion",      9, 200),   # 10 R_DIGEST
+    RingInfo("teleportation",       9,  50),   # 11 R_TELEPORT  (必ず呪い)
+    RingInfo("stealth",             7, 200),   # 12 R_STEALTH
+    RingInfo("maintain armor",      0, 200),   # 13 R_SUSTARM   (仕様未掲載→prob=0)
+]
+assert sum(r.prob for r in RING_INFO) == 100, f"RING_INFO prob sum={sum(r.prob for r in RING_INFO)}"
+
+# ---------------------------------------------------------------------------
+# 杖/ワンド情報テーブル（MAXSTICKS=14）  合計=100
+# charges フィールドは make_stick() で上書きされる（LIGHT=10-19、他=3-7）
+# WS_INVIS(1) スロットを "striking" として流用
+# ---------------------------------------------------------------------------
+STICK_INFO: list[StickInfo] = [
+    StickInfo("light",             12, 250, False, 10),   # 0  WS_LIGHT
+    StickInfo("striking",           9, 220, False,  5),   # 1  WS_INVIS→striking
+    StickInfo("lightning",          3, 330, False,  5),   # 2  WS_ELECT
+    StickInfo("fire",               3, 330, False,  5),   # 3  WS_FIRE
+    StickInfo("cold",               3, 330, False,  5),   # 4  WS_COLD
+    StickInfo("polymorph",         15, 310,  True,  5),   # 5  WS_POLYMORPH
+    StickInfo("magic missile",     10, 170, False,  5),   # 6  WS_MISSILE
+    StickInfo("haste monster",      9, 100,  True,  5),   # 7  WS_HASTE_M
+    StickInfo("slow monster",      11, 320,  True,  5),   # 8  WS_SLOW_M
+    StickInfo("drain life",         9, 300, False,  5),   # 9  WS_DRAIN
+    StickInfo("nothing",            1,  50, False,  5),   # 10 WS_NOP
+    StickInfo("teleport away",      5, 340,  True,  5),   # 11 WS_TELAWAY
+    StickInfo("teleport to",        5, 100,  True,  5),   # 12 WS_TELTO
+    StickInfo("cancellation",       5, 280, False,  5),   # 13 WS_CANCEL
+]
+assert sum(s.prob for s in STICK_INFO) == 100, f"STICK_INFO prob sum={sum(s.prob for s in STICK_INFO)}"
+
+# アイテム種別出現確率（合計 100）  Rogue 5.4 仕様準拠
+_THING_PROBS: list[tuple[str, int]] = [
+    (CH_POTION, 27),
+    (CH_SCROLL, 27),
+    (CH_FOOD,   18),
+    (CH_WEAPON,  9),
+    (CH_ARMOR,   9),
+    (CH_RING,    5),
+    (CH_STICK,   5),
+]
+assert sum(w for _, w in _THING_PROBS) == 100, f"_THING_PROBS sum={sum(w for _, w in _THING_PROBS)}"
+
+
+# ===========================================================================
+# GameKnowledge: ゲームごとの識別状態管理
+# ===========================================================================
+
+class GameKnowledge:
+    """1ゲームを通じたアイテム識別状態と外観対応を管理するクラス。"""
+
+    def __init__(self) -> None:
+        self._p_known:  list[bool] = [False] * MAXPOTIONS
+        self._s_known:  list[bool] = [False] * MAXSCROLLS
+        self._r_known:  list[bool] = [False] * MAXRINGS
+        self._ws_known: list[bool] = [False] * MAXSTICKS
+
+        self._p_guess:  list[str] = [''] * MAXPOTIONS
+        self._s_guess:  list[str] = [''] * MAXSCROLLS
+        self._r_guess:  list[str] = [''] * MAXRINGS
+        self._ws_guess: list[str] = [''] * MAXSTICKS
+
+        self._p_appear:  list[str] = []
+        self._s_appear:  list[str] = []
+        self._r_appear:  list[str] = []
+        self._ws_appear: list[str] = []
+
+        self._randomize()
+
+    def _randomize(self) -> None:
+        self._p_appear  = random.sample(_POTION_COLORS, MAXPOTIONS)
+        self._s_appear  = [_make_scroll_title() for _ in range(MAXSCROLLS)]
+        self._r_appear  = random.sample(_RING_GEMS, MAXRINGS)
+        self._ws_appear = random.sample(_WAND_MATERIALS, MAXSTICKS)
+
+    # ---- 識別 ----
+
+    def is_known(self, o_type: str, o_which: int) -> bool:
+        tbl = self._known_table(o_type)
+        if tbl is None or not (0 <= o_which < len(tbl)):
+            return True
+        return tbl[o_which]
+
+    def know(self, o_type: str, o_which: int) -> None:
+        tbl = self._known_table(o_type)
+        if tbl is not None and 0 <= o_which < len(tbl):
+            tbl[o_which] = True
+
+    def _known_table(self, o_type: str) -> Optional[list[bool]]:
+        if o_type == CH_POTION: return self._p_known
+        if o_type == CH_SCROLL: return self._s_known
+        if o_type == CH_RING:   return self._r_known
+        if o_type == CH_STICK:  return self._ws_known
+        return None
+
+    # ---- 外観 ----
+
+    def get_appearance(self, o_type: str, o_which: int) -> str:
+        if o_type == CH_POTION and 0 <= o_which < MAXPOTIONS:
+            return self._p_appear[o_which]
+        if o_type == CH_SCROLL and 0 <= o_which < MAXSCROLLS:
+            return self._s_appear[o_which]
+        if o_type == CH_RING   and 0 <= o_which < MAXRINGS:
+            return self._r_appear[o_which]
+        if o_type == CH_STICK  and 0 <= o_which < MAXSTICKS:
+            return self._ws_appear[o_which]
+        return "unknown"
+
+    # ---- 推測ラベル ----
+
+    def get_guess(self, o_type: str, o_which: int) -> str:
+        tbl = self._guess_table(o_type)
+        if tbl and 0 <= o_which < len(tbl):
+            return tbl[o_which]
+        return ''
+
+    def set_guess(self, o_type: str, o_which: int, guess: str) -> None:
+        tbl = self._guess_table(o_type)
+        if tbl and 0 <= o_which < len(tbl):
+            tbl[o_which] = guess
+
+    def _guess_table(self, o_type: str) -> Optional[list[str]]:
+        if o_type == CH_POTION: return self._p_guess
+        if o_type == CH_SCROLL: return self._s_guess
+        if o_type == CH_RING:   return self._r_guess
+        if o_type == CH_STICK:  return self._ws_guess
+        return None
+
+    # ---- 表示名 ----
+
+    def display_name(self, item: 'Item') -> str:
+        ot = item.o_type
+        ow = item.o_which
+
+        if ot == CH_POTION:
+            if self.is_known(ot, ow):
+                return f"a potion of {POTION_INFO[ow].name}"
+            app = self.get_appearance(ot, ow)
+            guess = self.get_guess(ot, ow)
+            return (f"a {app} potion called {guess}" if guess
+                    else f"a {app} potion")
+
+        if ot == CH_SCROLL:
+            if self.is_known(ot, ow):
+                return f"a scroll of {SCROLL_INFO[ow].name}"
+            title = self.get_appearance(ot, ow)
+            guess = self.get_guess(ot, ow)
+            return (f"a scroll titled '{title}' called {guess}" if guess
+                    else f"a scroll titled '{title}'")
+
+        if ot == CH_RING:
+            if self.is_known(ot, ow):
+                enc = _enchant_str(item.o_arm, item.o_flags)
+                return f"{enc}a ring of {RING_INFO[ow].name}"
+            app = self.get_appearance(ot, ow)
+            guess = self.get_guess(ot, ow)
+            return (f"a {app} ring called {guess}" if guess
+                    else f"a {app} ring")
+
+        if ot == CH_STICK:
+            info = STICK_INFO[ow]
+            kind = "staff" if info.is_staff else "wand"
+            if self.is_known(ot, ow):
+                return f"a {kind} of {info.name} [{item.o_arm} charges]"
+            app = self.get_appearance(ot, ow)
+            guess = self.get_guess(ot, ow)
+            return (f"a {app} {kind} called {guess}" if guess
+                    else f"a {app} {kind}")
+
+        if ot == CH_WEAPON:
+            return _weapon_display_name(item)
+
+        if ot == CH_ARMOR:
+            return _armor_display_name(item)
+
+        if ot == CH_FOOD:
+            return "a ration of food" if item.o_which == 0 else "some slime-mold"
+
+        if ot == CH_GOLD:
+            return f"{item.o_arm} gold pieces"
+
+        if ot == CH_AMULET:
+            return "the Amulet of Yendor"
+
+        return "unknown item"
+
+
+def _enchant_str(o_arm: int, o_flags: int) -> str:
+    if o_flags & ISCURSED:
+        return "cursed "
+    return ""
+
+
+def _a_or_n(name: str) -> str:
+    return "n" if name and name[0] in "aeiou" else ""
+
+
+def _weapon_display_name(item: 'Item') -> str:
+    if not (0 <= item.o_which < len(WEAPON_INFO)):
+        return "unknown weapon"
+    info = WEAPON_INFO[item.o_which]
+    cnt = item.o_count
+    if not (item.o_flags & ISKNOW):
+        return f"{cnt} {info.name}s" if cnt > 1 else f"a {info.name}"
+    h, d = item.o_hplus, item.o_dplus
+    cursed = "cursed " if (item.o_flags & ISCURSED) else ""
+    bonus = f"{h:+d},{d:+d}"
+    if cnt > 1:
+        return f"{cnt} {cursed}{bonus} {info.name}s"
+    return f"a {cursed}{bonus} {info.name}"
+
+
+def _armor_display_name(item: 'Item') -> str:
+    if item.o_which >= MAXARMORS:
+        return "unknown armor"
+    info = ARMOR_INFO[item.o_which]
+    if not (item.o_flags & ISKNOW):
+        return info.name
+    cursed = "cursed " if (item.o_flags & ISCURSED) else ""
+    prot   = "protected " if (item.o_flags & ISPROT) else ""
+    return f"{cursed}{prot}{info.name} [{item.o_arm}]"
+
+
+# ===========================================================================
+# モジュールレベルシングルトン
+# ===========================================================================
+
+_knowledge: Optional[GameKnowledge] = None
+
+
+def get_knowledge() -> GameKnowledge:
+    global _knowledge
+    if _knowledge is None:
+        _knowledge = GameKnowledge()
+    return _knowledge
+
+
+def init_knowledge() -> GameKnowledge:
+    global _knowledge
+    _knowledge = GameKnowledge()
+    return _knowledge
+
+
+def set_knowledge(k: GameKnowledge) -> None:
+    global _knowledge
+    _knowledge = k
+
+
+# ===========================================================================
+# Item データクラス
+# ===========================================================================
+
+@dataclass
+class Item:
+    """
+    Rogue 5.4 の struct_thing.o_* フィールドに対応するアイテムオブジェクト。
+    o_arm は文脈によって防具AC・充填数・金貨価値として使われる（aliases:
+    o_charges=o_arm, o_goldval=o_arm）。
+    """
+
+    o_type:    str         # アイテム種別文字
+    o_which:   int         # 種別内インデックス
+    o_packch:  str  = ''   # インベントリスロット文字 (a–z)
+    o_damage:  str  = "1x1"
+    o_hurldmg: str  = "1x1"
+    o_count:   int  = 1
+    o_hplus:   int  = 0    # 命中ボーナス
+    o_dplus:   int  = 0    # ダメージボーナス
+    o_arm:     int  = 0    # AC / 充填数 / 金貨価値
+    o_flags:   int  = 0    # ISCURSED / ISKNOW / ISMISL / ISMANY …
+    o_group:   int  = 0    # スタックグループ番号
+    o_label:   str  = ''   # プレイヤーラベル
+    o_launch:  int  = -1   # 発射に必要な武器インデックス（-1=不要）
+
+    # ---- o_arm エイリアス ----
+
+    @property
+    def o_charges(self) -> int:
+        return self.o_arm
+
+    @o_charges.setter
+    def o_charges(self, v: int) -> None:
+        self.o_arm = v
+
+    @property
+    def o_goldval(self) -> int:
+        return self.o_arm
+
+    @o_goldval.setter
+    def o_goldval(self, v: int) -> None:
+        self.o_arm = v
+
+    # ---- 便宜プロパティ ----
+
+    @property
+    def is_cursed(self) -> bool:
+        return bool(self.o_flags & ISCURSED)
+
+    @property
+    def is_known_flag(self) -> bool:
+        return bool(self.o_flags & ISKNOW)
+
+    def display_name(self, knowledge: Optional[GameKnowledge] = None) -> str:
+        k = knowledge or get_knowledge()
+        return k.display_name(self)
+
+    @property
+    def name(self) -> str:
+        """ui.py の show_inventory などから参照される表示名。"""
+        return self.display_name()
+
+    @property
+    def ch(self) -> str:
+        """ui.py の draw_all が期待する種別文字。"""
+        return self.o_type
+
+    def __repr__(self) -> str:
+        return f"<Item {self.o_type!r} which={self.o_which} flags={self.o_flags:#x}>"
+
+
+# ===========================================================================
+# ファクトリ関数
+# ===========================================================================
+
+def _weighted_choice(table: list, prob_attr: str = 'prob') -> int:
+    total = sum(getattr(t, prob_attr) for t in table)
+    r = random.randint(1, total)
+    acc = 0
+    for i, t in enumerate(table):
+        acc += getattr(t, prob_attr)
+        if r <= acc:
+            return i
+    return len(table) - 1
+
+
+def _weighted_choice_tuples(pairs: list[tuple[str, int]]) -> str:
+    total = sum(w for _, w in pairs)
+    r = random.randint(1, total)
+    acc = 0
+    for v, w in pairs:
+        acc += w
+        if r <= acc:
+            return v
+    return pairs[-1][0]
+
+
+def make_potion(which: Optional[int] = None) -> Item:
+    if which is None:
+        which = _weighted_choice(POTION_INFO)
+    return Item(o_type=CH_POTION, o_which=which, o_count=1)
+
+
+def make_scroll(which: Optional[int] = None) -> Item:
+    if which is None:
+        which = _weighted_choice(SCROLL_INFO)
+    # S_ID_R_OR_S スロットは GENOCIDE に流用済みのため正規化リストから除外
+    if which in (S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR):
+        which = S_ID_POTION
+    return Item(o_type=CH_SCROLL, o_which=which, o_count=1)
+
+
+def make_weapon(which: Optional[int] = None, cursed: bool = False) -> Item:
+    if which is None:
+        which = _weighted_choice(WEAPON_INFO)
+    info = WEAPON_INFO[which]
+    hplus = 0
+    flags = info.flags
+    if cursed:
+        hplus = -random.randint(1, 3)
+        flags |= ISCURSED
+    else:
+        # 強化5%・呪い10%・通常85%（Rogue 5.4 準拠）
+        r = random.randint(1, 20)
+        if r == 1:          # 5% 強化
+            hplus = random.randint(1, 3)
+        elif r <= 3:        # 10% 呪い
+            hplus = -random.randint(1, 3)
+            flags |= ISCURSED
+    cnt = random.randint(0, 6) + 4 if (info.flags & ISMANY) else 1
+    return Item(
+        o_type=CH_WEAPON, o_which=which,
+        o_damage=info.damage, o_hurldmg=info.hurldmg,
+        o_count=cnt, o_hplus=hplus, o_dplus=0,
+        o_flags=flags, o_launch=info.launch,
+    )
+
+
+def make_armor(which: Optional[int] = None, cursed: bool = False) -> Item:
+    if which is None:
+        which = _weighted_choice(ARMOR_INFO)
+    info = ARMOR_INFO[which]
+    bonus = 0
+    flags = 0
+    if cursed:
+        bonus = random.randint(1, 3)   # AC 悪化（呪い）
+        flags = ISCURSED
+    else:
+        # 呪い20%・強化8%・通常72%（Rogue 5.4 準拠）
+        r = random.randint(1, 25)
+        if r <= 5:      # 20% 呪い：AC +1〜+3（数値増加＝悪化）
+            bonus = random.randint(1, 3)
+            flags = ISCURSED
+        elif r <= 7:    # 8% 強化：AC -1〜-3（数値減少＝改善）
+            bonus = -random.randint(1, 3)
+    actual_ac = info.ac + bonus
+    return Item(o_type=CH_ARMOR, o_which=which, o_arm=actual_ac, o_flags=flags)
+
+
+def make_ring(which: Optional[int] = None, cursed: bool = False) -> Item:
+    if which is None:
+        which = _weighted_choice(RING_INFO)
+    enchant = 0
+    needs_enchant = which in (R_PROTECT, R_ADDSTR, R_ADDHIT, R_ADDDAM)
+    if needs_enchant:
+        if cursed:
+            enchant = -1
+        else:
+            # 1/3: +1、1/3: +2、1/3: -1（呪い）  Rogue 5.4 準拠
+            r = random.randint(0, 2)
+            enchant = 1 if r == 0 else (2 if r == 1 else -1)
+    flags = 0
+    if cursed or enchant < 0 or which in (R_AGGR, R_TELEPORT):
+        flags |= ISCURSED
+    return Item(o_type=CH_RING, o_which=which, o_arm=enchant, o_flags=flags)
+
+
+def make_stick(which: Optional[int] = None) -> Item:
+    if which is None:
+        which = _weighted_choice(STICK_INFO)
+    # LIGHT のみ 10〜19 チャージ、その他は 3〜7  Rogue 5.4 準拠
+    if which == WS_LIGHT:
+        charges = random.randint(10, 19)
+    else:
+        charges = random.randint(3, 7)
+    return Item(o_type=CH_STICK, o_which=which, o_arm=charges)
+
+
+def make_food(which: int = 0) -> Item:
+    return Item(o_type=CH_FOOD, o_which=which, o_count=1)
+
+
+def make_gold(floor_level: int) -> Item:
+    amount = random.randint(2, 50 + 10 * floor_level) + 2
+    return Item(o_type=CH_GOLD, o_which=0, o_arm=amount)
+
+
+def make_amulet() -> Item:
+    return Item(o_type=CH_AMULET, o_which=0)
+
+
+def make_random_item(floor_level: int) -> Item:
+    """フロアレベルに応じたランダムアイテムを生成する。"""
+    o_type = _weighted_choice_tuples(_THING_PROBS)
+    if o_type == CH_POTION:
+        return make_potion()
+    if o_type == CH_SCROLL:
+        return make_scroll()
+    if o_type == CH_WEAPON:
+        return make_weapon()   # 呪い/強化確率は make_weapon() 内で処理
+    if o_type == CH_ARMOR:
+        return make_armor()    # 呪い/強化確率は make_armor() 内で処理
+    if o_type == CH_RING:
+        return make_ring()     # 呪い/強化確率は make_ring() 内で処理
+    if o_type == CH_STICK:
+        return make_stick()
+    # CH_FOOD
+    return make_food(1 if random.randint(0, 9) == 0 else 0)
+
+
+# ===========================================================================
+# ポーション効果
+# ===========================================================================
+
+def use_potion(
+    item:        Item,
+    player:      'Player',
+    dungeon:     'Dungeon',
+    knowledge:   GameKnowledge,
+    monsters:    list['Monster'],
+    floor_items: list[Item] = None,
+) -> list[str]:
+    """ポーションを使用する。knowledge を更新し、プレイヤーへ効果を適用する。"""
+    which = item.o_which
+    msgs: list[str] = []
+    was_known = knowledge.is_known(CH_POTION, which)
+    knowledge.know(CH_POTION, which)
+    item.o_flags |= ISKNOW
+
+    if which == P_CONFUSE:
+        msgs.append(player.apply_confusion(HUHDURATION))
+
+    elif which == P_LSD:
+        msgs.append(player.apply_paralysis(_get_spread('SLEEPTIME', 5)))
+
+    elif which == P_POISON:
+        if player._has_ring(R_SUSTSTR):
+            msgs.append("You feel momentarily sick.")
+        else:
+            msgs.append("You feel very sick now.")
+            delta = -random.randint(1, 3)
+            msg = player.modify_str(delta)
+            if msg:
+                msgs.append(msg)
+
+    elif which == P_STRENGTH:
+        player.increase_max_str(1)
+        msgs.append(f"You feel stronger! (STR {player.str_max})")
+
+    elif which == P_SEEINVIS:
+        msgs.append(player.apply_see_invisible(SEEDURATION))
+
+    elif which == P_HEALING:
+        was_full = player.hp >= player.max_hp
+        amount = roll(player.level, 4)
+        player.heal(amount)
+        if not was_full:
+            player.max_hp += 1
+        if player.status.blind > 0:
+            msgs.append(player.cure_blindness())
+        msgs.append(f"You begin to feel better. (HP {player.hp}/{player.max_hp})")
+
+    elif which == P_MFIND:
+        alive = [m for m in monsters if m.is_alive]
+        if alive:
+            for m in alive:
+                m.flags |= ISFOUND
+        else:
+            msgs.append("You sense no monsters nearby.")
+
+    elif which == P_TFIND:
+        pass   # game.py で ui.show_all_objects() を呼び出す
+
+    elif which == P_RAISE:
+        from player import _MAX_LEVEL
+        if player.level >= _MAX_LEVEL:
+            hp_gain = roll(1, 10)
+            player.max_hp += hp_gain
+            player.hp = min(player.max_hp, player.hp + hp_gain)
+            msgs.append("You feel a surge of power!")
+        else:
+            needed = _next_level_exp(player)
+            lvl_msgs = player.gain_exp(max(0, needed - player.exp))
+            if lvl_msgs:
+                msgs.extend(lvl_msgs)
+            else:
+                hp_gain = roll(1, 10)
+                player.max_hp += hp_gain
+                player.hp = min(player.max_hp, player.hp + hp_gain)
+                msgs.append("You feel a surge of power!")
+
+    elif which == P_XHEAL:
+        was_full = player.hp >= player.max_hp
+        amount = roll(player.level, 8)
+        player.heal(amount)
+        if not was_full:
+            player.max_hp += 2
+        if player.status.blind > 0:
+            msgs.append(player.cure_blindness())
+        if player.status.confused > 0:
+            msgs.append(player.cure_confusion())
+        msgs.append(f"You feel much better! (HP {player.hp}/{player.max_hp})")
+
+    elif which == P_HASTE:
+        if player.status.is_slowed:
+            player.status.slowed = 0
+            msgs.append("You feel yourself speeding up.")
+        else:
+            turns = HUHDURATION + random.randint(0, HUHDURATION // 2)
+            msgs.append(player.apply_haste(turns))
+
+    elif which == P_RESTORE:
+        msg = player.restore_str()
+        msgs.append(msg if msg else "You feel your strength returning.")
+
+    elif which == P_BLIND:
+        turns = HUHDURATION + _get_spread('HOLDTIME', 2) * 2
+        msgs.append(player.apply_blindness(turns))
+
+    elif which == P_LEVIT:
+        turns = HUHDURATION + random.randint(0, HUHDURATION)
+        msgs.append(player.apply_levitation(turns))
+
+    if not was_known:
+        msgs.append(f"That was a potion of {POTION_INFO[which].name}.")
+
+    return msgs
+
+
+def _next_level_exp(player: 'Player') -> int:
+    """次レベル到達に必要な累積経験値。"""
+    from player import _EXP_TABLE, _MAX_LEVEL
+    if player.level >= _MAX_LEVEL:
+        return player.exp + 1000
+    return _EXP_TABLE[player.level - 1]
+
+
+# ===========================================================================
+# スクロール効果
+# ===========================================================================
+
+def use_scroll(
+    item:        Item,
+    player:      'Player',
+    dungeon:     'Dungeon',
+    knowledge:   GameKnowledge,
+    monsters:    list['Monster'],
+    floor_items: list[Item],
+    target_item: Optional[Item] = None,
+) -> list[str]:
+    """
+    スクロールを読む。
+    target_item: 識別系スクロールでゲームループが選んだアイテム。
+    """
+    which = item.o_which
+    msgs: list[str] = []
+    was_known = knowledge.is_known(CH_SCROLL, which)
+    knowledge.know(CH_SCROLL, which)
+    item.o_flags |= ISKNOW
+
+    if which == S_CONFUSE:
+        # 次に攻撃したモンスターを混乱させるフラグをプレイヤーに付ける
+        player.status.confuse_next_attack = True
+        msgs.append("Your hands begin to glow red.")
+
+    elif which == S_MAP:
+        _reveal_map(dungeon)
+        msgs.append("You feel a sense of presence.")
+
+    elif which == S_HOLD:  # S_LIGHT: 現在の部屋を照らす
+        msgs.extend(_ws_light(dungeon, player))
+
+    elif which == S_SLEEP:
+        turns = _get_spread('SLEEPTIME', 5)
+        player.status.paralyzed = max(player.status.paralyzed, turns)
+        msgs.append("You fall asleep.")
+
+    elif which == S_ARMOR:
+        if player.armor is not None:
+            if player.armor.is_cursed:
+                player.armor.o_flags &= ~ISCURSED
+                msgs.append("Your armor glows silver for a moment.")
+            else:
+                old_ac = player.armor.o_arm
+                player.armor.o_arm -= 1
+                msgs.append(
+                    f"Your armor glows faintly for a moment. (AC {old_ac} -> {player.armor.o_arm})"
+                )
+        else:
+            msgs.append("You feel a magical aura around you.")
+
+    elif which in (S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR):
+        msgs.extend(_do_identify(player, knowledge, target_item))
+
+    elif which == S_SCARE:
+        item.o_flags |= OBJ_ISFOUND
+        room = dungeon.find_room_at(player.y, player.x)
+        for m in monsters:
+            if m.is_alive:
+                m_room = dungeon.find_room_at(m.y, m.x)
+                if m_room is not None and m_room is room:
+                    m.flags |= ISRUN
+        msgs.append("You hear maniacal laughter in the distance.")
+
+    elif which == S_FDET:
+        pass   # game.py で ui.show_all_objects() を呼び出す
+
+    elif which == S_TELEP:
+        old_y, old_x = player.y, player.x
+        pos = dungeon.teleport_player(player.y, player.x)
+        player.y, player.x = pos.y, pos.x
+        msgs.append(f"You feel a wrenching sensation. ({old_y},{old_x}) -> ({player.y},{player.x})")
+
+    elif which == S_ENCH:
+        if player.weapon is not None:
+            if player.weapon.is_cursed:
+                player.weapon.o_flags &= ~ISCURSED
+                msgs.append("Your weapon glows silver for a moment.")
+            else:
+                if random.randint(0, 1) == 0:
+                    old = player.weapon.o_hplus
+                    player.weapon.o_hplus += 1
+                    msgs.append(
+                        f"Your weapon glows blue for a moment. (hit {old:+d} -> {player.weapon.o_hplus:+d})"
+                    )
+                else:
+                    old = player.weapon.o_dplus
+                    player.weapon.o_dplus += 1
+                    msgs.append(
+                        f"Your weapon glows red for a moment. (dmg {old:+d} -> {player.weapon.o_dplus:+d})"
+                    )
+        else:
+            msgs.append("You feel a momentary surge of power.")
+
+    elif which == S_CREATE:
+        _create_monster_near(dungeon, player, monsters)
+        msgs.append("You hear a strange noise.")
+
+    elif which == S_REMOVE:
+        count = 0
+        for eq in _all_equipped(player):
+            if eq is not None and eq.is_cursed:
+                eq.o_flags &= ~ISCURSED
+                count += 1
+        msgs.append("You feel as if somebody is watching over you."
+                    if count else "You feel protected.")
+
+    elif which == S_ID_R_OR_S:  # S_GENOCIDE: ランダム1種族を全滅
+        msgs.extend(_do_genocide(monsters))
+
+    elif which == S_AGGR:
+        for m in monsters:
+            if m.is_alive:
+                m.flags |= ISRUN
+        msgs.append("You hear a high-pitched humming noise.")
+
+    elif which == S_PROTECT:  # 装備中の防具に ISPROT を付与
+        if player.armor is not None:
+            player.armor.o_flags |= ISPROT
+            msgs.append("Your armor glows golden for a moment.")
+        else:
+            msgs.append("You feel protected.")
+
+    if not was_known:
+        msgs.append(f"That was a scroll of {SCROLL_INFO[which].name}.")
+
+    return msgs
+
+
+def _try_remove_curse(item: Item) -> bool:
+    return False   # 呼び出し側で直接フラグを操作するため常に False
+
+
+def _reveal_map(dungeon: 'Dungeon') -> None:
+    from constants import F_SEEN
+    for row in dungeon.map:
+        for tile in row:
+            if tile.ch not in (' ',):
+                tile.flags |= F_SEEN
+
+
+def _do_identify(
+    player:      'Player',
+    knowledge:   GameKnowledge,
+    target_item: Optional[Item],
+) -> list[str]:
+    if target_item is None:
+        return ["You feel an urge to identify something."]
+    target_item.o_flags |= ISKNOW
+    knowledge.know(target_item.o_type, target_item.o_which)
+    return [f"You identify it as {knowledge.display_name(target_item)}."]
+
+
+def _do_genocide(monsters: list['Monster']) -> list[str]:
+    """フロア上のランダムな1モンスター種族を全滅させる（GENOCIDE scroll）。"""
+    alive = [m for m in monsters if m.is_alive]
+    if not alive:
+        return ["The scroll speaks of creatures not present."]
+    target_letter = random.choice(alive).letter
+    count = 0
+    for m in monsters:
+        if m.is_alive and m.letter == target_letter:
+            m.hp = 0
+            count += 1
+    return [f"You hear screams of the dying!  ({count} creature(s) destroyed)"]
+
+
+def _create_monster_near(
+    dungeon:  'Dungeon',
+    player:   'Player',
+    monsters: list['Monster'],
+) -> None:
+    from monsters import spawn_monster, rand_monster_letter
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            ny, nx = player.y + dy, player.x + dx
+            if dungeon.is_walkable(ny, nx):
+                occupied = any(
+                    m.y == ny and m.x == nx and m.is_alive
+                    for m in monsters
+                )
+                if not occupied:
+                    letter = rand_monster_letter(player.floor)
+                    m = spawn_monster(letter, player.floor, ny, nx)
+                    m.flags |= ISRUN
+                    monsters.append(m)
+                    return
+
+
+def _all_equipped(player: 'Player') -> list:
+    items = []
+    if player.weapon is not None:
+        items.append(player.weapon)
+    if player.armor is not None:
+        items.append(player.armor)
+    items.extend(r for r in player.rings if r is not None)
+    return items
+
+
+# ===========================================================================
+# 杖/ワンド効果
+# ===========================================================================
+
+def use_stick(
+    item:      Item,
+    player:    'Player',
+    dungeon:   'Dungeon',
+    knowledge: GameKnowledge,
+    monsters:  list['Monster'],
+    direction: tuple[int, int] = (0, 0),
+) -> list[str]:
+    """杖/ワンドを使用する。充填数 0 の場合は使用不可。"""
+    msgs: list[str] = []
+    if item.o_arm <= 0:
+        msgs.append("The wand is empty.")
+        return msgs
+
+    item.o_arm -= 1
+    which = item.o_which
+    was_known = knowledge.is_known(CH_STICK, which)
+
+    if which == WS_LIGHT:
+        msgs.extend(_ws_light(dungeon, player))
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_INVIS:  # "striking": 直接ダメージ
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            dmg = roll(2, 8)
+            target.hp -= dmg
+            msgs.append(f"The wand strikes the {target.name} for {dmg} damage.")
+            if not target.is_alive:
+                msgs.append(f"The {target.name} is killed!")
+                from combat import calc_exp
+                msgs.extend(player.gain_exp(calc_exp(target)))
+        else:
+            msgs.append("The wand flashes.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_ELECT:
+        msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
+                              "electric", lambda lv: roll(lv, 6)))
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_FIRE:
+        msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
+                              "fire", lambda lv: roll(lv, 6)))
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_COLD:
+        msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
+                              "cold", lambda lv: roll(lv, 6)))
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_POLYMORPH:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            msgs.extend(_ws_polymorph(target, player))
+        else:
+            msgs.append("The staff pulses.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_MISSILE:
+        msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
+                              "magic missile", lambda lv: roll(1, 4) + 1))
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_HASTE_M:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            target.flags |= ISHASTE
+            target.flags &= ~ISSLOW
+            msgs.append(f"The {target.name} starts moving faster!")
+        else:
+            msgs.append("The staff pulses.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_SLOW_M:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            target.flags |= ISSLOW
+            target.flags &= ~ISHASTE
+            msgs.append(f"The {target.name} slows down.")
+        else:
+            msgs.append("The staff pulses.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_DRAIN:
+        if player.hp <= 1:
+            msgs.append("You feel too weak to use it.")
+        else:
+            alive = [m for m in monsters if m.is_alive]
+            if alive:
+                drain = player.hp // 2
+                player.take_damage(drain)
+                for m in alive:
+                    m.hp -= drain
+                    if not m.is_alive:
+                        from combat import calc_exp
+                        msgs.extend(player.gain_exp(calc_exp(m)))
+                msgs.append("You feel your life force draining away!")
+                knowledge.know(CH_STICK, which)
+            else:
+                msgs.append("You feel your life force draining away!")
+
+    elif which == WS_NOP:
+        msgs.append("Nothing happens.")
+
+    elif which == WS_TELAWAY:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            pos = dungeon.teleport_monster(target.y, target.x, monsters)
+            if pos:
+                target.y, target.x = pos.y, pos.x
+            msgs.append(f"The {target.name} disappears!")
+        else:
+            msgs.append("The staff pulses.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_TELTO:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            placed = False
+            for dy2 in (-1, 0, 1):
+                for dx2 in (-1, 0, 1):
+                    if dy2 == 0 and dx2 == 0:
+                        continue
+                    ny, nx = player.y + dy2, player.x + dx2
+                    if dungeon.is_walkable(ny, nx) and not any(
+                        m.y == ny and m.x == nx and m.is_alive
+                        for m in monsters
+                    ):
+                        target.y, target.x = ny, nx
+                        target.flags |= ISRUN
+                        msgs.append(f"The {target.name} appears before you!")
+                        placed = True
+                        break
+                if placed:
+                    break
+        else:
+            msgs.append("The staff pulses.")
+        knowledge.know(CH_STICK, which)
+
+    elif which == WS_CANCEL:
+        target = _find_target(dungeon, monsters, player, direction)
+        if target:
+            target.flags |= ISCANC
+            target.flags &= ~(ISHASTE | ISINVIS)
+            msgs.append(f"The {target.name} looks cancelled.")
+        else:
+            msgs.append("The wand flashes.")
+        knowledge.know(CH_STICK, which)
+
+    if not was_known and knowledge.is_known(CH_STICK, which):
+        info = STICK_INFO[which]
+        kind = "staff" if info.is_staff else "wand"
+        msgs.append(f"That was a {kind} of {info.name}.")
+
+    return msgs
+
+
+def _ws_light(dungeon: 'Dungeon', player: 'Player') -> list[str]:
+    from constants import F_SEEN
+    room = dungeon.find_room_at(player.y, player.x)
+    if room is not None:
+        room.flags &= ~ISDARK
+        for r in range(room.top, room.top + room.height):
+            for c in range(room.left, room.left + room.width):
+                dungeon.map[r][c].flags |= F_SEEN
+        return ["The room is lit up!"]
+    return ["Your wand glows brightly for a moment."]
+
+
+def _ws_bolt(
+    dungeon:   'Dungeon',
+    monsters:  list['Monster'],
+    player:    'Player',
+    direction: tuple[int, int],
+    bolt_name: str,
+    dmg_func,
+) -> list[str]:
+    """
+    ボルト攻撃。壁で1回反射し逆方向に進む。プレイヤーにも命中する。
+    Rogue 5.4 準拠。
+    """
+    msgs: list[str] = []
+    dy, dx = direction
+    if dy == 0 and dx == 0:
+        msgs.append(f"The {bolt_name} bolt discharges harmlessly.")
+        return msgs
+
+    rows = len(dungeon.map)
+    cols = len(dungeon.map[0]) if rows else 0
+
+    dmg = dmg_func(player.level)
+    bounced = False
+    y, x = player.y + dy, player.x + dx
+
+    for _ in range(BOLT_LENGTH * 2):
+        if not (0 <= y < rows and 0 <= x < cols):
+            msgs.append(f"The {bolt_name} bolt vanishes.")
+            return msgs
+
+        if not dungeon.is_walkable(y, x):
+            if bounced:
+                msgs.append(f"The {bolt_name} bolt vanishes.")
+                return msgs
+            bounced = True
+            dy, dx = -dy, -dx
+            msgs.append(f"The {bolt_name} bolt bounces off the wall!")
+            y += dy
+            x += dx
+            continue
+
+        # モンスターに命中
+        for m in monsters:
+            if m.is_alive and m.y == y and m.x == x:
+                m.hp -= dmg
+                msgs.append(f"The {bolt_name} bolt hits the {m.name} for {dmg} damage.")
+                if not m.is_alive:
+                    msgs.append(f"The {m.name} is killed!")
+                    from combat import calc_exp
+                    msgs.extend(player.gain_exp(calc_exp(m)))
+                return msgs
+
+        # プレイヤーに命中（反射後）
+        if bounced and y == player.y and x == player.x:
+            player.take_damage(dmg)
+            msgs.append(f"The {bolt_name} bolt hits you for {dmg} damage!")
+            return msgs
+
+        y += dy
+        x += dx
+
+    msgs.append(f"The {bolt_name} bolt vanishes.")
+    return msgs
+
+
+def _find_target(
+    dungeon:   'Dungeon',
+    monsters:  list['Monster'],
+    player:    'Player',
+    direction: tuple[int, int],
+) -> Optional['Monster']:
+    dy, dx = direction
+    if dy == 0 and dx == 0:
+        return None
+    rows = len(dungeon.map)
+    cols = len(dungeon.map[0]) if rows else 0
+    y, x = player.y + dy, player.x + dx
+    for _ in range(BOLT_LENGTH):
+        if not (0 <= y < rows and 0 <= x < cols):
+            break
+        if not dungeon.is_walkable(y, x):
+            break
+        for m in monsters:
+            if m.is_alive and m.y == y and m.x == x:
+                return m
+        y += dy
+        x += dx
+    return None
+
+
+def _ws_polymorph(monster: 'Monster', player: 'Player') -> list[str]:
+    from monsters import spawn_monster, rand_monster_letter
+    old_name = monster.name
+    new_letter = rand_monster_letter(player.floor)
+    new_m = spawn_monster(new_letter, player.floor, monster.y, monster.x)
+    monster.letter     = new_m.letter
+    monster.hp         = new_m.hp
+    monster.max_hp     = new_m.max_hp
+    monster.level      = new_m.level
+    monster.ac         = new_m.ac
+    monster.exp        = new_m.exp
+    monster.flags      = new_m.flags | ISRUN
+    monster.disguise_ch = new_m.disguise_ch
+    return [f"The {old_name} turns into a {monster.name}!"]
+
+
+# ===========================================================================
+# 指輪装備/取り外しヘルパー
+# ===========================================================================
+
+def put_on_ring(
+    item:      Item,
+    player:    'Player',
+    slot:      int,
+    knowledge: GameKnowledge,
+) -> list[str]:
+    msgs: list[str] = []
+    old = player.put_on_ring(item, slot)
+    if old is not None:
+        msgs.append(f"You remove {knowledge.display_name(old)}.")
+    item.o_flags |= ISKNOW
+    knowledge.know(item.o_type, item.o_which)
+    msgs.append(f"You put on {knowledge.display_name(item)}.")
+    return msgs
+
+
+def remove_ring(
+    slot:      int,
+    player:    'Player',
+    knowledge: GameKnowledge,
+) -> list[str]:
+    ring = player.rings[slot]
+    if ring is None:
+        return ["You aren't wearing a ring there."]
+    if ring.is_cursed:
+        return ["You can't remove the cursed ring!"]
+    player.remove_ring(slot)
+    return [f"You remove {knowledge.display_name(ring)}."]
+
+
+# ===========================================================================
+# 汎用ディスパッチャ
+# ===========================================================================
+
+def use_item(
+    item:        Item,
+    player:      'Player',
+    dungeon:     'Dungeon',
+    knowledge:   GameKnowledge,
+    monsters:    list['Monster'],
+    floor_items: list[Item],
+    direction:   tuple[int, int] = (0, 0),
+    target_item: Optional[Item] = None,
+) -> list[str]:
+    """アイテム種別に応じた使用効果を呼び出す汎用ディスパッチャ。"""
+    ot = item.o_type
+    if ot == CH_POTION:
+        return use_potion(item, player, dungeon, knowledge, monsters)
+    if ot == CH_SCROLL:
+        return use_scroll(item, player, dungeon, knowledge,
+                          monsters, floor_items, target_item)
+    if ot == CH_STICK:
+        return use_stick(item, player, dungeon, knowledge, monsters, direction)
+    if ot == CH_FOOD:
+        if player.food >= STOMACHSIZE:
+            return ["You're too full to eat more."]
+        return player.eat(random.randint(1100, 1500))
+    return ["You can't use that."]
+

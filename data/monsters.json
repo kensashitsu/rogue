@@ -1,0 +1,179 @@
+{
+  "constants": {
+    "AMULETLEVEL": 26,
+    "MAXTHINGS":   9,
+    "BORE_LEVEL":  50,
+    "BOLT_LENGTH": 6,
+    "LAMPDIST":    3,
+    "HUHDURATION": 20,
+    "WANDERTIME":  "spread(70)"
+  },
+
+  "lvl_mons": [
+    "K", "E", "B", "S", "H", "I", "R", "O", "Z", "L", "C", "Q", "A",
+    "N", "Y", "F", "T", "W", "P", "X", "U", "M", "V", "G", "J", "D"
+  ],
+
+  "wand_mons": [
+    "K", "E", "B", "S", "H", null, "R", "O", "Z", null, "C", "Q", "A",
+    null, "Y", null, "T", "W", "P", null, "U", "M", "V", "G", "J", null
+  ],
+
+  "struct_stats": {
+    "description": "Structure describing a fighting being",
+    "fields": {
+      "s_str":  "str_t  (Strength)",
+      "s_exp":  "int    (Experience)",
+      "s_lvl":  "int    (level of mastery)",
+      "s_arm":  "int    (Armor class)",
+      "s_hpt":  "int    (Hit points)",
+      "s_dmg":  "char[13] (String describing damage done)",
+      "s_maxhp":"int    (Max hit points)"
+    }
+  },
+
+  "struct_monster": {
+    "description": "Array containing information on all the various types of monsters",
+    "fields": {
+      "m_name":  "char*  (What to call the monster)",
+      "m_carry": "int    (Probability of carrying something)",
+      "m_flags": "short  (creature_flags bitmask)",
+      "m_stats": "struct stats (Initial stats)"
+    }
+  },
+
+  "creature_flags": {
+    "CANHUH":   { "value":     1, "description": "creature can confuse" },
+    "CANSEE":   { "value":     2, "description": "creature can see invisible creatures" },
+    "ISBLIND":  { "value":     4, "description": "creature is blind" },
+    "ISCANC":   { "value":     8, "description": "creature has special qualities cancelled" },
+    "ISLEVIT":  { "value":     8, "description": "hero is levitating" },
+    "ISFOUND":  { "value":    16, "description": "creature has been seen (used for objects too)" },
+    "ISGREED":  { "value":    32, "description": "creature runs to protect gold" },
+    "ISHASTE":  { "value":    64, "description": "creature has been hastened" },
+    "ISTARGET": { "value":   128, "description": "creature is the target of an 'f' command" },
+    "ISHELD":   { "value":   256, "description": "creature has been held" },
+    "ISHUH":    { "value":   512, "description": "creature is confused" },
+    "ISINVIS":  { "value":  1024, "description": "creature is invisible" },
+    "ISMEAN":   { "value":  2048, "description": "creature can wake when player enters room" },
+    "ISHALU":   { "value":  2048, "description": "hero is on acid trip" },
+    "ISREGEN":  { "value":  4096, "description": "creature can regenerate" },
+    "ISRUN":    { "value":  8192, "description": "creature is running at the player" },
+    "SEEMONST": { "value": 16384, "description": "hero can detect unseen monsters" },
+    "ISFLY":    { "value": 16384, "description": "creature can fly" },
+    "ISSLOW":   { "value": 32768, "description": "creature has been slowed" }
+  },
+
+  "save_types": {
+    "VS_POISON":       0,
+    "VS_PARALYZATION": 0,
+    "VS_DEATH":        0,
+    "VS_BREATH":       2,
+    "VS_MAGIC":        3
+  },
+
+  "trap_types": {
+    "T_DOOR":  0,
+    "T_ARROW": 1,
+    "T_SLEEP": 2,
+    "T_BEAR":  3,
+    "T_TELEP": 4,
+    "T_DART":  5,
+    "T_RUST":  6,
+    "T_MYST":  7,
+    "NTRAPS":  8
+  },
+
+  "timing_constants": {
+    "BEARTIME":    "spread(3)",
+    "SLEEPTIME":   "spread(5)",
+    "HOLDTIME":    "spread(2)",
+    "WANDERTIME":  "spread(70)",
+    "BEFORE":      "spread(1)",
+    "AFTER":       "spread(2)",
+    "HEALTIME":    30,
+    "HUHDURATION": 20,
+    "SEEDURATION": 850,
+    "STARVETIME":  850
+  },
+
+  "functions": {
+    "randmonster": {
+      "description": "Pick a monster to show up. The lower the level, the meaner the monster.",
+      "params": { "wander": "bool" },
+      "logic": {
+        "d_formula":    "level + (rnd(10) - 6)",
+        "d_clamp_low":  "rnd(5)        (when d < 0)",
+        "d_clamp_high": "rnd(5) + 21   (when d > 25)",
+        "skip_null":    true
+      }
+    },
+
+    "new_monster": {
+      "description": "Pick a new monster and add it to the list.",
+      "lev_add":         "max(0, level - AMULETLEVEL)",
+      "s_lvl_formula":   "mp->m_stats.s_lvl + lev_add",
+      "s_maxhp_formula": "roll(tp->t_stats.s_lvl, 8)",
+      "s_arm_formula":   "mp->m_stats.s_arm - lev_add",
+      "s_exp_formula":   "mp->m_stats.s_exp + lev_add * 10 + exp_add(tp)",
+      "haste_threshold": 29,
+      "special": {
+        "X_disguise": "rnd_thing()"
+      }
+    },
+
+    "exp_add": {
+      "description": "Experience to add for this monster's level/hit points.",
+      "rules": [
+        { "condition": "s_lvl == 1", "mod_formula": "s_maxhp / 8" },
+        { "condition": "s_lvl > 1",  "mod_formula": "s_maxhp / 6" },
+        { "condition": "s_lvl > 9",  "multiplier": 20 },
+        { "condition": "s_lvl > 6",  "multiplier": 4 }
+      ]
+    },
+
+    "save_throw": {
+      "description": "See if a creature saves against something.",
+      "need_formula": "14 + which - (s_lvl / 2)",
+      "roll":         "roll(1, 20) >= need"
+    },
+
+    "save": {
+      "description": "See if player saves against various nasty things.",
+      "VS_MAGIC_protection": {
+        "LEFT":  "which -= cur_ring[LEFT]->o_arm  (if ISRING(LEFT,  R_PROTECT))",
+        "RIGHT": "which -= cur_ring[RIGHT]->o_arm (if ISRING(RIGHT, R_PROTECT))"
+      }
+    },
+
+    "wake_monster": {
+      "description": "What to do when the hero steps next to a monster.",
+      "mean_chase": {
+        "condition": "!ISRUN && rnd(3)!=0 && ISMEAN && !ISHELD && !R_STEALTH && !ISLEVIT",
+        "action":    "t_dest = &hero, set ISRUN"
+      },
+      "medusa_gaze": {
+        "monster":    "M",
+        "conditions": ["!ISBLIND", "!ISHALU", "!ISFOUND", "!ISCANC", "ISRUN"],
+        "room_check": "!ISDARK || dist(y,x,hero.y,hero.x) < LAMPDIST",
+        "save":       "VS_MAGIC",
+        "on_fail":    "fuse(unconfuse, HUHDURATION), set ISHUH"
+      },
+      "greedy_gold": {
+        "condition": "ISGREED && !ISRUN",
+        "action":    "set ISRUN, t_dest = &r_gold (if r_goldval) else &hero"
+      }
+    },
+
+    "give_pack": {
+      "description": "Give a pack to a monster if it deserves one.",
+      "condition":   "level >= max_level && rnd(100) < m_carry"
+    },
+
+    "wanderer": {
+      "description": "Create a new wandering monster and aim it at the player.",
+      "placement":   "find_floor outside proom",
+      "display":     "standout if SEEMONST (random letter if ISHALU)"
+    }
+  }
+}

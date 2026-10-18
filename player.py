@@ -1,0 +1,707 @@
+# プレイヤーステータス・操作
+"""
+Player クラスと StatusEffects クラスを定義する。
+数値定数はすべて constants.py（JSON 由来）から取得する。
+レベルアップ経験値テーブルは JSON に存在しないため player.py 内で定義する。
+"""
+
+from __future__ import annotations
+
+import random
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from constants import (
+    HUNGERTIME, MORETIME, STOMACHSIZE, MAXPACK,
+    LEFT, RIGHT,
+    ISHASTE, ISSLOW, ISBLIND, ISHUH, ISINVIS, ISLEVIT, ISREGEN, ISFOUND,
+    R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
+    R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
+)
+
+# ---------------------------------------------------------------------------
+# プレイヤー開始ステータス（Rogue 5.4 準拠）
+# ---------------------------------------------------------------------------
+_START_HP   = 12
+_START_STR  = 16
+_BASE_AC    = 10    # 素手のAC（低いほど強い）
+_MAX_LEVEL  = 20    # プレイヤー最大レベル
+
+# ---------------------------------------------------------------------------
+# Rogue 5.4 STR ボーナステーブル（str-1 をインデックスとして STR 1〜26 に対応）
+# str_plus: 命中ボーナス  add_dam: ダメージボーナス
+# ---------------------------------------------------------------------------
+_STR_PLUS = [-3,-2,-2,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 5, 6, 7, 7, 8, 8, 9,10]
+_ADD_DAM  = [-3,-2,-2,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 6, 7, 7, 8, 9,10]
+
+def _str_hit_bonus(s: int) -> int:
+    return _STR_PLUS[max(0, min(s - 1, len(_STR_PLUS) - 1))]
+
+def _str_dam_bonus(s: int) -> int:
+    return _ADD_DAM[max(0, min(s - 1, len(_ADD_DAM) - 1))]
+
+# 各レベルに到達するために必要な累積経験値
+# index 0 = Lv2到達に必要、index 18 = Lv20到達に必要
+_EXP_TABLE: list[int] = [
+    10, 20, 40, 80, 160, 320, 640, 1280,
+    2560, 5120, 10240, 20480, 40960, 81920,
+    163840, 327680, 655360, 1310720, 2621440,
+]
+
+# 空腹閾値（Rogue 5.4仕様）
+_HUNGRY_THRESHOLD = 300   # "Hungry" 表示
+_WEAK_THRESHOLD   = 150   # "Weak"   表示
+
+
+# ===========================================================================
+# StatusEffects
+# ===========================================================================
+
+@dataclass
+class StatusEffects:
+    """
+    プレイヤーの状態異常を管理するクラス。
+    int フィールド = 残りターン数（0 = 無効）
+    bool フィールド = 永続的な効果
+    """
+
+    confused:      int  = 0    # 混乱
+    blind:         int  = 0    # 盲目
+    paralyzed:     int  = 0    # 麻痺（Ice Monster 等）
+    hallucinating: int  = 0    # 幻覚
+    poisoned:      int  = 0    # 毒（STRが1/ターン減少）
+    hasted:        int  = 0    # 加速
+    slowed:        int  = 0    # 減速
+    levitating:    int  = 0    # 浮遊
+    see_invis_turns: int = 0   # 不可視看破ポーション残りターン（0=失効）
+
+    invisible:            bool = False   # 不可視（アイテム効果）
+    see_invisible:        bool = False   # 不可視看破（指輪による永続）
+    regenerating:         bool = False   # 自動再生（指輪効果）
+    slow_digest:          bool = False   # 消化遅延（指輪効果）
+    confuse_next_attack:  bool = False   # 次攻撃でモンスターを混乱（S_CONFUSE）
+    held:                 bool = False   # Venus Flytrap に拘束中（移動不可・攻撃は可）
+
+    def __setstate__(self, state: dict) -> None:
+        """古いセーブファイルに存在しないフィールドをデフォルト値で補完する。"""
+        state.setdefault('held', False)
+        self.__dict__.update(state)
+
+    # ---- タイマー処理 ----
+
+    def tick(self) -> list[str]:
+        """
+        全タイマーを 1 減少させる。
+        期限切れになった状態異常のメッセージリストを返す。
+        """
+        msgs: list[str] = []
+        _timed = [
+            ("confused",        "You feel less confused now."),
+            ("blind",           "The veil of darkness lifts."),
+            ("paralyzed",       "You can move again."),
+            ("hallucinating",   "Everything seems SO boring now."),
+            ("poisoned",        "The sickness fades."),
+            ("hasted",          "You feel yourself slowing down."),
+            ("slowed",          "You feel yourself speeding up."),
+            ("levitating",      "You float gently to the ground."),
+            ("see_invis_turns", "Your eyes stop tingling."),
+        ]
+        for attr, msg in _timed:
+            v = getattr(self, attr)
+            if v > 0:
+                v -= 1
+                setattr(self, attr, v)
+                if v == 0:
+                    msgs.append(msg)
+        return msgs
+
+    # ---- 判定プロパティ ----
+
+    @property
+    def is_mobile(self) -> bool:
+        return self.paralyzed == 0 and not self.held
+
+    @property
+    def can_see(self) -> bool:
+        return self.blind == 0
+
+    @property
+    def is_confused(self) -> bool:
+        return self.confused > 0
+
+    @property
+    def is_hasted(self) -> bool:
+        return self.hasted > 0
+
+    @property
+    def is_slowed(self) -> bool:
+        return self.slowed > 0
+
+    @property
+    def is_levitating(self) -> bool:
+        return self.levitating > 0
+
+    @property
+    def can_see_invisible(self) -> bool:
+        """永続（指輪）または時限（ポーション）のいずれかで不可視看破中なら True。"""
+        return self.see_invisible or self.see_invis_turns > 0
+
+    # ---- 表示 ----
+
+    def status_str(self) -> str:
+        """アクティブな状態異常の略称を空白区切りで返す。"""
+        parts: list[str] = []
+        if self.held:          parts.append("Held")
+        if self.confused:      parts.append("Conf")
+        if self.blind:         parts.append("Blind")
+        if self.paralyzed:     parts.append("Para")
+        if self.hallucinating: parts.append("Halu")
+        if self.poisoned:      parts.append("Pois")
+        if self.hasted:        parts.append("Haste")
+        if self.slowed:        parts.append("Slow")
+        if self.levitating:    parts.append("Lev")
+        if self.invisible:     parts.append("Inv")
+        return " ".join(parts)
+
+
+# ===========================================================================
+# Player
+# ===========================================================================
+
+@dataclass
+class Player:
+    """
+    プレイヤーの全ステータス・インベントリ・装備を管理する。
+
+    座標は dungeon.Coord と互換の (y, x) 形式。
+    アイテムオブジェクトは items.py 実装後に型が確定するため Any 型を使用する。
+    """
+
+    # ---- 座標 ---------------------------------------------------------------
+    y: int = 0
+    x: int = 0
+
+    # ---- 基本ステータス -------------------------------------------------------
+    hp:      int = _START_HP
+    max_hp:  int = _START_HP
+    str_cur: int = _START_STR
+    str_max: int = _START_STR
+    ac:      int = _BASE_AC    # 素のAC（防具・指輪で変動）
+
+    # ---- 経験値・レベル -------------------------------------------------------
+    exp:   int = 0
+    level: int = 1
+
+    # ---- リソース ------------------------------------------------------------
+    gold: int = 0
+    food: int = HUNGERTIME    # 食料カウンター（STOMACHSIZE が上限）
+
+    # ---- 状態異常 ------------------------------------------------------------
+    status: StatusEffects = field(default_factory=StatusEffects)
+
+    # ---- 装備 ----------------------------------------------------------------
+    weapon: Optional[Any] = None
+    armor:  Optional[Any] = None
+    rings:  list[Optional[Any]] = field(
+        default_factory=lambda: [None, None]   # [LEFT, RIGHT]
+    )
+
+    # ---- インベントリ a–z（最大 MAXPACK=23 スロット使用可） ------------------
+    pack: dict[str, Any] = field(default_factory=dict)
+    pack_used: list[bool] = field(
+        default_factory=lambda: [False] * 26
+    )
+
+    # ---- ゲーム進行 ----------------------------------------------------------
+    floor:      int  = 1
+    has_amulet: bool = False
+    godmode:    bool = False
+
+    # ---- 内部 ----------------------------------------------------------------
+    _last_msg:   str = field(default="", repr=False)
+    _heal_timer: int = field(default=0,  repr=False)
+
+    # =========================================================================
+    # 派生プロパティ
+    # =========================================================================
+
+    @property
+    def is_alive(self) -> bool:
+        return self.hp > 0
+
+    @property
+    def hunger_state(self) -> str:
+        """現在の空腹状態を文字列で返す。"""
+        if self.food <= 0:
+            return "Starving"
+        if self.food <= _WEAK_THRESHOLD:
+            return "Weak"
+        if self.food <= _HUNGRY_THRESHOLD:
+            return "Hungry"
+        return ""
+
+    @property
+    def effective_str(self) -> int:
+        """装備込みの実効 STR。"""
+        bonus = 0
+        for ring in self.rings:
+            if ring is not None and getattr(ring, 'o_which', -1) == R_ADDSTR:
+                bonus += getattr(ring, 'o_arm', 0)
+        return max(3, self.str_cur + bonus)
+
+    @property
+    def effective_ac(self) -> int:
+        """装備込みの実効 AC（低いほど良い）。"""
+        base = _BASE_AC
+        if self.armor is not None:
+            base = getattr(self.armor, 'o_arm', base)
+        for ring in self.rings:
+            if ring is not None and getattr(ring, 'o_which', -1) == R_PROTECT:
+                base -= getattr(ring, 'o_arm', 0)
+        return base
+
+    @property
+    def attack_bonus(self) -> int:
+        """攻撃ロールへのボーナス（R_ADDSTR 込みの実効 STR・武器・指輪）。"""
+        bonus = _str_hit_bonus(self.effective_str)
+        if self.weapon is not None:
+            bonus += getattr(self.weapon, 'o_hplus', 0)
+        for ring in self.rings:
+            if ring is not None and getattr(ring, 'o_which', -1) == R_ADDHIT:
+                bonus += getattr(ring, 'o_arm', 0)
+        return bonus
+
+    @property
+    def damage_bonus(self) -> int:
+        """ダメージロールへのボーナス（R_ADDSTR 込みの実効 STR・武器・指輪）。"""
+        bonus = _str_dam_bonus(self.effective_str)
+        if self.weapon is not None:
+            bonus += getattr(self.weapon, 'o_dplus', 0)
+        for ring in self.rings:
+            if ring is not None and getattr(ring, 'o_which', -1) == R_ADDDAM:
+                bonus += getattr(ring, 'o_arm', 0)
+        return bonus
+
+    @property
+    def protect_bonus(self) -> int:
+        """セービングスローへのボーナス（R_PROTECT 指輪の o_arm 合計）。"""
+        return sum(
+            getattr(r, 'o_arm', 0)
+            for r in self.rings if r is not None
+            and getattr(r, 'o_which', -1) == R_PROTECT
+        )
+
+    @property
+    def pack_count(self) -> int:
+        return sum(self.pack_used)
+
+    @property
+    def pack_full(self) -> bool:
+        return self.pack_count >= MAXPACK
+
+    # =========================================================================
+    # ターン処理
+    # =========================================================================
+
+    def tick(self) -> list[str]:
+        """
+        1ターン経過処理。食料消費・再生・状態異常タイマーを処理し、
+        発生したメッセージのリストを返す。
+        """
+        msgs: list[str] = []
+
+        # 食料消費: 基本1/ターン + 指輪装備ごとに+1（Rogue 5.4 準拠）
+        # 加速中は基本値を2倍、R_DIGEST は消費を-1 相殺
+        rate = 2 if self.status.is_hasted else 1
+        rate += sum(1 for r in self.rings if r is not None)
+        if self.status.slow_digest:
+            rate -= 1
+        self.food -= max(0, rate)
+        msgs.extend(self._tick_hunger())
+
+        # 毒ダメージ: STR を 1 減少（R_SUSTSTR 装備中またはgodmode時は守る）
+        if self.status.poisoned > 0 and self.str_cur > 3:
+            if not self.godmode and not self._has_ring(R_SUSTSTR):
+                self.str_cur -= 1
+                msgs.append("The poison saps your strength.")
+
+        # HP 自然再生（Rogue 5.4: HEALTIME=30、レベルごとに間隔短縮）
+        # 再生リング装備時は毎ターン追加で+1
+        _HEALTIME = 30
+        if self.hp < self.max_hp:
+            self._heal_timer += 1
+            interval = max(1, _HEALTIME - self.level)
+            if self._heal_timer >= interval:
+                self.hp = min(self.max_hp, self.hp + 1)
+                self._heal_timer = 0
+        else:
+            self._heal_timer = 0
+        if self.status.regenerating and self.hp < self.max_hp:
+            self.hp = min(self.max_hp, self.hp + 1)
+
+        # 状態異常タイマー（毒が切れても STR は自動回復しない: Rogue 5.4 準拠）
+        msgs.extend(self.status.tick())
+
+        return msgs
+
+    def _tick_hunger(self) -> list[str]:
+        """食料カウンターの閾値通過時メッセージを返す。飢餓ダメージも与える。"""
+        msgs: list[str] = []
+        if self.food <= 0:
+            msgs.append("You are starving!")
+            if not self.godmode:
+                self.hp -= 1
+                if self.hp <= 0:
+                    self.hp = 0
+        elif self.food == _WEAK_THRESHOLD:
+            msgs.append("You are feeling weak.")
+        elif self.food == _HUNGRY_THRESHOLD:
+            msgs.append("You are starting to get hungry.")
+        return msgs
+
+    # =========================================================================
+    # ダメージ・回復
+    # =========================================================================
+
+    def take_damage(self, amount: int) -> bool:
+        """ダメージを受ける。返り値: True=生存 / False=死亡。"""
+        if self.godmode:
+            return True
+        self.hp = max(0, self.hp - amount)
+        return self.is_alive
+
+    def heal(self, amount: int) -> None:
+        """HP を回復する（max_hp を超えない）。"""
+        self.hp = min(self.max_hp, self.hp + amount)
+
+    def raise_max_hp(self, amount: int) -> None:
+        """最大 HP を恒久的に増加させ、現在 HP も同量増やす。"""
+        self.max_hp += amount
+        self.hp      = min(self.max_hp, self.hp + amount)
+
+    def modify_str(self, delta: int) -> str:
+        """STR を変化させ、説明メッセージを返す。"""
+        old = self.str_cur
+        self.str_cur = max(3, min(self.str_max, self.str_cur + delta))
+        if self.str_cur < old:
+            return f"You feel weaker. (STR {self.str_cur})"
+        if self.str_cur > old:
+            return f"You feel stronger! (STR {self.str_cur})"
+        return ""
+
+    def restore_str(self) -> str:
+        """STR を最大値まで回復する。"""
+        if self.str_cur < self.str_max:
+            self.str_cur = self.str_max
+            return "You feel your strength returning."
+        return ""
+
+    def increase_max_str(self, amount: int = 1) -> None:
+        self.str_max = min(31, self.str_max + amount)
+        self.str_cur = min(self.str_max, self.str_cur + amount)
+
+    # =========================================================================
+    # 経験値・レベルアップ
+    # =========================================================================
+
+    def gain_exp(self, amount: int) -> list[str]:
+        """経験値を加算し、レベルアップメッセージを返す。"""
+        self.exp += amount
+        msgs: list[str] = []
+        while self.level < _MAX_LEVEL:
+            needed = _EXP_TABLE[self.level - 1]
+            if self.exp >= needed:
+                self.level += 1
+                hp_gain = random.randint(1, 10)
+                self.max_hp += hp_gain
+                self.hp     += hp_gain
+                msgs.append(
+                    f"Welcome to level {self.level}!  "
+                    f"(max HP now {self.max_hp})"
+                )
+            else:
+                break
+        return msgs
+
+    def exp_to_next(self) -> Optional[int]:
+        """次のレベルに必要な残り経験値。最大レベルの場合 None。"""
+        if self.level >= _MAX_LEVEL:
+            return None
+        return _EXP_TABLE[self.level - 1] - self.exp
+
+    # =========================================================================
+    # ゴールド・食料
+    # =========================================================================
+
+    def gain_gold(self, amount: int) -> None:
+        self.gold += amount
+
+    def eat(self, food_value: int) -> list[str]:
+        """食料を食べる（満腹チェックは呼び出し元で行うこと）。"""
+        msgs: list[str] = []
+        old_state = self.hunger_state
+        self.food = min(STOMACHSIZE, self.food + food_value)
+        new_state = self.hunger_state
+        if old_state and not new_state:
+            msgs.append("You feel full now.")
+        elif old_state and old_state != new_state:
+            msgs.append(f"You feel a little less {old_state.lower()}.")
+        return msgs
+
+    # =========================================================================
+    # インベントリ管理
+    # =========================================================================
+
+    def pack_char(self) -> Optional[str]:
+        """空き pack スロット文字 (a–z) を返す。空きがなければ None。"""
+        for i in range(26):
+            if not self.pack_used[i]:
+                return chr(ord('a') + i)
+        return None
+
+    def add_to_pack(self, item: Any) -> Optional[str]:
+        """
+        アイテムをパックに追加する。
+        成功すればスロット文字、満杯なら None を返す。
+        """
+        if self.pack_count >= MAXPACK:
+            return None
+        ch = self.pack_char()
+        if ch is None:
+            return None
+        self.pack[ch] = item
+        self.pack_used[ord(ch) - ord('a')] = True
+        return ch
+
+    def remove_from_pack(self, ch: str) -> Optional[Any]:
+        """指定スロットのアイテムを取り出す。存在しなければ None。"""
+        item = self.pack.pop(ch, None)
+        if item is not None:
+            self.pack_used[ord(ch) - ord('a')] = False
+        return item
+
+    def items_of_type(self, type_ch: str) -> list[tuple[str, Any]]:
+        """表示文字でフィルタしたパック内アイテム [(slot, item), ...] を返す。"""
+        result = []
+        for ch, item in sorted(self.pack.items()):
+            item_ch = getattr(item, 'ch', None) or getattr(item, 'o_type', None)
+            if item_ch == type_ch:
+                result.append((ch, item))
+        return result
+
+    # =========================================================================
+    # 装備管理
+    # =========================================================================
+
+    def equip_weapon(self, item: Any) -> Optional[Any]:
+        """武器を装備し、外した武器を返す（なければ None）。"""
+        old = self.weapon
+        self.weapon = item
+        return old
+
+    def unequip_weapon(self) -> Optional[Any]:
+        old = self.weapon
+        self.weapon = None
+        return old
+
+    def equip_armor(self, item: Any) -> Optional[Any]:
+        """防具を装備し、外した防具を返す。"""
+        old = self.armor
+        self.armor = item
+        return old
+
+    def unequip_armor(self) -> Optional[Any]:
+        old = self.armor
+        self.armor = None
+        return old
+
+    @property
+    def search_bonus(self) -> int:
+        """R_SEARCH 指輪の合計ボーナス（ターンごとの自動探索回数）。"""
+        total = 0
+        for ring in self.rings:
+            if ring is not None and getattr(ring, 'o_which', -1) == R_SEARCH:
+                total += max(1, getattr(ring, 'o_arm', 1))
+        return total
+
+    def put_on_ring(self, item: Any, slot: int) -> Optional[Any]:
+        """指輪を LEFT / RIGHT に装備し、外した指輪を返す。"""
+        old = self.rings[slot]
+        if old is not None:
+            self._detach_ring_effect(old)
+        self.rings[slot] = item
+        self._attach_ring_effect(item)
+        return old
+
+    def remove_ring(self, slot: int) -> Optional[Any]:
+        item = self.rings[slot]
+        if item is not None:
+            self._detach_ring_effect(item)
+        self.rings[slot] = None
+        return item
+
+    def _attach_ring_effect(self, ring: Any) -> None:
+        """指輪装備時の継続効果を有効化する。"""
+        which = getattr(ring, 'o_which', -1)
+        if which == R_REGEN:
+            self.status.regenerating = True
+        elif which == R_SEEINVIS:
+            self.status.see_invisible = True
+        elif which == R_DIGEST:
+            self.status.slow_digest = True
+
+    def _detach_ring_effect(self, ring: Any) -> None:
+        """指輪取り外し時の継続効果を無効化する。"""
+        which = getattr(ring, 'o_which', -1)
+        if which == R_REGEN:
+            # もう片方も再生リングなら継続
+            other = self.rings[1] if self.rings[0] is ring else self.rings[0]
+            if not (other is not None and getattr(other, 'o_which', -1) == R_REGEN):
+                self.status.regenerating = False
+        elif which == R_SEEINVIS:
+            other = self.rings[1] if self.rings[0] is ring else self.rings[0]
+            if not (other is not None and getattr(other, 'o_which', -1) == R_SEEINVIS):
+                self.status.see_invisible = False
+        elif which == R_DIGEST:
+            other = self.rings[1] if self.rings[0] is ring else self.rings[0]
+            if not (other is not None and getattr(other, 'o_which', -1) == R_DIGEST):
+                self.status.slow_digest = False
+
+    def _has_ring(self, which: int) -> bool:
+        """指定種別の指輪をいずれかのスロットに装備していれば True。"""
+        return any(
+            r is not None and getattr(r, 'o_which', -1) == which
+            for r in self.rings
+        )
+
+    # =========================================================================
+    # 状態異常適用
+    # =========================================================================
+
+    def exp_start_of_level(self, level: int) -> int:
+        """指定レベルの開始経験値を返す（Wraith レベルドレイン用）。"""
+        if level <= 1:
+            return 0
+        return _EXP_TABLE[level - 2]
+
+    def apply_confusion(self, turns: int) -> str:
+        self.status.confused = max(self.status.confused, turns)
+        return "You feel confused."
+
+    def apply_blindness(self, turns: int) -> str:
+        self.status.blind = max(self.status.blind, turns)
+        return "A wave of darkness washes over you."
+
+    def apply_paralysis(self, turns: int) -> str:
+        self.status.paralyzed = max(self.status.paralyzed, turns)
+        return "You can't move!"
+
+    def apply_hallucination(self, turns: int) -> str:
+        self.status.hallucinating = max(self.status.hallucinating, turns)
+        return "Oh wow! Everything looks SO different!"
+
+    def apply_poison(self, turns: int) -> str:
+        self.status.poisoned = max(self.status.poisoned, turns)
+        return "You feel very sick now."
+
+    def apply_haste(self, turns: int) -> str:
+        if self.status.is_slowed:
+            self.status.slowed = 0
+            return "You feel yourself speeding up."
+        self.status.hasted = max(self.status.hasted, turns)
+        return "You feel yourself moving faster."
+
+    def apply_slow(self, turns: int) -> str:
+        if self.status.is_hasted:
+            self.status.hasted = 0
+            return "You feel yourself slowing down."
+        self.status.slowed = max(self.status.slowed, turns)
+        return "You feel yourself slowing down."
+
+    def apply_levitation(self, turns: int) -> str:
+        self.status.levitating = max(self.status.levitating, turns)
+        return "You start to float in the air."
+
+    def apply_see_invisible(self, turns: int) -> str:
+        """ポーションによる時限不可視看破（SEEDURATION ターン）。"""
+        self.status.see_invis_turns = max(self.status.see_invis_turns, turns)
+        return "Your eyes begin to tingle."
+
+    def apply_invisibility(self) -> str:
+        self.status.invisible = True
+        return "You become invisible."
+
+    def cure_confusion(self) -> str:
+        self.status.confused = 0
+        return "You feel less confused."
+
+    def cure_blindness(self) -> str:
+        self.status.blind = 0
+        return "The veil of darkness lifts."
+
+    def cure_poison(self) -> str:
+        self.status.poisoned = 0
+        return "You feel the poison subside."
+
+    # =========================================================================
+    # ステータス表示文字列
+    # =========================================================================
+
+    def status_line(self) -> str:
+        """
+        ステータスバー用の文字列（80文字以内）。
+        Level:X  Gold:X  Hp:X(X)  Str:X(X)  Arm:X  Exp:X/X  [空腹] [状態]
+        """
+        parts = [
+            f"Level:{self.floor}",
+            f"Gold:{self.gold}",
+            f"Hp:{self.hp}({self.max_hp})",
+            f"Str:{self.str_cur}({self.str_max})",
+            f"Arm:{self.effective_ac}",
+            f"Exp:{self.level}/{self.exp}",
+        ]
+        hunger = self.hunger_state
+        if hunger:
+            parts.append(hunger)
+        status = self.status.status_str()
+        if status:
+            parts.append(status)
+        return "  ".join(parts)[:80]
+
+    def detail_lines(self) -> list[str]:
+        """ステータス詳細画面用の行リストを返す。"""
+        nxt = self.exp_to_next()
+        nxt_str = str(nxt) if nxt is not None else "MAX"
+        weapon_name = (
+            getattr(self.weapon, 'name', None) or "bare hands"
+            if self.weapon else "bare hands"
+        )
+        armor_name = (
+            getattr(self.armor, 'name', None) or "none"
+            if self.armor else "none"
+        )
+        left_ring  = getattr(self.rings[0], 'name', None) if self.rings[0] else "none"
+        right_ring = getattr(self.rings[1], 'name', None) if self.rings[1] else "none"
+        return [
+            f"  Floor:      {self.floor}",
+            f"  HP:         {self.hp} / {self.max_hp}",
+            f"  Strength:   {self.str_cur} / {self.str_max}",
+            f"  Armor:      {self.effective_ac}",
+            f"  Level:      {self.level}",
+            f"  Experience: {self.exp}  (next level: {nxt_str})",
+            f"  Gold:       {self.gold}",
+            f"  Hunger:     {self.hunger_state or 'Normal'}",
+            f"  Status:     {self.status.status_str() or 'None'}",
+            f"  Weapon:     {weapon_name}",
+            f"  Armor:      {armor_name}",
+            f"  Left ring:  {left_ring}",
+            f"  Right ring: {right_ring}",
+            f"  Amulet:     {'Yes' if self.has_amulet else 'No'}",
+        ]
+
+    def __repr__(self) -> str:
+        return (
+            f"<Player L{self.level} HP:{self.hp}/{self.max_hp} "
+            f"Str:{self.str_cur} AC:{self.effective_ac} "
+            f"Exp:{self.exp} Gold:{self.gold} Flr:{self.floor}>"
+        )
