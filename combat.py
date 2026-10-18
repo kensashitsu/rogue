@@ -162,6 +162,7 @@ def player_attacks_monster(
     # 攻撃された相手は起きて追ってくる（5.4 fight.c → runto: ISHELD 解除）
     monster.flags &= ~ISHELD
     monster.flags |= ISRUN
+    player._heal_timer = 0   # 戦闘中は自然回復しない（5.4 quiet = 0）
 
     if not _player_hits(player, monster):
         result.messages.append(f"You miss the {vname}.")
@@ -216,6 +217,7 @@ def monster_attacks_player(
     vname = monster.display_name(player.status.can_see_invisible)
 
     cancelled = bool(monster.flags & ISCANC)
+    player._heal_timer = 0   # 戦闘中は自然回復しない（5.4 quiet = 0）
 
     # Venus Flytrap: キャンセル済みでなければ拘束攻撃
     if monster.letter == 'F' and not cancelled:
@@ -410,6 +412,7 @@ def dragon_breath(player: "Player") -> list[str]:
     ドラゴンの炎（5.4 sticks.c fire_bolt の対ヒーロー部分）。
     VS_MAGIC セーブ失敗で 6d6、成功なら外れる。
     """
+    player._heal_timer = 0
     if save_throw(player.level, VS_MAGIC, player.protect_bonus):
         return ["The flame whizzes by you."]
     damage = roll(6, 6)

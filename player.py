@@ -17,6 +17,7 @@ from constants import (
     ISHASTE, ISSLOW, ISBLIND, ISHUH, ISINVIS, ISLEVIT, ISREGEN, ISFOUND,
     R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
     R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
+    R_NOP, R_AGGR, R_SUSTARM,
 )
 
 # ---------------------------------------------------------------------------
@@ -33,6 +34,25 @@ _MAX_LEVEL  = 20    # プレイヤー最大レベル
 # ---------------------------------------------------------------------------
 _STR_PLUS = [-3,-2,-2,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 3, 3, 3, 4, 5, 6, 7, 7, 8, 8, 9,10]
 _ADD_DAM  = [-3,-2,-2,-1,-1,-1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 5, 6, 7, 7, 8, 9,10]
+
+# 指輪ごとの食料消費（5.4 rings.c ring_eat の uses[]）。負の値 -n は 1/n の確率で 1
+_RING_USES = {
+    R_PROTECT: 1, R_ADDSTR: 1, R_SUSTSTR: 1, R_SEARCH: -3, R_SEEINVIS: -5,
+    R_NOP: 0, R_AGGR: 0, R_ADDHIT: -3, R_ADDDAM: -3, R_REGEN: 2,
+    R_DIGEST: -2, R_TELEPORT: 0, R_STEALTH: 1, R_SUSTARM: 1,
+}
+
+
+def _ring_eat(ring: Any) -> int:
+    """指輪 1 個がこのターンに消費する食料。slow digestion は 1/2 の確率で 1 回復する。"""
+    if ring is None:
+        return 0
+    which = getattr(ring, 'o_which', -1)
+    eat = _RING_USES.get(which, 0)
+    if eat < 0:
+        eat = 1 if random.randint(0, -eat - 1) == 0 else 0
+    return -eat if which == R_DIGEST else eat
+
 
 def _str_hit_bonus(s: int) -> int:
     return _STR_PLUS[max(0, min(s - 1, len(_STR_PLUS) - 1))]
@@ -310,13 +330,9 @@ class Player:
         """
         msgs: list[str] = []
 
-        # 食料消費: 基本1/ターン + 指輪装備ごとに+1（Rogue 5.4 準拠）
-        # 加速中は基本値を2倍、R_DIGEST は消費を-1 相殺
-        rate = 2 if self.status.is_hasted else 1
-        rate += sum(1 for r in self.rings if r is not None)
-        if self.status.slow_digest:
-            rate -= 1
-        msgs.extend(self._tick_hunger(max(0, rate)))
+        # 食料消費（5.4 daemons.c stomach）: 1 + 左右の指輪の消費 − アミュレット所持
+        rate = 1 + sum(_ring_eat(r) for r in self.rings) - (1 if self.has_amulet else 0)
+        msgs.extend(self._tick_hunger(rate))
 
         # 毒ダメージ: STR を 1 減少（R_SUSTSTR 装備中またはgodmode時は守る）
         if self.status.poisoned > 0 and self.str_cur > 3:
@@ -324,19 +340,22 @@ class Player:
                 self.str_cur -= 1
                 msgs.append("The poison saps your strength.")
 
-        # HP 自然再生（Rogue 5.4: HEALTIME=30、レベルごとに間隔短縮）
-        # 再生リング装備時は毎ターン追加で+1
-        _HEALTIME = 30
-        if self.hp < self.max_hp:
-            self._heal_timer += 1
-            interval = max(1, _HEALTIME - self.level)
-            if self._heal_timer >= interval:
-                self.hp = min(self.max_hp, self.hp + 1)
-                self._heal_timer = 0
-        else:
+        # HP 自然回復（5.4 daemons.c doctor）。_heal_timer は戦っていないターン数（quiet）
+        # Lv7 以下: quiet + Lv*2 > 20 で毎ターン +1
+        # Lv8 以上: quiet >= 3 で毎ターン +rnd(Lv-7)+1
+        # 再生の指輪 1 個につき毎ターン +1。回復したら quiet は 0 に戻る
+        old_hp = self.hp
+        self._heal_timer += 1
+        if self.level < 8:
+            if self._heal_timer + self.level * 2 > 20:
+                self.hp += 1
+        elif self._heal_timer >= 3:
+            self.hp += random.randint(0, self.level - 8) + 1
+        self.hp += sum(1 for r in self.rings
+                       if r is not None and getattr(r, 'o_which', -1) == R_REGEN)
+        if self.hp != old_hp:
+            self.hp = min(self.hp, self.max_hp)
             self._heal_timer = 0
-        if self.status.regenerating and self.hp < self.max_hp:
-            self.hp = min(self.max_hp, self.hp + 1)
 
         # 状態異常タイマー（毒が切れても STR は自動回復しない: Rogue 5.4 準拠）
         msgs.extend(self.status.tick())
