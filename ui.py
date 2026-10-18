@@ -1,18 +1,18 @@
-# curses表示・メッセージ
+# 画面表示・メッセージ
 """
-curses ベースのゲーム UI。
+ゲーム UI。描画と入力は term.py（curses 互換の VT 描画レイヤー）を curses として使う。
+windows-curses は全角文字の幅を扱えず日本語表示が崩れるため使わない。
 
 画面レイアウト（24×80 ターミナル）:
   Row  0      : メッセージ行
   Rows 1–22   : ダンジョンマップ
   Row  23     : ステータスバー
 
-Windows では事前に `pip install windows-curses` が必要。
 """
 
 from __future__ import annotations
 
-import curses
+import term as curses
 import random
 from typing import TYPE_CHECKING, Optional
 
@@ -464,7 +464,7 @@ class UI:
                     break
                 if ch in (10, 13):
                     break
-                if ch in (127, curses.KEY_BACKSPACE):
+                if ch in (8, 127, curses.KEY_BACKSPACE):
                     if buf:
                         buf.pop()
                 elif 32 <= ch < 127:

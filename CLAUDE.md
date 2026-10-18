@@ -1,8 +1,8 @@
 # プロジェクトルール
 
 ## 環境
-- Python 3.12 / Windows / windows-curses
-- cursesバグが3回以上→blessed切り替え可（承認不要）
+- Python 3.12 / Windows / Windows Terminal
+- 描画は term.py（VT シーケンスの curses 互換レイヤー）。windows-curses は全角の幅を扱えず日本語が崩れるため使わない
 - ターミナル：80×24固定
 
 ## ファイル構成
