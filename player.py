@@ -11,6 +11,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from i18n import tr
 from constants import (
     HUNGERTIME, MORETIME, STOMACHSIZE, STARVETIME, MAXPACK,
     LEFT, RIGHT,
@@ -132,7 +133,7 @@ class StatusEffects:
                 v -= 1
                 setattr(self, attr, v)
                 if v == 0:
-                    msgs.append(msg)
+                    msgs.append(tr(msg))
         return msgs
 
     # ---- 判定プロパティ ----
@@ -171,16 +172,16 @@ class StatusEffects:
     def status_str(self) -> str:
         """アクティブな状態異常の略称を空白区切りで返す。"""
         parts: list[str] = []
-        if self.held:          parts.append("Held")
-        if self.confused:      parts.append("Conf")
-        if self.blind:         parts.append("Blind")
-        if self.paralyzed:     parts.append("Para")
-        if self.hallucinating: parts.append("Halu")
-        if self.poisoned:      parts.append("Pois")
-        if self.hasted:        parts.append("Haste")
-        if self.slowed:        parts.append("Slow")
-        if self.levitating:    parts.append("Lev")
-        if self.invisible:     parts.append("Inv")
+        if self.held:          parts.append(tr('Held'))
+        if self.confused:      parts.append(tr('Conf'))
+        if self.blind:         parts.append(tr('Blind'))
+        if self.paralyzed:     parts.append(tr('Para'))
+        if self.hallucinating: parts.append(tr('Halu'))
+        if self.poisoned:      parts.append(tr('Pois'))
+        if self.hasted:        parts.append(tr('Haste'))
+        if self.slowed:        parts.append(tr('Slow'))
+        if self.levitating:    parts.append(tr('Lev'))
+        if self.invisible:     parts.append(tr('Inv'))
         return " ".join(parts)
 
 
@@ -338,7 +339,7 @@ class Player:
         if self.status.poisoned > 0 and self.str_cur > 3:
             if not self.godmode and not self._has_ring(R_SUSTSTR):
                 self.str_cur -= 1
-                msgs.append("The poison saps your strength.")
+                msgs.append(tr('The poison saps your strength.'))
 
         # HP 自然回復（5.4 daemons.c doctor）。_heal_timer は戦っていないターン数（quiet）
         # Lv7 以下: quiet + Lv*2 > 20 で毎ターン +1
@@ -376,15 +377,15 @@ class Player:
                 return msgs
             if self.status.paralyzed == 0 and random.randint(0, 4) == 0:
                 self.status.paralyzed += random.randint(0, 7) + 4
-                msgs.append("You feel too weak from lack of food.  You faint.")
+                msgs.append(tr('You feel too weak from lack of food.  You faint.'))
             return msgs
 
         old = self.food
         self.food -= rate
         if self.food < _WEAK_THRESHOLD <= old:
-            msgs.append("You are starting to feel weak.")
+            msgs.append(tr('You are starting to feel weak.'))
         elif self.food < _HUNGRY_THRESHOLD <= old:
-            msgs.append("You are starting to get hungry.")
+            msgs.append(tr('You are starting to get hungry.'))
         return msgs
 
     # =========================================================================
@@ -412,16 +413,16 @@ class Player:
         old = self.str_cur
         self.str_cur = max(3, min(self.str_max, self.str_cur + delta))
         if self.str_cur < old:
-            return f"You feel weaker. (STR {self.str_cur})"
+            return tr('You feel weaker. (STR {str_cur})', str_cur=self.str_cur)
         if self.str_cur > old:
-            return f"You feel stronger! (STR {self.str_cur})"
+            return tr('You feel stronger! (STR {str_cur})', str_cur=self.str_cur)
         return ""
 
     def restore_str(self) -> str:
         """STR を最大値まで回復する。"""
         if self.str_cur < self.str_max:
             self.str_cur = self.str_max
-            return "You feel your strength returning."
+            return tr('You feel your strength returning.')
         return ""
 
     def increase_max_str(self, amount: int = 1) -> None:
@@ -444,8 +445,7 @@ class Player:
                 self.max_hp += hp_gain
                 self.hp     += hp_gain
                 msgs.append(
-                    f"Welcome to level {self.level}!  "
-                    f"(max HP now {self.max_hp})"
+                    tr('Welcome to level {level}!  (max HP now {max_hp})', level=self.level, max_hp=self.max_hp)
                 )
             else:
                 break
@@ -471,9 +471,9 @@ class Player:
         self.food = min(STOMACHSIZE, max(0, self.food) + food_value)
         new_state = self.hunger_state
         if old_state and not new_state:
-            msgs.append("You feel full now.")
+            msgs.append(tr('You feel full now.'))
         elif old_state and old_state != new_state:
-            msgs.append(f"You feel a little less {old_state.lower()}.")
+            msgs.append(tr('You feel a little less {value}.', value=tr(old_state).lower()))
         return msgs
 
     # =========================================================================
@@ -614,62 +614,62 @@ class Player:
 
     def apply_confusion(self, turns: int) -> str:
         self.status.confused = max(self.status.confused, turns)
-        return "You feel confused."
+        return tr('You feel confused.')
 
     def apply_blindness(self, turns: int) -> str:
         self.status.blind = max(self.status.blind, turns)
-        return "A wave of darkness washes over you."
+        return tr('A wave of darkness washes over you.')
 
     def apply_paralysis(self, turns: int) -> str:
         self.status.paralyzed = max(self.status.paralyzed, turns)
-        return "You can't move!"
+        return tr("You can't move!")
 
     def apply_hallucination(self, turns: int) -> str:
         self.status.hallucinating = max(self.status.hallucinating, turns)
-        return "Oh wow! Everything looks SO different!"
+        return tr('Oh wow! Everything looks SO different!')
 
     def apply_poison(self, turns: int) -> str:
         self.status.poisoned = max(self.status.poisoned, turns)
-        return "You feel very sick now."
+        return tr('You feel very sick now.')
 
     def apply_haste(self, turns: int) -> str:
         if self.status.is_slowed:
             self.status.slowed = 0
-            return "You feel yourself speeding up."
+            return tr('You feel yourself speeding up.')
         self.status.hasted = max(self.status.hasted, turns)
-        return "You feel yourself moving faster."
+        return tr('You feel yourself moving faster.')
 
     def apply_slow(self, turns: int) -> str:
         if self.status.is_hasted:
             self.status.hasted = 0
-            return "You feel yourself slowing down."
+            return tr('You feel yourself slowing down.')
         self.status.slowed = max(self.status.slowed, turns)
-        return "You feel yourself slowing down."
+        return tr('You feel yourself slowing down.')
 
     def apply_levitation(self, turns: int) -> str:
         self.status.levitating = max(self.status.levitating, turns)
-        return "You start to float in the air."
+        return tr('You start to float in the air.')
 
     def apply_see_invisible(self, turns: int) -> str:
         """ポーションによる時限不可視看破（SEEDURATION ターン）。"""
         self.status.see_invis_turns = max(self.status.see_invis_turns, turns)
-        return "Your eyes begin to tingle."
+        return tr('Your eyes begin to tingle.')
 
     def apply_invisibility(self) -> str:
         self.status.invisible = True
-        return "You become invisible."
+        return tr('You become invisible.')
 
     def cure_confusion(self) -> str:
         self.status.confused = 0
-        return "You feel less confused."
+        return tr('You feel less confused.')
 
     def cure_blindness(self) -> str:
         self.status.blind = 0
-        return "The veil of darkness lifts."
+        return tr('The veil of darkness lifts.')
 
     def cure_poison(self) -> str:
         self.status.poisoned = 0
-        return "You feel the poison subside."
+        return tr('You feel the poison subside.')
 
     # =========================================================================
     # ステータス表示文字列
@@ -681,55 +681,48 @@ class Player:
         Level:X  Gold:X  Hp:X(X)  Str:X(X)  Arm:X  Exp:X/X  [空腹] [状態]
         """
         parts = [
-            f"Level:{self.floor}",
-            f"Gold:{self.gold}",
-            f"Hp:{self.hp}({self.max_hp})",
-            f"Str:{self.str_cur}({self.str_max})",
-            f"Arm:{self.effective_ac}",
-            f"Exp:{self.level}/{self.exp}",
+            tr("Level:{floor}", floor=self.floor),
+            tr("Gold:{gold}", gold=self.gold),
+            tr("Hp:{hp}({max_hp})", hp=self.hp, max_hp=self.max_hp),
+            tr("Str:{str_cur}({str_max})", str_cur=self.str_cur, str_max=self.str_max),
+            tr("Arm:{ac}", ac=self.effective_ac),
+            tr("Exp:{level}/{exp}", level=self.level, exp=self.exp),
         ]
         hunger = self.hunger_state
         if hunger:
-            parts.append(hunger)
+            parts.append(tr(hunger))
         status = self.status.status_str()
         if status:
             parts.append(status)
-        return "  ".join(parts)[:80]
+        return "  ".join(parts)
 
     def detail_lines(self) -> list[str]:
         """ステータス詳細画面用の行リストを返す。"""
         nxt = self.exp_to_next()
         nxt_str = str(nxt) if nxt is not None else "MAX"
-        weapon_name = (
-            getattr(self.weapon, 'name', None) or "bare hands"
-            if self.weapon else "bare hands"
-        )
-        armor_name = (
-            getattr(self.armor, 'name', None) or "none"
-            if self.armor else "none"
-        )
-        left_ring  = getattr(self.rings[0], 'name', None) if self.rings[0] else "none"
-        right_ring = getattr(self.rings[1], 'name', None) if self.rings[1] else "none"
+        weapon_name = self.weapon.name if self.weapon else tr("bare hands")
+        armor_name  = self.armor.name if self.armor else tr("none")
+        left_ring   = self.rings[0].name if self.rings[0] else tr("none")
+        right_ring  = self.rings[1].name if self.rings[1] else tr("none")
         return [
-            f"  Floor:      {self.floor}",
-            f"  HP:         {self.hp} / {self.max_hp}",
-            f"  Strength:   {self.str_cur} / {self.str_max}",
-            f"  Armor:      {self.effective_ac}",
-            f"  Level:      {self.level}",
-            f"  Experience: {self.exp}  (next level: {nxt_str})",
-            f"  Gold:       {self.gold}",
-            f"  Hunger:     {self.hunger_state or 'Normal'}",
-            f"  Status:     {self.status.status_str() or 'None'}",
-            f"  Weapon:     {weapon_name}",
-            f"  Armor:      {armor_name}",
-            f"  Left ring:  {left_ring}",
-            f"  Right ring: {right_ring}",
-            f"  Amulet:     {'Yes' if self.has_amulet else 'No'}",
+            tr('  Floor:      {floor}', floor=self.floor),
+            tr('  HP:         {hp} / {max_hp}', hp=self.hp, max_hp=self.max_hp),
+            tr('  Strength:   {str_cur} / {str_max}', str_cur=self.str_cur, str_max=self.str_max),
+            tr('  Armor:      {effective_ac}', effective_ac=self.effective_ac),
+            tr('  Level:      {level}', level=self.level),
+            tr('  Experience: {exp}  (next level: {nxt_str})', exp=self.exp, nxt_str=nxt_str),
+            tr('  Gold:       {gold}', gold=self.gold),
+            tr('  Hunger:     {value}', value=tr(self.hunger_state or 'Normal')),
+            tr('  Status:     {value}', value=self.status.status_str() or tr('None')),
+            tr('  Weapon:     {weapon_name}', weapon_name=weapon_name),
+            tr('  Armor:      {armor_name}', armor_name=armor_name),
+            tr('  Left ring:  {left_ring}', left_ring=left_ring),
+            tr('  Right ring: {right_ring}', right_ring=right_ring),
+            tr('  Amulet:     {value}', value=tr('Yes') if self.has_amulet else tr('No')),
         ]
 
     def __repr__(self) -> str:
         return (
-            f"<Player L{self.level} HP:{self.hp}/{self.max_hp} "
-            f"Str:{self.str_cur} AC:{self.effective_ac} "
-            f"Exp:{self.exp} Gold:{self.gold} Flr:{self.floor}>"
+            f"<Player L{self.level} HP:{self.hp}/{self.max_hp} Str:{self.str_cur} "
+            f"AC:{self.effective_ac} Exp:{self.exp} Gold:{self.gold} Flr:{self.floor}>"
         )

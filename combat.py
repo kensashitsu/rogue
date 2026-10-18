@@ -15,6 +15,7 @@ import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
+from i18n import tr
 from constants import (
     VS_POISON, VS_PARALYZATION, VS_DEATH, VS_BREATH, VS_MAGIC,
     HUHDURATION, ISHELD, ISRUN, BOLT_LENGTH, ISCANC, BORE_LEVEL,
@@ -165,7 +166,7 @@ def player_attacks_monster(
     player._heal_timer = 0   # 戦闘中は自然回復しない（5.4 quiet = 0）
 
     if not _player_hits(player, monster):
-        result.messages.append(f"You miss the {vname}.")
+        result.messages.append(tr('You miss the {vname}.', vname=vname))
         return result
 
     result.hit = True
@@ -173,7 +174,7 @@ def player_attacks_monster(
     # Xeroc: 命中で正体を現す
     if monster.letter == 'X' and getattr(monster, 'disguise_ch', ''):
         monster.disguise_ch = ''
-        result.messages.append("The Xeroc is revealed!")
+        result.messages.append(tr('The Xeroc is revealed!'))
 
     # S_CONFUSE: 次攻撃でモンスターを混乱させる
     if player.status.confuse_next_attack:
@@ -181,7 +182,7 @@ def player_attacks_monster(
         from constants import ISHUH
         monster.flags |= ISHUH
         monster._huh_turns = HUHDURATION
-        result.messages.append(f"Your hands stop glowing; the {vname} is confused!")
+        result.messages.append(tr('Your hands stop glowing; the {vname} is confused!', vname=vname))
 
     # 武器ダメージ（素手: 1x4）
     dmg_str = "1x4"
@@ -191,11 +192,11 @@ def player_attacks_monster(
     damage = max(1, roll_damage(dmg_str, player.damage_bonus))
     monster.hp -= damage
     result.damage = damage
-    result.messages.append(f"You hit the {vname} for {damage} damage.")
+    result.messages.append(tr('You hit the {vname} for {damage} damage.', vname=vname, damage=damage))
 
     if not monster.is_alive:
         result.monster_killed = True
-        result.messages.append(f"You killed the {monster.name}!")
+        result.messages.append(tr('You killed the {name}!', name=monster.name))
 
     return result
 
@@ -234,7 +235,7 @@ def monster_attacks_player(
                 total_damage += roll(n, sides)
 
     if not any_hit:
-        result.messages.append(f"The {vname} misses.")
+        result.messages.append(tr('The {vname} misses.', vname=vname))
         return result
 
     result.hit = True
@@ -254,7 +255,7 @@ def monster_attacks_player(
             player.take_damage(damage)
             result.damage = damage
             result.messages.append(
-                f"The {vname} hits you for {damage} damage."
+                tr('The {vname} hits you for {damage} damage.', vname=vname, damage=damage)
             )
     else:
         # キャンセル済み: 特殊能力なし、物理ダメージのみ
@@ -262,7 +263,7 @@ def monster_attacks_player(
         player.take_damage(damage)
         result.damage = damage
         result.messages.append(
-            f"The {vname} hits you for {damage} damage."
+            tr('The {vname} hits you for {damage} damage.', vname=vname, damage=damage)
         )
 
     if not player.is_alive:
@@ -293,7 +294,7 @@ def _apply_special(
     # ── I Ice Monster: 凍結 rnd(2)+2 ターンを加算（5.4 fight.c）────────
     if letter == 'I':
         if player.status.paralyzed == 0:
-            msgs.append("You are frozen by the Ice Monster!")
+            msgs.append(tr('You are frozen by the Ice Monster!'))
         player.status.paralyzed += random.randint(0, 1) + 2
         if player.status.paralyzed > BORE_LEVEL and not player.godmode:
             player.hp = 0
@@ -302,12 +303,11 @@ def _apply_special(
     elif letter == 'R':
         if not save_throw(player.level, VS_POISON, protect):
             if player.godmode or player._has_ring(R_SUSTSTR):
-                msgs.append("The Rattlesnake's bite is deflected!")
+                msgs.append(tr("The Rattlesnake's bite is deflected!"))
             else:
                 player.str_cur = max(3, player.str_cur - 1)
                 msgs.append(
-                    "The Rattlesnake's bite poisons you! "
-                    f"(STR → {player.str_cur})"
+                    tr("The Rattlesnake's bite poisons you! (STR → {str_cur})", str_cur=player.str_cur)
                 )
 
     # ── L Leprechaun: ゴールド全額盗取、テレポート離脱 ─────────────
@@ -316,9 +316,9 @@ def _apply_special(
             stolen = player.gold
             player.gold = 0
             monster.stolen_gold += stolen
-            msgs.append(f"The Leprechaun steals all your gold ({stolen} gp)!")
+            msgs.append(tr('The Leprechaun steals all your gold ({stolen} gp)!', stolen=stolen))
         else:
-            msgs.append("The Leprechaun finds no gold and flees!")
+            msgs.append(tr('The Leprechaun finds no gold and flees!'))
         teleport = True
 
     # ── A Aquator: 防具を錆び付かせる（AC 悪化） ─────────────────────
@@ -326,15 +326,15 @@ def _apply_special(
         if player.armor is not None:
             o_flags = getattr(player.armor, 'o_flags', 0)
             if getattr(player.armor, 'o_which', -1) == LEATHER:
-                msgs.append("The Aquator hits your leather armor but it doesn't rust!")
+                msgs.append(tr("The Aquator hits your leather armor but it doesn't rust!"))
             elif o_flags & ISPROT:
-                msgs.append("The Aquator hits your armor but it is protected!")
+                msgs.append(tr('The Aquator hits your armor but it is protected!'))
             elif player._has_ring(R_SUSTARM):
-                msgs.append("The Aquator's rust is repelled by your ring!")
+                msgs.append(tr("The Aquator's rust is repelled by your ring!"))
             else:
                 old_arm = getattr(player.armor, 'o_arm', 10)
                 setattr(player.armor, 'o_arm', old_arm + 1)
-                msgs.append("The Aquator corrodes your armor!")
+                msgs.append(tr('The Aquator corrodes your armor!'))
 
     # ── N Nymph: パック内アイテムを1個盗取、テレポート離脱 ───────────
     elif letter == 'N':
@@ -345,9 +345,9 @@ def _apply_special(
             if getattr(item, 'o_type', '') == CH_AMULET:
                 player.has_amulet = False
             monster.stolen_item = item
-            msgs.append(f"The Nymph steals {name}!")
+            msgs.append(tr('The Nymph steals {name}!', name=name))
         else:
-            msgs.append("The Nymph grabs for you but finds nothing!")
+            msgs.append(tr('The Nymph grabs for you but finds nothing!'))
         teleport = True
 
     # ── W Wraith 15%: レベルドレイン / V Vampire 30%: 最大HP吸収（5.4 fight.c）──
@@ -361,7 +361,7 @@ def _apply_special(
             if player.level > 1:
                 player.level -= 1
                 player.exp = player.exp_start_of_level(player.level)
-                msgs.append(f"You are now level {player.level}.")
+                msgs.append(tr('You are now level {level}.', level=player.level))
             else:
                 player.exp = 0
             fewer = roll(1, 10)
@@ -373,7 +373,7 @@ def _apply_special(
             player.hp = 1
         if player.max_hp <= 0:
             player.hp = 0
-        msgs.insert(0, f"You suddenly feel weaker. (Max HP -{fewer})")
+        msgs.insert(0, tr('You suddenly feel weaker. (Max HP -{fewer})', fewer=fewer))
 
     return msgs, teleport
 
@@ -394,11 +394,11 @@ def _flytrap_attack(
         player.take_damage(dmg)
         result.damage = dmg
         result.messages.append(
-            f"The Venus Flytrap crushes you for {dmg} damage!"
+            tr('The Venus Flytrap crushes you for {dmg} damage!', dmg=dmg)
         )
     else:
         result.messages.append(
-            "The Venus Flytrap grabs you with its vines!"
+            tr('The Venus Flytrap grabs you with its vines!')
         )
     if not player.is_alive:
         result.player_killed = True
@@ -414,7 +414,7 @@ def dragon_breath(player: "Player") -> list[str]:
     """
     player._heal_timer = 0
     if save_throw(player.level, VS_MAGIC, player.protect_bonus):
-        return ["The flame whizzes by you."]
+        return [tr('The flame whizzes by you.')]
     damage = roll(6, 6)
     player.take_damage(damage)
-    return [f"You are hit by the flame for {damage} damage."]
+    return [tr('You are hit by the flame for {damage} damage.', damage=damage)]

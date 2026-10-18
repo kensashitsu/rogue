@@ -6,7 +6,13 @@
 - ターミナル：80×24固定
 
 ## ファイル構成
-main.py / game.py / dungeon.py / player.py / monsters.py / items.py / combat.py / ui.py / constants.py / data/items.json / data/monsters.json
+main.py / game.py / dungeon.py / player.py / monsters.py / items.py / combat.py / ui.py / term.py / i18n.py / i18n_ja.py / constants.py / data/items.json / data/monsters.json
+
+## 表示言語（英語 / 日本語）
+- 画面に出す文字列は必ず tr("英語の文面 {x}", x=...) を通す。英語の文面がそのままキーになる
+- 日本語訳は i18n_ja.py の JA に足す（差し込み名 {x} は英語と同じにする）。固有名（モンスター・アイテム・外観）は NAMES と tr_name()
+- 行の切り詰め・桁揃えは文字数ではなく見た目の幅（全角 = 2）で行う（ui._fit / term.text_width）
+- 死因はスコアに英語のまま保存し、表示時に i18n.cause() で訳す
 
 ## 絶対ルール
 - print文禁止
