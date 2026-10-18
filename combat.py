@@ -221,10 +221,6 @@ def monster_attacks_player(
     if monster.letter == 'F' and not cancelled:
         return _flytrap_attack(monster, player, result)
 
-    # Dragon: キャンセル済みでなければ 50% でブレス攻撃
-    if monster.letter == 'D' and not cancelled and random.randint(0, 1) == 0:
-        return _dragon_breath(monster, player, result)
-
     # "/" ごとに独立した命中判定（Rogue 5.4 準拠）
     attacks = parse_damage(monster.damage)
     total_damage = 0
@@ -244,7 +240,7 @@ def monster_attacks_player(
 
     if not cancelled:
         # 特殊攻撃（hp ダメージなし or 別効果）
-        _NODMG = {'A', 'I', 'L', 'N', 'F', 'W'}
+        _NODMG = {'A', 'I', 'L', 'N', 'F'}
         sp_msgs, teleport = _apply_special(
             monster.letter, player, damage, dungeon, player.protect_bonus, monster
         )
@@ -352,29 +348,30 @@ def _apply_special(
             msgs.append("The Nymph grabs for you but finds nothing!")
         teleport = True
 
-    # ── W Wraith: レベルドレイン ──────────────────────────────────────
-    elif letter == 'W':
-        if not save_throw(player.level, VS_DEATH, protect):
-            if player.godmode:
-                msgs.append("The Wraith drains your life force!")
-            elif player.level > 1:
+    # ── W Wraith 15%: レベルドレイン / V Vampire 30%: 最大HP吸収（5.4 fight.c）──
+    elif letter in ('W', 'V') and random.randint(0, 99) < (15 if letter == 'W' else 30):
+        if player.godmode:
+            return msgs, teleport
+        if letter == 'W':
+            if player.exp == 0:
+                player.hp = 0          # 吸い取るレベルが残っていない
+                return msgs, teleport
+            if player.level > 1:
                 player.level -= 1
-                player.exp    = player.exp_start_of_level(player.level)
-                hp_loss = random.randint(1, 10)
-                player.max_hp = max(1, player.max_hp - hp_loss)
-                player.hp     = min(player.hp, player.max_hp)
-                msgs.append("The Wraith drains your life force!")
+                player.exp = player.exp_start_of_level(player.level)
                 msgs.append(f"You are now level {player.level}.")
             else:
-                player.hp = 0
-                msgs.append("The Wraith drains your last life force!")
-
-    # ── V Vampire: 最大 HP ドレイン（固定 -1）────────────────────────
-    elif letter == 'V':
-        if not player.godmode:
-            player.max_hp = max(1, player.max_hp - 1)
-            player.hp     = min(player.hp, player.max_hp)
-        msgs.append("The Vampire drains your life! (Max HP -1)")
+                player.exp = 0
+            fewer = roll(1, 10)
+        else:
+            fewer = roll(1, 3)
+        player.hp     -= fewer
+        player.max_hp -= fewer
+        if player.hp <= 0:
+            player.hp = 1
+        if player.max_hp <= 0:
+            player.hp = 0
+        msgs.insert(0, f"You suddenly feel weaker. (Max HP -{fewer})")
 
     return msgs, teleport
 
@@ -408,26 +405,13 @@ def _flytrap_attack(
 
 # ── 内部: Dragon ブレス攻撃 ──────────────────────────────────────────
 
-def _dragon_breath(
-    monster: "Monster",
-    player:  "Player",
-    result:  CombatResult,
-) -> CombatResult:
+def dragon_breath(player: "Player") -> list[str]:
     """
-    ドラゴンのブレス攻撃。ブレスは monster.level 個の d6 ダメージ。
-    VS_BREATH セーブ成功で半減（Rogue 5.4 準拠）。
+    ドラゴンの炎（5.4 sticks.c fire_bolt の対ヒーロー部分）。
+    VS_MAGIC セーブ失敗で 6d6、成功なら外れる。
     """
-    result.hit = True
-    damage = max(1, monster.hp // 3)
-    if save_throw(player.level, VS_BREATH):
-        damage = max(1, damage // 2)
-        result.messages.append("You partially dodge the dragon's fire breath!")
-    else:
-        result.messages.append("The Dragon breathes fire at you!")
-
+    if save_throw(player.level, VS_MAGIC, player.protect_bonus):
+        return ["The flame whizzes by you."]
+    damage = roll(6, 6)
     player.take_damage(damage)
-    result.damage = damage
-    result.messages.append(f"You are scorched for {damage} damage!")
-    if not player.is_alive:
-        result.player_killed = True
-    return result
+    return [f"You are hit by the flame for {damage} damage."]
