@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from constants import (
-    HUNGERTIME, MORETIME, STOMACHSIZE, MAXPACK,
+    HUNGERTIME, MORETIME, STOMACHSIZE, STARVETIME, MAXPACK,
     LEFT, RIGHT,
     ISHASTE, ISSLOW, ISBLIND, ISHUH, ISINVIS, ISLEVIT, ISREGEN, ISFOUND,
     R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
@@ -40,17 +40,17 @@ def _str_hit_bonus(s: int) -> int:
 def _str_dam_bonus(s: int) -> int:
     return _ADD_DAM[max(0, min(s - 1, len(_ADD_DAM) - 1))]
 
-# 各レベルに到達するために必要な累積経験値
+# 各レベルに到達するために必要な累積経験値（Rogue 5.4.4 extern.c e_levels[]）
 # index 0 = Lv2到達に必要、index 18 = Lv20到達に必要
 _EXP_TABLE: list[int] = [
-    10, 20, 40, 80, 160, 320, 640, 1280,
-    2560, 5120, 10240, 20480, 40960, 81920,
-    163840, 327680, 655360, 1310720, 2621440,
+    10, 20, 40, 80, 160, 320, 640, 1300,
+    2600, 5200, 13000, 26000, 50000, 100000,
+    200000, 400000, 800000, 2000000, 4000000,
 ]
 
-# 空腹閾値（Rogue 5.4仕様）
-_HUNGRY_THRESHOLD = 300   # "Hungry" 表示
-_WEAK_THRESHOLD   = 150   # "Weak"   表示
+# 空腹閾値（Rogue 5.4 daemons.c stomach: food_left < 2*MORETIME / < MORETIME）
+_HUNGRY_THRESHOLD = 2 * MORETIME   # 300 未満で "Hungry"
+_WEAK_THRESHOLD   = MORETIME       # 150 未満で "Weak"、0 以下で "Faint"
 
 
 # ===========================================================================
@@ -233,10 +233,10 @@ class Player:
     def hunger_state(self) -> str:
         """現在の空腹状態を文字列で返す。"""
         if self.food <= 0:
-            return "Starving"
-        if self.food <= _WEAK_THRESHOLD:
+            return "Faint"
+        if self.food < _WEAK_THRESHOLD:
             return "Weak"
-        if self.food <= _HUNGRY_THRESHOLD:
+        if self.food < _HUNGRY_THRESHOLD:
             return "Hungry"
         return ""
 
@@ -316,8 +316,7 @@ class Player:
         rate += sum(1 for r in self.rings if r is not None)
         if self.status.slow_digest:
             rate -= 1
-        self.food -= max(0, rate)
-        msgs.extend(self._tick_hunger())
+        msgs.extend(self._tick_hunger(max(0, rate)))
 
         # 毒ダメージ: STR を 1 減少（R_SUSTSTR 装備中またはgodmode時は守る）
         if self.status.poisoned > 0 and self.str_cur > 3:
@@ -344,18 +343,28 @@ class Player:
 
         return msgs
 
-    def _tick_hunger(self) -> list[str]:
-        """食料カウンターの閾値通過時メッセージを返す。飢餓ダメージも与える。"""
+    def _tick_hunger(self, rate: int) -> list[str]:
+        """
+        Rogue 5.4 daemons.c stomach 準拠。
+        食料が尽きると時々気絶し、-STARVETIME を下回ると餓死する。
+        """
         msgs: list[str] = []
         if self.food <= 0:
-            msgs.append("You are starving!")
-            if not self.godmode:
-                self.hp -= 1
-                if self.hp <= 0:
+            self.food -= 1
+            if self.food < -STARVETIME:
+                if not self.godmode:
                     self.hp = 0
-        elif self.food == _WEAK_THRESHOLD:
-            msgs.append("You are feeling weak.")
-        elif self.food == _HUNGRY_THRESHOLD:
+                return msgs
+            if self.status.paralyzed == 0 and random.randint(0, 4) == 0:
+                self.status.paralyzed += random.randint(0, 7) + 4
+                msgs.append("You feel too weak from lack of food.  You faint.")
+            return msgs
+
+        old = self.food
+        self.food -= rate
+        if self.food < _WEAK_THRESHOLD <= old:
+            msgs.append("You are starting to feel weak.")
+        elif self.food < _HUNGRY_THRESHOLD <= old:
             msgs.append("You are starting to get hungry.")
         return msgs
 
@@ -440,7 +449,7 @@ class Player:
         """食料を食べる（満腹チェックは呼び出し元で行うこと）。"""
         msgs: list[str] = []
         old_state = self.hunger_state
-        self.food = min(STOMACHSIZE, self.food + food_value)
+        self.food = min(STOMACHSIZE, max(0, self.food) + food_value)
         new_state = self.hunger_state
         if old_state and not new_state:
             msgs.append("You feel full now.")
