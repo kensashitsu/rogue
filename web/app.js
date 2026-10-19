@@ -1,0 +1,398 @@
+// ブラウザ版の画面と操作（メインスレッド）
+//
+// ゲーム本体は worker.js（Pyodide）で動く。ここでは
+//   - Worker から届く 80×24 の画面を canvas に描く（縦持ちでは自分の周りだけを表示して付いていく）
+//   - ゲームが待っている入力の種類（term.input_hint）に合わせてボタンを出し分け、押されたキーを Worker へ渡す
+//   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
+// を受け持つ。
+
+const W = 80, H = 24, KEYQ = 64;
+const KEY = { DOWN: 0x102, UP: 0x103, LEFT: 0x104, RIGHT: 0x105, NPAGE: 0x152, PPAGE: 0x153 };
+const PALETTE = ['#0b0d0f', '#ff6a5c', '#7fd17a', '#f0c652', '#6f9df2', '#d58cf0', '#6cc6d6', '#c8ccd1'];
+const DEFAULT_FG = '#c8ccd1', DEFAULT_BG = '#0b0d0f';
+const RATIO = 2.05;                  // セルの縦横比
+const STORE = 'rogue-files';
+
+const $ = id => document.getElementById(id);
+const app = $('app'), cv = $('cv'), ctx = cv.getContext('2d'), box = $('screenBox');
+const wide = c => { const u = c.codePointAt(0); return u >= 0x1100 && !(u >= 0xff61 && u <= 0xff9f); };
+
+// ---------------------------------------------------------------------------
+// 表示文言（ゲームの表示言語に合わせる）
+// ---------------------------------------------------------------------------
+const L = {
+  ja: {
+    follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
+    acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
+    more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'],
+           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['S', '保存して終了'], ['Q', 'あきらめる']],
+    moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
+    next: '次へ', cancel: 'やめる', ok: '決定', lang: 'English',
+    dir: '方向を選んでください', list: '一覧の行をタップして選びます', name: '名前（英数字）', text: '文字を入力',
+    char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語' },
+    loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
+    over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
+    noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
+    crash: 'エラーで止まりました', reload: '読み込み直す',
+  },
+  en: {
+    follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
+    acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
+    more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['S', 'Save & quit'], ['Q', 'Quit']],
+    moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
+    next: 'Next', cancel: 'Cancel', ok: 'OK', lang: '日本語',
+    dir: 'Choose a direction', list: 'Tap a line to choose', name: 'Name', text: 'Type here',
+    char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語' },
+    loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
+    over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
+    noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
+    crash: 'Stopped by an error', reload: 'Reload',
+  },
+};
+let lang = 'ja';
+const t = () => L[lang];
+
+// ---------------------------------------------------------------------------
+// 端末内のファイル（セーブ・スコア・言語設定）
+// ---------------------------------------------------------------------------
+function loadFiles() {
+  try { return JSON.parse(localStorage.getItem(STORE) || '{}'); } catch { return {}; }
+}
+function saveFile(name, data) {
+  const files = loadFiles();
+  if (data === null) delete files[name];
+  else { let s = ''; for (const b of data) s += String.fromCharCode(b); files[name] = btoa(s); }
+  try { localStorage.setItem(STORE, JSON.stringify(files)); } catch (e) { console.warn(e); }
+  if (name === 'rogue.cfg') readLang(files);
+}
+const decode = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+function readLang(files) {
+  try { lang = JSON.parse(new TextDecoder().decode(decode(files['rogue.cfg']))).lang === 'en' ? 'en' : 'ja'; }
+  catch { lang = (navigator.language || '').startsWith('ja') ? 'ja' : 'en'; }
+  buildButtons();
+}
+
+// ---------------------------------------------------------------------------
+// 画面（Worker から届いた行を貯める。全角は 2 セルで右半分は null）
+// ---------------------------------------------------------------------------
+const blankRow = () => Array.from({ length: W }, () => [' ', 0]);
+const grid = Array.from({ length: H }, blankRow);
+function putRow(y, chars, styles) {
+  const row = []; let i = 0;
+  for (const c of chars) {
+    if (row.length >= W) break;
+    row.push([c, styles[i++]]);
+    if (wide(c)) row.push(null);
+  }
+  while (row.length < W) row.push([' ', 0]);
+  grid[y] = row.slice(0, W);
+}
+const rowText = y => grid[y].filter(Boolean).map(c => c[0]).join('');
+const isMap = () => grid[H - 1].some(c => c && (c[1] & 2048 || ((c[1] >> 4) & 15) === 8));   // 状態行（白地）があれば地図の画面
+function findPlayer() {
+  for (let y = 1; y < H - 1; y++)
+    for (let x = 0; x < W; x++) { const c = grid[y][x]; if (c && c[0] === '@' && (c[1] & 15) === 4) return [y, x]; }
+  return null;
+}
+
+let view = 'follow', viewCols = 40, mode = 'map';
+let cw = 8, ch = 16, cols = 40, rows = 22, vx = 0, vy = 1, py = 12, px = 40;
+try { const p = JSON.parse(localStorage.getItem('rogue-view') || '{}'); view = p.view || view; viewCols = p.cols || viewCols; } catch {}
+const saveView = () => { try { localStorage.setItem('rogue-view', JSON.stringify({ view, cols: viewCols })); } catch {} };
+
+let drawQueued = false;
+function requestDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; render(); }); } }
+
+function render() {
+  mode = isMap() ? 'map' : 'text';
+  const land = innerWidth > innerHeight;
+  app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}`;
+  box.classList.toggle('text', mode === 'text');
+  $('zoomSeg').hidden = view !== 'follow';
+
+  if (mode === 'map') {
+    $('msg').textContent = rowText(0).trim();
+    const st = $('status'); st.textContent = '';
+    for (const s of rowText(H - 1).trim().split(/\s{2,}/)) { const e = document.createElement('span'); e.textContent = s; st.append(e); }
+  }
+
+  const bw = box.clientWidth, bh = box.clientHeight;
+  let y0 = 0;
+  if (mode === 'text') {
+    let used = 20, last = 0;
+    for (let y = 0; y < H; y++) {
+      const s = rowText(y); if (s.trim()) last = y;
+      let w = 0, end = 0; for (const c of s) { w += wide(c) ? 2 : 1; if (c !== ' ') end = w; }
+      used = Math.max(used, end + 1);
+    }
+    cols = Math.min(W, used); rows = last + 1;
+    cw = Math.max(bw / cols, bw / 52); vx = 0; vy = 0;   // 52 桁より広い画面は横にスクロール
+  } else if (view === 'full') {
+    cols = W; rows = H; cw = Math.min(bw / W, bh / (H * RATIO)); vx = 0; vy = 0;
+  } else {
+    cols = Math.min(viewCols, W); cw = bw / cols;
+    rows = Math.max(1, Math.min(H - 2, Math.floor(bh / (cw * RATIO))));
+    const p = findPlayer(); if (p) [py, px] = p;
+    follow();
+    y0 = vy;
+  }
+  ch = cw * RATIO;
+  const dpr = devicePixelRatio || 1;
+  const wpx = Math.floor(cols * cw), hpx = Math.floor(rows * ch);
+  if (cv.width !== Math.floor(wpx * dpr) || cv.height !== Math.floor(hpx * dpr)) {
+    cv.style.width = wpx + 'px'; cv.style.height = hpx + 'px';
+    cv.width = Math.floor(wpx * dpr); cv.height = Math.floor(hpx * dpr);
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawCells(mode === 'map' && view === 'follow' ? y0 : 0);
+}
+
+// @ が表示の端から 1/4 以内に来たら視点をずらす（地図は 1〜22 行目）
+function follow() {
+  const mx = Math.floor(cols / 4), my = Math.floor(rows / 4);
+  if (px < vx + mx) vx = px - mx;
+  if (px >= vx + cols - mx) vx = px - cols + mx + 1;
+  if (py < vy + my) vy = py - my;
+  if (py >= vy + rows - my) vy = py - rows + my + 1;
+  vx = Math.max(0, Math.min(W - cols, vx));
+  vy = Math.max(1, Math.min(H - 1 - rows, vy));
+}
+
+function drawCells(top) {
+  ctx.fillStyle = DEFAULT_BG; ctx.fillRect(0, 0, cols * cw, rows * ch);
+  ctx.textBaseline = 'middle';
+  const size = Math.round(cw * 1.9);
+  const family = getComputedStyle(document.documentElement).getPropertyValue('--font-term');
+  for (let r = 0; r < rows; r++) {
+    const row = grid[top + r]; if (!row) continue;
+    for (let c = 0; c < cols; c++) {
+      const cell = row[vx + c]; if (!cell) continue;
+      const [g, s] = cell; const w = wide(g) ? 2 : 1;
+      let fg = (s & 15) ? PALETTE[(s & 15) - 1] : null, bg = ((s >> 4) & 15) ? PALETTE[((s >> 4) & 15) - 1] : null;
+      if (s & 2048) [fg, bg] = [bg || DEFAULT_BG, fg || DEFAULT_FG];
+      if (bg) { ctx.fillStyle = bg; ctx.fillRect(c * cw, r * ch, cw * w + 0.5, ch + 0.5); }
+      if (g === ' ') continue;
+      ctx.font = `${s & 256 ? 700 : 400} ${size}px ${family}`;
+      ctx.fillStyle = fg || DEFAULT_FG;
+      ctx.globalAlpha = s & 512 ? 0.6 : 1;
+      ctx.fillText(g, c * cw + (w * cw - ctx.measureText(g).width) / 2, r * ch + ch / 2 + cw * 0.08);
+      if (s & 1024) ctx.fillRect(c * cw, r * ch + ch - 2, cw * w, 1);
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// キー（SharedArrayBuffer のリングバッファで Worker に渡す）
+// ---------------------------------------------------------------------------
+let keys = null;
+function send(...codes) {
+  if (!keys) return;
+  for (const k of codes) {
+    const code = typeof k === 'number' ? k : k.codePointAt(0);
+    const w = Atomics.load(keys, 0);
+    if (w - keys[1] >= KEYQ) return;
+    keys[2 + (w % KEYQ)] = code;
+    Atomics.store(keys, 0, w + 1);
+  }
+  Atomics.notify(keys, 0);
+}
+const keyCode = k => k === '^P' ? 16 : k;
+
+// ---------------------------------------------------------------------------
+// ボタン
+// ---------------------------------------------------------------------------
+const DPAD = [['y', '↖'], ['k', '↑'], ['u', '↗'], ['h', '←'], ['.', ''], ['l', '→'], ['b', '↙'], ['j', '↓'], ['n', '↘']];
+let hint = 'any', valid = '';
+
+function makeKey(label, sub, parent, cls) {
+  const b = document.createElement('button'); b.type = 'button'; b.className = 'key' + (cls ? ' ' + cls : '');
+  const bl = document.createElement('b'); bl.textContent = label; b.append(bl);
+  if (sub) { const i = document.createElement('i'); i.textContent = sub; b.append(i); }
+  parent.append(b); return b;
+}
+
+function buildButtons() {
+  const T = t();
+  $('vFollow').textContent = T.follow; $('vFull').textContent = T.full;
+  [...$('zoomSeg').children].forEach((b, i) => { b.textContent = [T.small, T.mid, T.large][i]; });
+
+  const dp = $('dpad'); dp.textContent = '';
+  for (const [k, arrow] of DPAD) {
+    const rest = k === '.';
+    const b = makeKey(rest ? T.rest : arrow, rest ? '.' : '', dp, rest ? 'rest' : '');
+    b.setAttribute('aria-label', rest ? T.rest : k);
+    let timer = 0;
+    b.addEventListener('pointerdown', e => {
+      e.preventDefault(); b.classList.add('on');
+      if (hint === 'direction') { send(rest ? 27 : k); return; }
+      if (hint !== 'command') return;
+      send(k);
+      if (!rest) timer = setTimeout(() => send(k.toUpperCase()), 350);   // 長押し: 走る
+    });
+    const up = () => { b.classList.remove('on'); clearTimeout(timer); };
+    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+    b.addEventListener('contextmenu', e => e.preventDefault());
+  }
+
+  const acts = $('acts'); acts.textContent = '';
+  for (const [k, label] of T.acts) {
+    const b = makeKey(label, k === 'more' ? '…' : k, acts);
+    b.addEventListener('click', () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') send(k); });
+  }
+  const mg = $('moreGrid'); mg.textContent = '';
+  for (const [k, label] of T.more) {
+    const b = makeKey(label, k, mg);
+    b.addEventListener('click', () => { $('more').hidden = true; if (hint === 'command') send(keyCode(k)); });
+  }
+  $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;
+  updateControls();
+}
+
+// ゲームが待っている入力に合わせて右側（横持ちでは右列）を切り替える
+function updateControls() {
+  const T = t(), c = $('ctx');
+  const cmd = hint === 'command';
+  $('acts').hidden = !cmd;
+  c.hidden = cmd;
+  $('dpad').classList.toggle('off', !(cmd || hint === 'direction'));
+  if (!cmd) $('more').hidden = true;
+  if (cmd) return;
+
+  c.textContent = '';
+  const note = s => { const p = document.createElement('div'); p.className = 'hint'; p.textContent = s; c.append(p); };
+  const row = () => { const r = document.createElement('div'); r.className = 'row'; c.append(r); return r; };
+  const btn = (label, sub, parent, fn, cls) => { const b = makeKey(label, sub, parent, cls); b.addEventListener('click', fn); return b; };
+
+  if (hint === 'direction') {
+    note(T.dir);
+    btn(T.cancel, 'ESC', row(), () => send(27));
+  } else if (hint === 'char' && valid) {
+    const r = row();
+    for (const k of valid) btn(T.char[k] || k, k, r, () => send(k));
+    btn(T.cancel, 'ESC', row(), () => send(27));
+  } else if (hint === 'list') {
+    note(T.list);
+    const r = row();
+    btn('↑', '', r, () => send(KEY.UP)); btn('↓', '', r, () => send(KEY.DOWN));
+    btn(T.cancel, 'ESC', row(), () => send(27));
+  } else if (hint === 'text' || hint === 'name' || hint === 'char') {
+    textEntry(c, T);
+  } else {
+    btn(T.next + ' ▶', '', c, () => send(32), 'big');
+  }
+}
+
+function textEntry(c, T) {
+  const name = hint === 'name';
+  const f = document.createElement('form'); f.className = 'ctx';
+  const inp = document.createElement('input');
+  inp.id = 'txt'; inp.autocomplete = 'off'; inp.autocapitalize = 'off'; inp.spellcheck = false;
+  inp.enterKeyHint = 'done';
+  inp.placeholder = name ? T.name : T.text;
+  if (name) inp.maxLength = 23;
+  if (hint === 'char') inp.maxLength = 1;
+  f.append(inp);
+  const r = document.createElement('div'); r.className = 'row'; f.append(r);
+  const ok = makeKey(T.ok, '↵', r); ok.type = 'submit';
+  if (name) makeKey(T.lang, 'Tab', r).addEventListener('click', () => send(9));
+  else makeKey(T.cancel, 'ESC', r).addEventListener('click', () => send(27));
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    let s = inp.value;
+    if (name) s = [...s].filter(ch => ch >= ' ' && ch <= '~').join('').slice(0, 23);
+    if (hint === 'char') { if (s) send(s[0]); return; }
+    send(...s, 13);
+    inp.blur();
+  });
+  c.append(f);
+}
+
+// 画面のタップ: 「次へ」待ちなら進める、一覧なら行の記号を選ぶ
+cv.addEventListener('click', e => {
+  if (hint === 'more' || hint === 'any') { send(32); return; }
+  if (hint !== 'list') return;
+  const y = Math.floor(e.offsetY / ch);
+  const m = rowText(y).match(/^\s*(\S)\)/);
+  if (m && valid.includes(m[1])) send(m[1]);
+});
+$('msg').addEventListener('click', () => { if (hint === 'more' || hint === 'any') send(32); });
+
+// パソコンのキーボードでも遊べるように
+addEventListener('keydown', e => {
+  if (document.activeElement && document.activeElement.id === 'txt') return;
+  const named = { Enter: 13, Escape: 27, Backspace: 8, Tab: 9, ArrowUp: KEY.UP, ArrowDown: KEY.DOWN, ArrowLeft: KEY.LEFT, ArrowRight: KEY.RIGHT, PageUp: KEY.PPAGE, PageDown: KEY.NPAGE };
+  let code = named[e.key];
+  if (code === undefined && e.ctrlKey && e.key.length === 1) code = e.key.toUpperCase().charCodeAt(0) - 64;
+  else if (code === undefined && e.key.length === 1 && !e.metaKey) code = e.key;
+  if (code === undefined) return;
+  e.preventDefault(); send(code);
+});
+
+function setView(v) {
+  view = v; saveView();
+  $('vFollow').setAttribute('aria-pressed', v === 'follow'); $('vFull').setAttribute('aria-pressed', v === 'full');
+  render();
+}
+$('vFollow').addEventListener('click', () => setView('follow'));
+$('vFull').addEventListener('click', () => setView('full'));
+[...$('zoomSeg').children].forEach(b => b.addEventListener('click', () => {
+  viewCols = +b.dataset.cols; saveView();
+  [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', o === b));
+  render();
+}));
+[...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
+setView(view);
+$('moreClose').addEventListener('click', () => { $('more').hidden = true; });
+addEventListener('resize', requestDraw);
+
+// ---------------------------------------------------------------------------
+// 起動
+// ---------------------------------------------------------------------------
+function cover(text, btnLabel, fn) {
+  $('cover').hidden = false; $('coverText').textContent = text;
+  const b = $('coverBtn'); b.hidden = !btnLabel;
+  if (btnLabel) { b.textContent = btnLabel; b.onclick = fn; }
+}
+
+function start() {
+  const files = loadFiles();
+  readLang(files);
+  if (!files['rogue.cfg']) {   // 初回は端末の言語で始める（名前入力画面の Tab で切り替えられる）
+    const cfg = new TextEncoder().encode(JSON.stringify({ lang }));
+    saveFile('rogue.cfg', cfg); files['rogue.cfg'] = loadFiles()['rogue.cfg'];
+  }
+  cover(t().loading);
+  if (!window.crossOriginIsolated) {
+    // coi-serviceworker が登録後に読み込み直す。それでも駄目なら諦める
+    setTimeout(() => cover(t().noIso, t().reload, () => location.reload()), 6000);
+    return;
+  }
+  const sab = new SharedArrayBuffer(4 * (2 + KEYQ));
+  keys = new Int32Array(sab);
+  const worker = new Worker('worker.js', { type: 'module' });
+  const bin = {}; for (const [k, v] of Object.entries(files)) bin[k] = decode(v);
+  worker.postMessage({ type: 'start', sab, files: bin });
+  worker.onmessage = e => {
+    const d = e.data;
+    if (d.type === 'progress') cover(d.text === 'python' ? t().loadPy : t().loadGame);
+    else if (d.type === 'draw') { for (const [y, chars, styles] of JSON.parse(d.rows)) putRow(y, chars, styles); requestDraw(); }
+    else if (d.type === 'wait') {
+      $('cover').hidden = true;
+      const changed = hint !== d.kind || valid !== d.valid;
+      hint = d.kind; valid = d.valid;
+      if (changed) updateControls();
+      requestDraw();
+    }
+    else if (d.type === 'file') saveFile(d.name, d.data);
+    else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
+    else if (d.type === 'exit') {
+      const saved = 'rogue.sav' in loadFiles();
+      cover(saved ? t().saved : t().over, saved ? t().resume : t().again, () => location.reload());
+    }
+    else if (d.type === 'error') { console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
+  };
+}
+start();
+document.fonts && document.fonts.ready.then(requestDraw);

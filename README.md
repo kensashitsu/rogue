@@ -16,6 +16,15 @@ python main.py
 
 If a save file (`rogue.sav`) exists from a previous session it is loaded automatically and the title screen is skipped.
 
+## Playing on a Phone
+
+The same game runs in the browser: https://kensashitsu.github.io/rogue/web/
+
+Python runs in the page through Pyodide, so the rules are exactly those of the terminal version.
+On a phone, the map follows the player, and the on-screen buttons send the original keys
+(hold a direction to run). Saves, scores and the language setting stay in the browser.
+On iPhone, adding the page to the Home Screen keeps Safari from clearing them.
+
 ## Language
 
 Press `Tab` on the name entry screen, or `o` during play, to switch between English and Japanese.
@@ -114,4 +123,9 @@ data/
   monsters.json  Monster parameters
 rogue.sav        Save file (created at runtime)
 rogue.scr        High score file (created at runtime)
+web/
+  index.html     Browser version: page and styles
+  app.js         Browser version: drawing, buttons, local storage
+  worker.js      Browser version: runs the game in Pyodide
+  coi-serviceworker.js  Enables cross-origin isolation on GitHub Pages
 ```

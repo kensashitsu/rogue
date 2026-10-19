@@ -402,17 +402,22 @@ class UI:
     # 入力
     # =========================================================================
 
-    def _getch(self) -> int:
-        """curses getch のラッパー。stdscr が None なら -1 を返す。"""
+    def _getch(self, hint: str = 'any', keys: str = '') -> int:
+        """
+        curses getch のラッパー。stdscr が None なら -1 を返す。
+        hint / keys は何の入力を待っているか（スマホ版がボタンの出し分けに使う。端末では無視）:
+          command / direction / more / char（keys = 受け付ける文字）/ text / name / list（keys = 選べる記号）/ any
+        """
         if self.stdscr is None:
             return -1
+        curses.input_hint(hint, keys)
         return self.stdscr.getch()
 
     def _wait_advance(self) -> None:
         """スペース・エンター・エスケープで進む --More-- キー待ち。"""
         _ADVANCE = {ord(' '), ord('\n'), ord('\r'), 27}
         while True:
-            ch = self._getch()
+            ch = self._getch('more')
             if ch in (-1, curses.KEY_RESIZE):
                 continue
             if ch in _ADVANCE:
@@ -431,7 +436,7 @@ class UI:
         self.flush_messages()
 
         while True:
-            ch = self._getch()
+            ch = self._getch('command')
             if ch == -1:
                 continue
 
@@ -466,7 +471,7 @@ class UI:
         """
         self._raw_message(msg)
         while True:
-            ch = self._getch()
+            ch = self._getch('char', valid)
             if ch in (27, ord('Q')):   # ESC
                 self.clear_message()
                 return ''
@@ -491,7 +496,7 @@ class UI:
         buf: list[str] = []
         try:
             while True:
-                ch = self._getch()
+                ch = self._getch('text')
                 if ch == 27:
                     buf = []
                     break
@@ -846,7 +851,7 @@ class UI:
                 pass
             self.stdscr.refresh()
 
-            inp = self._getch()
+            inp = self._getch('more' if display_only else 'list', ''.join(sorted(valid_slots)))
 
             # スクロール操作
             if inp == curses.KEY_UP and offset > 0:
@@ -1076,7 +1081,7 @@ class UI:
 
             self.stdscr.refresh()
 
-            ch = self._getch()
+            ch = self._getch('name')
             if ch in (10, 13):          # Enter
                 break
             if ch == 9:                 # Tab: 言語切り替え
@@ -1292,7 +1297,7 @@ class UI:
         }
         self._raw_message(msg or tr("Which direction? "))
         while True:
-            ch = self._getch()
+            ch = self._getch('direction')
             if ch in (27, ord(' '), ord('Q')):
                 self.clear_message()
                 return (0, 0)
