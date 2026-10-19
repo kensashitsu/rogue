@@ -19,6 +19,7 @@ from constants import (
     R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
     R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
     R_NOP, R_AGGR, R_SUSTARM,
+    LEVEL_HP_BONUS,
 )
 
 # ---------------------------------------------------------------------------
@@ -441,7 +442,7 @@ class Player:
             needed = _EXP_TABLE[self.level - 1]
             if self.exp >= needed:
                 self.level += 1
-                hp_gain = random.randint(1, 10)
+                hp_gain = random.randint(1, 10) + LEVEL_HP_BONUS
                 self.max_hp += hp_gain
                 self.hp     += hp_gain
                 msgs.append(

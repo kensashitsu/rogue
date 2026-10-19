@@ -816,8 +816,9 @@ def use_potion(
 
     elif which == P_RAISE:
         from player import _MAX_LEVEL
+        from constants import LEVEL_HP_BONUS
         if player.level >= _MAX_LEVEL:
-            hp_gain = roll(1, 10)
+            hp_gain = roll(1, 10) + LEVEL_HP_BONUS
             player.max_hp += hp_gain
             player.hp = min(player.max_hp, player.hp + hp_gain)
             msgs.append(tr('You feel a surge of power!'))
