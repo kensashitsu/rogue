@@ -388,7 +388,7 @@ JA: dict[str, str] = {
     "a {app} {kind} called {guess}": "{app}{kind}（{guess}）",
     "a {app} {kind}": "{app}{kind}",
     "a ration of food": "食料",
-    "some slime-mold": "スライムモールド",
+    "some slime-mold": "粘菌",
     "{o_arm} gold pieces": "金貨{o_arm}枚",
     "the Amulet of Yendor": "イェンダーの魔除け",
     "cursed ": "呪われた",
