@@ -15,7 +15,6 @@ const STORE = 'rogue-files';
 
 const $ = id => document.getElementById(id);
 const app = $('app'), cv = $('cv'), ctx = cv.getContext('2d'), box = $('screenBox');
-const wide = c => { const u = c.codePointAt(0); return u >= 0x1100 && !(u >= 0xff61 && u <= 0xff9f); };
 
 // ---------------------------------------------------------------------------
 // 表示文言（ゲームの表示言語に合わせる）
@@ -75,6 +74,7 @@ function readLang(files) {
 
 // ---------------------------------------------------------------------------
 // 画面（Worker から届いた行を貯める。全角は 2 セルで右半分は null）
+// 文字幅は term.py の判定（スタイルの 4096）に従う。罫線など曖昧幅の字は 1 マス
 // ---------------------------------------------------------------------------
 const blankRow = () => Array.from({ length: W }, () => [' ', 0]);
 const grid = Array.from({ length: H }, blankRow);
@@ -82,8 +82,9 @@ function putRow(y, chars, styles) {
   const row = []; let i = 0;
   for (const c of chars) {
     if (row.length >= W) break;
-    row.push([c, styles[i++]]);
-    if (wide(c)) row.push(null);
+    const s = styles[i++];
+    row.push([c, s]);
+    if (s & 4096) row.push(null);
   }
   while (row.length < W) row.push([' ', 0]);
   grid[y] = row.slice(0, W);
@@ -122,8 +123,9 @@ function render() {
   if (mode === 'text') {
     let used = 20, last = 0;
     for (let y = 0; y < H; y++) {
-      const s = rowText(y); if (s.trim()) last = y;
-      let w = 0, end = 0; for (const c of s) { w += wide(c) ? 2 : 1; if (c !== ' ') end = w; }
+      let end = 0;
+      grid[y].forEach((c, x) => { if (c && c[0] !== ' ') end = x + (c[1] & 4096 ? 2 : 1); });
+      if (end) last = y;
       used = Math.max(used, end + 1);
     }
     cols = Math.min(W, used); rows = last + 1;
@@ -168,7 +170,7 @@ function drawCells(top) {
     const row = grid[top + r]; if (!row) continue;
     for (let c = 0; c < cols; c++) {
       const cell = row[vx + c]; if (!cell) continue;
-      const [g, s] = cell; const w = wide(g) ? 2 : 1;
+      const [g, s] = cell; const w = s & 4096 ? 2 : 1;
       let fg = (s & 15) ? PALETTE[(s & 15) - 1] : null, bg = ((s >> 4) & 15) ? PALETTE[((s >> 4) & 15) - 1] : null;
       if (s & 2048) [fg, bg] = [bg || DEFAULT_BG, fg || DEFAULT_FG];
       if (bg) { ctx.fillStyle = bg; ctx.fillRect(c * cw, r * ch, cw * w + 0.5, ch + 0.5); }
@@ -176,7 +178,13 @@ function drawCells(top) {
       ctx.font = `${s & 256 ? 700 : 400} ${size}px ${family}`;
       ctx.fillStyle = fg || DEFAULT_FG;
       ctx.globalAlpha = s & 512 ? 0.6 : 1;
-      ctx.fillText(g, c * cw + (w * cw - ctx.measureText(g).width) / 2, r * ch + ch / 2 + cw * 0.08);
+      // 罫線やブロック（█ ═ ┌ など）は Python では半角 1 マスだが、フォントでは全角幅のことがある。マスの幅に縮めて描く
+      const mw = ctx.measureText(g).width, cellW = w * cw, ty = r * ch + ch / 2 + cw * 0.08;
+      if (mw > cellW * 1.05) {
+        ctx.save(); ctx.translate(c * cw, 0); ctx.scale(cellW / mw, 1); ctx.fillText(g, 0, ty); ctx.restore();
+      } else {
+        ctx.fillText(g, c * cw + (cellW - mw) / 2, ty);
+      }
       if (s & 1024) ctx.fillRect(c * cw, r * ch + ch - 2, cw * w, 1);
       ctx.globalAlpha = 1;
     }

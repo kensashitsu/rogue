@@ -180,7 +180,8 @@ def input_hint(kind: str, keys: str = '') -> None:
 
 
 def _web_style(attr: int) -> int:
-    """属性値 → ブラウザ版の描画用の数値（前景+1 | 背景+1 << 4 | 太字 256 | 薄字 512 | 下線 1024 | 反転 2048）。"""
+    """属性値 → ブラウザ版の描画用の数値（前景+1 | 背景+1 << 4 | 太字 256 | 薄字 512 | 下線 1024 | 反転 2048）。
+    全角（2 マス）の文字は呼び出し側で 4096 を足す。"""
     fg, bg = _pairs.get((attr & _A_COLOR) >> 8, (-1, -1))
     v = (fg + 1) | ((bg + 1) << 4)
     if attr & A_BOLD:
@@ -337,7 +338,7 @@ class window:
         rows = []
         for y, row in enumerate(self._buf):
             if self._shown[y] != row:
-                cells = [(c, _web_style(a)) for c, a in row if c != _CONT]
+                cells = [(c, _web_style(a) | (4096 if char_width(c) == 2 else 0)) for c, a in row if c != _CONT]
                 rows.append([y, ''.join(c for c, _ in cells), [a for _, a in cells]])
                 self._shown[y] = list(row)
         self._full_clear = False
