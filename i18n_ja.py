@@ -466,7 +466,7 @@ JA: dict[str, str] = {
     "     Retrieve the Amulet of Yendor from floor 26.": "     26階に眠るイェンダーの魔除けを持ち帰れ。",
     "              Press any key to begin...": "              何かキーを押すと始まります...",
     "  Enter your name: ": "  名前を入力してください: ",
-    "  (Up to {n} characters  |  Enter to confirm)": "  （英数字{n}文字まで ｜ Enter で決定）",
+    "  (Up to {n} characters  |  Enter to confirm)": "  （{n}文字まで ｜ Enter で決定）",
     "  Tab: 日本語で遊ぶ": "  Tab: Play in English",
 
     # ---- ゲームオーバー・勝利 ----
