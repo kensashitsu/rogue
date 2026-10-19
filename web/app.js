@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.7';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.8';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -398,6 +398,22 @@ tap($('vFull'), () => setView('full'));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
 $('ver').textContent = 'v' + VERSION;
+
+// 新しい版が出ていたら版番号の所に知らせる（iPhone はページを開いたまま保つので、自分では読み込み直さない）。
+// 遊んでいる途中で勝手に読み込み直すと保存していない冒険が消えるので、押されたときだけ読み込み直す
+async function checkUpdate() {
+  try {
+    const src = await (await fetch('app.js', { cache: 'no-store' })).text();
+    const m = src.match(/const VERSION = '([^']+)'/);
+    if (!m || m[1] === VERSION) return;
+    const v = $('ver');
+    v.textContent = lang === 'ja' ? '新しい版があります ↻' : 'Update available ↻';
+    v.classList.add('update');
+  } catch {}
+}
+tap($('ver'), () => { if ($('ver').classList.contains('update')) location.reload(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
+setInterval(checkUpdate, 10 * 60 * 1000);
 tap($('moreClose'), () => { $('more').hidden = true; });
 addEventListener('resize', requestDraw);
 
