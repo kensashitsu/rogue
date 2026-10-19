@@ -1081,6 +1081,11 @@ class UI:
                 self.stdscr.addstr(16, 0, tr("  Tab: 日本語で遊ぶ"))
             except curses.error:
                 pass
+            try:   # 原作の著作権表示（ライセンスの条件。全文は LICENSE.txt と説明書）
+                self.stdscr.addstr(21, 2, "Original Rogue (C) 1980-1985, 1999")
+                self.stdscr.addstr(22, 2, "Michael Toy, Ken Arnold and Glenn Wichman")
+            except curses.error:
+                pass
 
             try:
                 self.stdscr.move(12, text_width(prompt) + text_width(name_str))
