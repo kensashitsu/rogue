@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="theme-color" content="#0b0d0f">
+<title>Rogue</title>
+<script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
+<script src="coi-serviceworker.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&display=swap" crossorigin>
+<style>
+/* 端末の画面が主役。操作部はキーボードのキートップに寄せる（暗色固定） */
+:root {
+  --bg: #0b0d0f;
+  --panel: #14181c;
+  --key: #222830;
+  --key-hi: #303844;
+  --line: #2c333c;
+  --fg: #c8ccd1;
+  --dim: #7d8690;
+  --accent: #f0c652;
+  --font-term: "BIZ UDGothic", "Hiragino Sans", "Yu Gothic", monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+[hidden] { display: none !important; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font-family: var(--font-term);
+  overflow: hidden; overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
+}
+#app {
+  height: 100%; box-sizing: border-box;
+  display: grid; gap: 6px;
+  padding-top: max(6px, env(safe-area-inset-top, 0px));
+  padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+/* 縦持ち: 設定 / メッセージ / 画面 / 状態 / 操作 */
+#app.portrait {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "bar" "msg" "screen" "status" "pad";
+  --dk: 52px; --acols: 3;
+}
+/* 横持ち: 左に十字キー、中央に画面、右に行動ボタン */
+#app.landscape {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "bar msg side" "dpad screen side" "dpad status side";
+  column-gap: 10px;
+  --dk: 42px; --acols: 2;
+}
+.bar { grid-area: bar; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
+.landscape .bar { width: calc(var(--dk) * 3 + 10px); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { font: inherit; font-size: 12px; color: var(--dim); background: transparent; border: 0; padding: 4px 10px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--key-hi); color: var(--fg); }
+.seg button + button { border-left: 1px solid var(--line); }
+#msg { grid-area: msg; min-height: 1.5em; font-size: 15px; line-height: 1.5; padding: 2px 4px; min-width: 0; overflow-wrap: anywhere; }
+.landscape #msg { font-size: 13px; }
+#screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
+#screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
+canvas { display: block; flex: none; }
+#status {
+  grid-area: status; display: flex; flex-wrap: wrap; gap: 2px 14px; min-height: 1.4em;
+  font-size: 13px; padding: 4px 6px; background: var(--fg); color: var(--bg); font-weight: 700;
+  font-variant-numeric: tabular-nums; border-radius: 3px;
+}
+.landscape #status { font-size: 12px; }
+#app.text #msg, #app.text #status, #app.full #msg, #app.full #status { visibility: hidden; }
+
+/* 操作部 */
+#pad { grid-area: pad; display: flex; gap: 10px; justify-content: space-between; align-items: flex-end; min-height: calc(var(--dk) * 3 + 10px); }
+.landscape #pad { display: contents; }
+.dpad { grid-area: dpad; display: grid; grid-template-columns: repeat(3, var(--dk)); grid-auto-rows: var(--dk); gap: 5px; align-self: end; }
+.side { grid-area: side; flex: 1; max-width: 230px; align-self: end; display: grid; gap: 5px; }
+.landscape .side { width: 112px; }
+.acts { display: grid; grid-template-columns: repeat(var(--acols), minmax(0, 1fr)); gap: 5px; }
+.ctx { display: grid; gap: 6px; }
+.ctx .hint { font-size: 12px; color: var(--dim); line-height: 1.4; }
+.ctx .row { display: grid; grid-template-columns: repeat(auto-fit, minmax(64px, 1fr)); gap: 5px; }
+.key {
+  font: inherit; color: var(--fg); background: var(--key);
+  border: 1px solid var(--line); border-bottom-width: 3px; border-radius: 8px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; padding: 2px 4px; min-height: 44px; touch-action: manipulation; cursor: pointer;
+}
+.key:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.key.on, .key:active { background: var(--key-hi); }
+.key b { font-size: 12px; font-weight: 400; line-height: 1.15; white-space: nowrap; }
+.key i { font-style: normal; font-size: 11px; color: var(--accent); line-height: 1; }
+.key.big { min-height: 52px; }
+.key.big b { font-size: 15px; }
+.landscape .key b { font-size: 11px; }
+.dpad .key { min-height: 0; font-size: 20px; }
+.dpad .key.rest b { font-size: 11px; }
+.dpad.off .key { opacity: .35; }
+#txt {
+  font: inherit; font-size: 16px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px; min-width: 0;
+  -webkit-user-select: text; user-select: text;
+}
+#txt:focus { outline: 2px solid var(--accent); outline-offset: 0; }
+
+/* その他のコマンド */
+#more {
+  position: fixed; inset: auto 0 0 0; z-index: 5; background: var(--panel); border-top: 1px solid var(--line);
+  padding: 12px max(12px, env(safe-area-inset-right, 0px)) calc(12px + env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  display: grid; gap: 8px;
+}
+#more header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--dim); gap: 8px; }
+#more .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.plain { font: inherit; font-size: 13px; color: var(--fg); background: var(--key); border: 1px solid var(--line); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+
+/* 読み込み・終了 */
+#cover {
+  position: fixed; inset: 0; z-index: 10; background: var(--bg);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+  padding: 24px; text-align: center; line-height: 1.7; font-size: 14px;
+}
+#cover h1 { margin: 0; font-size: 34px; letter-spacing: .3em; color: var(--accent); font-weight: 700; padding-left: .3em; }
+#cover p { margin: 0; color: var(--dim); max-width: 32em; white-space: pre-line; }
+#flash { position: fixed; inset: 0; background: var(--fg); opacity: 0; pointer-events: none; z-index: 20; }
+@media (prefers-reduced-motion: no-preference) { #flash { transition: opacity .12s; } }
+</style>
+</head>
+<body>
+<div id="app" class="portrait follow">
+  <div class="bar">
+    <span class="seg">
+      <button type="button" id="vFollow" aria-pressed="true">追従</button>
+      <button type="button" id="vFull" aria-pressed="false">全体</button>
+    </span>
+    <span class="seg" id="zoomSeg">
+      <button type="button" data-cols="48" aria-pressed="false">小</button>
+      <button type="button" data-cols="40" aria-pressed="true">中</button>
+      <button type="button" data-cols="32" aria-pressed="false">大</button>
+    </span>
+  </div>
+  <div id="msg" aria-live="polite"></div>
+  <div id="screenBox"><canvas id="cv" aria-label="画面"></canvas></div>
+  <div id="status"></div>
+  <div id="pad">
+    <div class="dpad" id="dpad"></div>
+    <div class="side">
+      <div class="acts" id="acts"></div>
+      <div class="ctx" id="ctx" hidden></div>
+    </div>
+  </div>
+</div>
+
+<div id="more" hidden>
+  <header><span id="moreTitle"></span><button type="button" class="plain" id="moreClose"></button></header>
+  <div class="grid" id="moreGrid"></div>
+</div>
+
+<div id="cover">
+  <h1>ROGUE</h1>
+  <p id="coverText">読み込み中…</p>
+  <button type="button" class="plain" id="coverBtn" hidden></button>
+</div>
+<div id="flash"></div>
+
+<script src="app.js"></script>
+</body>
+</html>

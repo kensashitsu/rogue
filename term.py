@@ -13,18 +13,26 @@ ui.py は `import term as curses` として使う。実装しているのは ui.
   timeout / getmaxyx、属性 A_* と KEY_* 定数、error 例外。
 
 入力は Windows の msvcrt を使う（Windows 専用）。
+
+ブラウザ版（Pyodide、sys.platform == 'emscripten'）では VT シーケンスを出さず、
+変化した行を web/worker.js の rogue_draw に渡し、キーは rogue_getch から受け取る。
 """
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
 import unicodedata
 
+_WEB = sys.platform == 'emscripten'
+
 if os.name == 'nt':
     import ctypes
     import msvcrt
+if _WEB:
+    import js
 
 
 class error(Exception):
@@ -89,11 +97,15 @@ def _enable_vt() -> None:
 
 
 def _write(s: str) -> None:
-    _out.write(s)
+    if not _WEB:
+        _out.write(s)
 
 
 def initscr() -> "window":
     global _screen
+    if _WEB:
+        _screen = window(24, 80)
+        return _screen
     _enable_vt()
     try:
         _out.reconfigure(encoding='utf-8')
@@ -140,6 +152,9 @@ def color_pair(n: int) -> int:
 
 
 def flash() -> None:
+    if _WEB:
+        js.rogue_flash()
+        return
     _write("\x1b[?5h")
     _out.flush()
     time.sleep(0.08)
@@ -148,9 +163,35 @@ def flash() -> None:
 
 
 def flushinp() -> None:
-    if os.name == 'nt':
+    if _WEB:
+        js.rogue_flushinp()
+    elif os.name == 'nt':
         while msvcrt.kbhit():
             msvcrt.getwch()
+
+
+_hint = ('any', '')
+
+
+def input_hint(kind: str, keys: str = '') -> None:
+    """次の getch が何の入力を待っているかを伝える（ブラウザ版のボタン出し分け用。端末では使わない）。"""
+    global _hint
+    _hint = (kind, keys)
+
+
+def _web_style(attr: int) -> int:
+    """属性値 → ブラウザ版の描画用の数値（前景+1 | 背景+1 << 4 | 太字 256 | 薄字 512 | 下線 1024 | 反転 2048）。"""
+    fg, bg = _pairs.get((attr & _A_COLOR) >> 8, (-1, -1))
+    v = (fg + 1) | ((bg + 1) << 4)
+    if attr & A_BOLD:
+        v |= 256
+    if attr & A_DIM:
+        v |= 512
+    if attr & A_UNDERLINE:
+        v |= 1024
+    if attr & A_REVERSE:
+        v |= 2048
+    return v
 
 
 def _sgr(attr: int) -> str:
@@ -273,6 +314,9 @@ class window:
         return "".join(parts)
 
     def refresh(self) -> None:
+        if _WEB:
+            self._web_refresh()
+            return
         out: list[str] = []
         if self._full_clear:
             out.append("\x1b[0m\x1b[2J")
@@ -289,6 +333,17 @@ class window:
             _write("".join(out))
             _out.flush()
 
+    def _web_refresh(self) -> None:
+        rows = []
+        for y, row in enumerate(self._buf):
+            if self._shown[y] != row:
+                cells = [(c, _web_style(a)) for c, a in row if c != _CONT]
+                rows.append([y, ''.join(c for c, _ in cells), [a for _, a in cells]])
+                self._shown[y] = list(row)
+        self._full_clear = False
+        if rows:
+            js.rogue_draw(json.dumps(rows, ensure_ascii=False))
+
     # ---- 入力 ----
 
     def keypad(self, flag: bool) -> None:
@@ -301,7 +356,12 @@ class window:
         return self._rows, self._cols
 
     def getch(self) -> int:
+        global _hint
         self.refresh()
+        if _WEB:
+            kind, keys = _hint
+            _hint = ('any', '')
+            return int(js.rogue_getch(kind, keys))
         c = msvcrt.getwch()
         if c in ('\x00', '\xe0'):
             return _SPECIAL_KEYS.get(msvcrt.getwch(), -1)
