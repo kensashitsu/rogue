@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.27';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.28';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -35,7 +35,7 @@ const L = {
     follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
     acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'],
-           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['S', '保存して終了'], ['Q', 'あきらめる']],
+           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる']],
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
     next: '次へ', tapAnywhere: 'タップして次へ進む', cancel: 'やめる', ok: '決定', lang: 'English',
     dir: '方向を選んでください', list: '一覧の行をタップして選びます', name: '名前', text: '文字を入力',
@@ -49,7 +49,7 @@ const L = {
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'],
-           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['S', 'Save & quit'], ['Q', 'Quit']],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual (ja)'], ['S', 'Save & quit'], ['Q', 'Quit']],
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
     next: 'Next', tapAnywhere: 'Tap to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
     dir: 'Choose a direction', list: 'Tap a line to choose', name: 'Name', text: 'Type here',
@@ -342,8 +342,8 @@ function buildButtons() {
   }
   const mg = $('moreGrid'); mg.textContent = '';
   for (const [k, label] of T.more) {
-    const b = makeKey(label, k, mg);
-    tap(b, () => { $('more').hidden = true; if (hint === 'command') answer(keyCode(k)); });
+    const b = makeKey(label, k === 'manual' ? '' : k, mg);
+    tap(b, () => { $('more').hidden = true; if (k === 'manual') openManual(); else if (hint === 'command') answer(keyCode(k)); });
   }
   $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;
   updateControls();
@@ -442,12 +442,13 @@ document.addEventListener('pointerup', e => {
 }, true);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('touchstart', e => {   // preventTouch: 入力欄と画面（スクロールする）以外
-  if (!e.target.closest('#txt, #screenBox')) e.preventDefault();
+  if (!e.target.closest('#txt, #screenBox, #manualBody')) e.preventDefault();
 }, { passive: false });
 
 // パソコンのキーボードでも遊べるように
 addEventListener('keydown', e => {
   if (document.activeElement && document.activeElement.id === 'txt') return;
+  if (!$('manual').hidden) { if (e.key === 'Escape') $('manual').hidden = true; return; }   // 説明書を開いている間はゲームに送らない
   const named = { Enter: 13, Escape: 27, Backspace: 8, Tab: 9, ArrowUp: KEY.UP, ArrowDown: KEY.DOWN, ArrowLeft: KEY.LEFT, ArrowRight: KEY.RIGHT, PageUp: KEY.PPAGE, PageDown: KEY.NPAGE };
   let code = named[e.key];
   if (code === undefined && e.ctrlKey && e.key.length === 1) code = e.key.toUpperCase().charCodeAt(0) - 64;
@@ -488,6 +489,64 @@ tap($('ver'), () => { if ($('ver').classList.contains('update')) location.reload
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 setInterval(checkUpdate, 10 * 60 * 1000);
 tap($('moreClose'), () => { $('more').hidden = true; });
+
+// ---------------------------------------------------------------------------
+// 説明書（exe 版と同じ manual.txt を読み込んで、スマホの幅で読めるように組む）
+// ---------------------------------------------------------------------------
+let manualLoaded = false;
+async function openManual() {
+  $('manual').hidden = false;
+  $('manualClose').textContent = t().close;
+  if (manualLoaded) return;
+  const body = $('manualBody');
+  body.textContent = t().loading;
+  try {
+    const r = await fetch('../manual.txt', { cache: 'no-cache' });
+    if (!r.ok) throw new Error(r.status);
+    buildManual(body, await r.text());
+    manualLoaded = true;
+  } catch (e) { body.textContent = String(e); }
+}
+// 見た目の桁数（全角 = 2）
+const textCols = s => [...s].reduce((n, c) => n + (/[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(c) ? 2 : 1), 0);
+function buildManual(body, text) {
+  body.textContent = '';
+  const add = (tag, cls, s) => { const el = document.createElement(tag); if (cls) el.className = cls; if (s != null) el.textContent = s; body.append(el); return el; };
+  const lines = text.replace(/\r/g, '').split('\n');
+  const isRule = l => /^\s*[=─-]{8,}\s*$/.test(l);
+  const isBox = l => /^\s*[┌│└]/.test(l);
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i];
+    // ===== で挟まれた 1〜3 行は見出し
+    if (/^=+$/.test(l.trim())) {
+      let j = i + 1;
+      while (j < lines.length && j - i <= 4 && !/^=+$/.test(lines[j].trim())) j++;
+      if (j < lines.length && j - i <= 4 && j > i + 1) {
+        add('h2', '', lines.slice(i + 1, j).map(s => s.trim()).filter(Boolean).join('\n'));
+        i = j;
+      }
+      continue;
+    }
+    if (isRule(l)) { add('hr'); continue; }
+    if (isBox(l)) {   // 画面の図は崩さず、横にスクロールして見る
+      const block = [];
+      while (i < lines.length && isBox(lines[i])) block.push(lines[i++]);
+      i--;
+      const n = Math.min(...block.map(s => s.match(/^ */)[0].length));
+      add('pre', 'wide', block.map(s => s.slice(n)).join('\n'));
+      continue;
+    }
+    if (!l.trim()) { add('div', 'gap'); continue; }
+    const ind = l.match(/^ */)[0].length;
+    const d = add('div', 'ln', l.slice(ind));
+    // 折り返した行の字下げ（半角 2 文字 = 1em）。「名前    説明」の表の行は、説明の列に揃えて折り返す
+    const m = l.slice(ind).match(/^(\S.*?\S|\S) {2,}(?=\S)/);
+    const hang = m && textCols(m[0]) <= 40 ? textCols(m[0]) : 0;
+    d.style.paddingLeft = `${(ind + hang) / 2}em`;
+    if (hang) d.style.textIndent = `${-hang / 2}em`;
+  }
+}
+tap($('manualClose'), () => { $('manual').hidden = true; });
 addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textContent = ''; requestDraw(); });   // 幅が変わったら詰め直す
 
 // ---------------------------------------------------------------------------
