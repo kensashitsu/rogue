@@ -692,7 +692,7 @@ class Game:
         food_amount = random.randint(1100, 1500)
         msgs = self.player.eat(food_amount)
         # 味メッセージと経験値（Rogue 5.4仕様）
-        if item.o_which == 1:  # スライムモールド: 常においしい、経験値+1
+        if item.o_which == 1:  # スライムモールド（粘菌）: 常においしい、経験値+1
             msgs.append(tr('Yum, that tasted good.'))
             msgs.extend(self.player.gain_exp(1))
         elif random.randint(0, 9) < 7:  # 70%の確率でまずい、経験値+1
