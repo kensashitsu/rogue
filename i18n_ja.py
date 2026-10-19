@@ -185,6 +185,8 @@ JA: dict[str, str] = {
     "The Nymph drops {name}!": "ニンフが{name}を落とした！",
     "The Flytrap's vines hold you fast!": "ハエトリグサのつるに捕まって動けない！",
     "You can't go that way.": "そちらには進めない。",
+    "You rest.": "休んだ。",
+    "You rest. ({n} turns)": "休んだ。（{n}ターン）",
     "The scroll turns to dust as you pick it up.": "拾おうとした巻物は塵になった。",
     "You pick up {amount} gold pieces.": "金貨を{amount}枚拾った。",
     "Your pack is full.": "荷物がいっぱいだ。",

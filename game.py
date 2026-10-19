@@ -413,6 +413,8 @@ class Game:
     # -------------------------------------------------------------------------
 
     def _handle_action(self, action: str, key: str, ui: UI) -> None:
+        if action != 'rest':
+            self._rest_streak = 0
         if action in MOVE_DELTAS:
             dy, dx = MOVE_DELTAS[action]
             self._do_move(dy, dx, ui)
@@ -478,6 +480,11 @@ class Game:
                 self._end_turn(ui)
         elif action == 'rest':
             self._end_turn(ui)
+            # 休んだことが分かるように出す（続けて休むと回数も）。ほかのメッセージが出るターンは出さない（「次へ」が増えないように）
+            self._rest_streak = getattr(self, '_rest_streak', 0) + 1
+            if not ui._msgs:
+                n = self._rest_streak
+                ui.add_message(tr('You rest.') if n == 1 else tr('You rest. ({n} turns)', n=n))
         elif action == 'godmode':
             self.player.godmode = not self.player.godmode
             state = "ON" if self.player.godmode else "OFF"
