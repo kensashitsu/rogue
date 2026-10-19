@@ -62,6 +62,14 @@ KEY_MAP: dict[str, str] = {
 }
 
 
+# 矢印などの特殊キーのコード。文字コードと重なるので、名前入力では文字として扱わない
+_SPECIAL_KEY_CODES = {
+    curses.KEY_DOWN, curses.KEY_UP, curses.KEY_LEFT, curses.KEY_RIGHT, curses.KEY_HOME,
+    curses.KEY_BACKSPACE, curses.KEY_F1, curses.KEY_NPAGE, curses.KEY_PPAGE, curses.KEY_END,
+    curses.KEY_B2, curses.KEY_RESIZE,
+}
+
+
 def _build_int_key_map() -> dict[int, str]:
     """
     整数キーコード（矢印キー・テンキー NumLock OFF 時）→ アクション名。
@@ -1075,7 +1083,7 @@ class UI:
                 pass
 
             try:
-                self.stdscr.move(12, text_width(prompt) + len(name_str))
+                self.stdscr.move(12, text_width(prompt) + text_width(name_str))
             except curses.error:
                 pass
 
@@ -1090,8 +1098,9 @@ class UI:
             if ch in (8, 127, curses.KEY_BACKSPACE):
                 if buf:
                     buf.pop()
-            elif 32 <= ch < 127 and len(buf) < _MAX_NAME:
-                buf.append(chr(ch))
+            elif (ch >= 32 and ch not in _SPECIAL_KEY_CODES and chr(ch).isprintable()
+                  and len(buf) < _MAX_NAME):
+                buf.append(chr(ch))   # 日本語の名前も入れられる（Windows Terminal の IME・スマホのキーボード）
 
         try:
             curses.curs_set(0)
