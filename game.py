@@ -608,7 +608,7 @@ class Game:
             ui.add_message(tr("You float over the stairs and can't descend!"))
             return False
         tile = self.dungeon.get_tile(self.player.y, self.player.x)
-        if tile.ch == CH_STAIRS:
+        if tile.ch == CH_STAIRS or self.player.godmode:   # デバッグ（Ctrl-G）中はどこからでも降りられる（深い階の確認用）
             self.floor += 1
             self._load_floor()
             ui.add_message(tr('You descend to floor {floor}.', floor=self.floor))

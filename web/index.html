@@ -86,17 +86,20 @@ body {
 #screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
 #screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
 /* 文字だけの画面が収まらないとき、続きがある側に出す印（ハイスコア表の右の列など） */
-.more-hint { grid-area: screen; pointer-events: none; color: var(--accent); font-size: 22px; line-height: 1; z-index: 1; }
-#moreRight { justify-self: end; align-self: center; padding: 18px 2px 18px 14px; background: linear-gradient(to right, transparent, var(--bg) 60%); }
-#moreDown { justify-self: center; align-self: end; padding: 10px 24px 0; background: linear-gradient(to bottom, transparent, var(--bg) 60%); }
+.more-hint { grid-area: screen; pointer-events: none; z-index: 1; align-self: end; justify-self: end;
+  width: 26px; height: 26px; margin: 4px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 18px; line-height: 1; color: var(--bg); background: var(--accent); opacity: .85; }
+#moreRight { align-self: center; }
 .landscape .more-hint { grid-area: 2 / 2 / 3 / 3; }
 canvas { display: block; flex: none; }
 #status {
-  grid-area: status; display: flex; flex-wrap: nowrap; gap: 14px; white-space: nowrap; overflow: hidden; line-height: 1.4;
+  /* 高さは字の大きさによらず固定（長い状態行で字を詰めても地図の欄が動かないように） */
+  grid-area: status; display: flex; flex-wrap: nowrap; align-items: center; gap: 14px; white-space: nowrap; overflow: hidden; line-height: 1.4;
+  box-sizing: border-box; height: calc(13px * 1.4 + 8px);
   font-size: 13px; padding: 4px 6px; background: var(--fg); color: var(--bg); font-weight: 700;
   font-variant-numeric: tabular-nums; border-radius: 3px;
 }
-.landscape #status { font-size: 12px; }
+.landscape #status { font-size: 12px; height: calc(12px * 1.4 + 8px); }
 #app.text #msg, #app.text #status, #app.full #msg, #app.full #status { visibility: hidden; }
 
 /* 操作部 */
