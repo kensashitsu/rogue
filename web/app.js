@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.10';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.13';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -109,7 +109,10 @@ function findPlayer() {
 }
 
 let view = 'follow', viewCols = 40, mode = 'map';
-let cw = 8, ch = 16, cols = 40, rows = 22, vx = 0, vy = 1, py = 12, px = 40;
+let rowMap = [];   // 文字だけの画面で、描く行 → ゲーム画面の行
+// vx, vy は追従表示の視点。持ち物などほかの画面を開いても保つ（戻ったときに地図がずれないように）。
+// ox は今描いている画面の左端の列
+let cw = 8, ch = 16, cols = 40, rows = 22, vx = 0, vy = 1, ox = 0, py = 12, px = 40;
 try { const p = JSON.parse(localStorage.getItem('rogue-view') || '{}'); view = p.view || view; viewCols = p.cols || viewCols; } catch {}
 const saveView = () => { try { localStorage.setItem('rogue-view', JSON.stringify({ view, cols: viewCols })); } catch {} };
 
@@ -121,7 +124,7 @@ function render() {
   const land = innerWidth > innerHeight;
   app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}`;
   box.classList.toggle('text', mode === 'text');
-  $('zoomSeg').hidden = view !== 'follow';
+  $('zoomSeg').style.visibility = view === 'follow' ? '' : 'hidden';
 
   if (mode === 'map') {
     const msg = $('msg'), text = rowText(0).trim();
@@ -130,30 +133,47 @@ function render() {
       for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
         msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする
     }
-    const st = $('status'); st.textContent = '';
-    for (const s of rowText(H - 1).trim().split(/\s{2,}/)) { const e = document.createElement('span'); e.textContent = s; st.append(e); }
+    const st = $('status'), stText = rowText(H - 1).trim();
+    if (st.dataset.text !== stText) {
+      st.dataset.text = stText; st.textContent = ''; st.style.fontSize = ''; st.style.gap = '';
+      for (const s of stText.split(/\s{2,}/)) { const e = document.createElement('span'); e.textContent = s; st.append(e); }
+      let fs = parseFloat(getComputedStyle(st).fontSize), gap = 14;
+      while (st.scrollWidth > st.clientWidth + 1 && fs > 9) {   // 1 行に収まるまで間隔、次に字を詰める
+        if (gap > 6) gap -= 2; else fs -= 0.5;
+        st.style.gap = gap + 'px'; st.style.fontSize = fs + 'px';
+      }
+    }
   }
 
   const bw = box.clientWidth, bh = box.clientHeight;
   let y0 = 0;
   if (mode === 'text') {
-    let used = 20, last = 0;
+    // 続く空行は 1 行に詰める（持ち物一覧の下の大きな空きなど）。rowMap[画面の行] = ゲーム画面の行
+    let used = 20, blank = 0;
+    rowMap = [];
     for (let y = 0; y < H; y++) {
+      // 「── ↑↓ でスクロール … ──」のようなキーボード向けの案内行は出さない（下のボタン欄が同じ役目）
+      if (/^\s*── .*\S.* ──\s*$/.test(rowText(y))) continue;
       let end = 0;
       grid[y].forEach((c, x) => { if (c && c[0] !== ' ') end = x + (c[1] & 4096 ? 2 : 1); });
-      if (end) last = y;
       used = Math.max(used, end + 1);
+      if (end) blank = 0; else if (++blank > 1) continue;
+      rowMap.push(y);
     }
-    cols = Math.min(W, used); rows = last + 1;
-    cw = Math.max(bw / cols, bw / 52); vx = 0; vy = 0;   // 52 桁より広い画面は横にスクロール
+    while (rowMap.length && !rowText(rowMap[rowMap.length - 1]).trim()) rowMap.pop();
+    cols = Math.min(W, used); rows = Math.max(1, rowMap.length);
+    // 幅と高さの両方に収める。ただし字が小さくなりすぎるとき（1 マス 6px 未満）は収めずにスクロールさせる。
+    // 短い画面で字が大きくなりすぎないよう、地図の「大」（32 桁）より大きくはしない
+    cw = Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
+    cw = Math.max(cw, 6); ox = 0;
   } else if (view === 'full') {
-    cols = W; rows = H; cw = Math.min(bw / W, bh / (H * RATIO)); vx = 0; vy = 0;
+    cols = W; rows = H; cw = Math.min(bw / W, bh / (H * RATIO)); ox = 0;
   } else {
     cols = Math.min(viewCols, W); cw = bw / cols;
     rows = Math.max(1, Math.min(H - 2, Math.floor(bh / (cw * RATIO))));
     const p = findPlayer(); if (p) [py, px] = p;
     follow();
-    y0 = vy;
+    y0 = vy; ox = vx;
   }
   ch = cw * RATIO;
   const dpr = devicePixelRatio || 1;
@@ -163,8 +183,17 @@ function render() {
     cv.width = Math.floor(wpx * dpr); cv.height = Math.floor(hpx * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawCells(mode === 'map' && view === 'follow' ? y0 : 0);
+  drawCells(mode === 'text' ? rowMap : Array.from({ length: rows }, (_, r) => (mode === 'map' && view === 'follow' ? y0 : 0) + r));
+  updateMoreHints();
 }
+
+// 文字だけの画面が収まらず、まだ見ていない続きがあるとき、その側に印を出す
+function updateMoreHints() {
+  const text = mode === 'text';
+  $('moreRight').hidden = !(text && box.scrollLeft + box.clientWidth < box.scrollWidth - 2);
+  $('moreDown').hidden = !(text && box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+}
+box.addEventListener('scroll', updateMoreHints, { passive: true });
 
 // @ が表示の端から 1/4 以内に来たら視点をずらす（地図は 1〜22 行目）
 function follow() {
@@ -177,15 +206,15 @@ function follow() {
   vy = Math.max(1, Math.min(H - 1 - rows, vy));
 }
 
-function drawCells(top) {
+function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
   ctx.fillStyle = DEFAULT_BG; ctx.fillRect(0, 0, cols * cw, rows * ch);
   ctx.textBaseline = 'middle';
   const size = Math.round(cw * 1.9);
   const family = getComputedStyle(document.documentElement).getPropertyValue('--font-term');
   for (let r = 0; r < rows; r++) {
-    const row = grid[top + r]; if (!row) continue;
+    const row = grid[lines[r]]; if (!row) continue;
     for (let c = 0; c < cols; c++) {
-      const cell = row[vx + c]; if (!cell) continue;
+      const cell = row[ox + c]; if (!cell) continue;
       const [g, s] = cell; const w = s & 4096 ? 2 : 1;
       let fg = (s & 15) ? PALETTE[(s & 15) - 1] : null, bg = ((s >> 4) & 15) ? PALETTE[((s >> 4) & 15) - 1] : null;
       if (s & 2048) [fg, bg] = [bg || DEFAULT_BG, fg || DEFAULT_FG];
@@ -211,8 +240,10 @@ function drawCells(top) {
 // キー（SharedArrayBuffer のリングバッファで Worker に渡す）
 // ---------------------------------------------------------------------------
 let keys = null;
+let waiting = false;   // ゲームが入力を待っていて、まだ何も送っていない
 function send(...codes) {
   if (!keys) return;
+  waiting = false;
   for (const k of codes) {
     const code = typeof k === 'number' ? k : k.codePointAt(0);
     const w = Atomics.load(keys, 0);
@@ -223,6 +254,9 @@ function send(...codes) {
   Atomics.notify(keys, 0);
 }
 const keyCode = k => k === '^P' ? 16 : k;
+// ボタンの答えは、ゲームが今の質問で待っているときだけ送る。素早い二度押しで、次の質問の答えや
+// コマンドとして使われないように（「飲む」直後の「食べる」の e が「どれを飲む？」の答えになる、など）
+function answer(...codes) { if (waiting) send(...codes); }
 
 // ---------------------------------------------------------------------------
 // ボタン
@@ -257,6 +291,7 @@ function buildButtons() {
   for (const [k, arrow] of DPAD) {
     const rest = k === '.';
     const b = makeKey(rest ? T.rest : arrow, rest ? '.' : '', dp, rest ? 'rest' : '');
+    if (rest) restKey = b;
     b.setAttribute('aria-label', rest ? T.rest : k);
     let timer = 0;
     // 長押し: 押している間 1 歩ずつ歩き続ける（休むも同じ）。前の 1 歩をゲームが受け取ってから次を送るので、
@@ -268,7 +303,7 @@ function buildButtons() {
     };
     const press = () => {
       b.classList.add('on'); clearTimeout(timer);
-      if (hint === 'direction') { send(rest ? 27 : k); return; }
+      if (hint === 'direction') { answer(rest ? 27 : k); return; }
       if (hint !== 'command') return;
       send(k);
       timer = setTimeout(repeat, 300);
@@ -292,20 +327,26 @@ function buildButtons() {
   const acts = $('acts'); acts.textContent = '';
   for (const [k, label] of T.acts) {
     const b = makeKey(label, k === 'more' ? '…' : k, acts);
-    tap(b, () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') send(k); });
+    tap(b, () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') answer(k); });
   }
   const mg = $('moreGrid'); mg.textContent = '';
   for (const [k, label] of T.more) {
     const b = makeKey(label, k, mg);
-    tap(b, () => { $('more').hidden = true; if (hint === 'command') send(keyCode(k)); });
+    tap(b, () => { $('more').hidden = true; if (hint === 'command') answer(keyCode(k)); });
   }
   $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;
   updateControls();
 }
 
 // ゲームが待っている入力に合わせて右側（横持ちでは右列）を切り替える
+let restKey = null;
 function updateControls() {
   const T = t(), c = $('ctx');
+  if (restKey) {   // 十字キーの真ん中: ふだんは「休む」、方向を聞かれている間は「やめる」
+    const dir = hint === 'direction';
+    restKey.querySelector('b').textContent = dir ? T.cancel : T.rest;
+    restKey.querySelector('i').textContent = dir ? 'ESC' : '.';
+  }
   const cmd = hint === 'command';
   $('acts').hidden = !cmd;
   c.hidden = cmd;
@@ -313,6 +354,7 @@ function updateControls() {
   if (!cmd) $('more').hidden = true;
   if (cmd) return;
 
+  const keep = (hint === 'name' || hint === 'text') ? ($('txt')?.value || '') : '';   // 言語の切り替えで作り直しても入力を残す
   c.textContent = '';
   const note = s => { const p = document.createElement('div'); p.className = 'hint'; p.textContent = s; c.append(p); };
   const row = () => { const r = document.createElement('div'); r.className = 'row'; c.append(r); return r; };
@@ -320,24 +362,24 @@ function updateControls() {
 
   if (hint === 'direction') {
     note(T.dir);
-    btn(T.cancel, 'ESC', row(), () => send(27));
+    btn(T.cancel, 'ESC', row(), () => answer(27));
   } else if (hint === 'char' && valid) {
     const r = row();
-    for (const k of valid) btn(T.char[k] || k, k, r, () => send(k));
-    btn(T.cancel, 'ESC', row(), () => send(27));
+    for (const k of valid) btn(T.char[k] || k, k, r, () => answer(k));
+    btn(T.cancel, 'ESC', row(), () => answer(27));
   } else if (hint === 'list') {
     note(T.list);
     const r = row();
-    btn('↑', '', r, () => send(KEY.UP)); btn('↓', '', r, () => send(KEY.DOWN));
-    btn(T.cancel, 'ESC', row(), () => send(27));
+    btn('↑', '', r, () => answer(KEY.UP)); btn('↓', '', r, () => answer(KEY.DOWN));
+    btn(T.cancel, 'ESC', row(), () => answer(27));
   } else if (hint === 'text' || hint === 'name' || hint === 'char') {
-    textEntry(c, T);
+    textEntry(c, T, keep);
   } else {
-    btn(T.next + ' ▶', '', c, () => send(32), 'big');
+    btn(T.next + ' ▶', '', c, () => answer(32), 'big');
   }
 }
 
-function textEntry(c, T) {
+function textEntry(c, T, keep) {
   const name = hint === 'name';
   const f = document.createElement('form'); f.className = 'ctx';
   const inp = document.createElement('input');
@@ -346,16 +388,20 @@ function textEntry(c, T) {
   inp.placeholder = name ? T.name : T.text;
   if (name) inp.maxLength = 23;
   if (hint === 'char') inp.maxLength = 1;
+  inp.value = keep;
+  // iOS はキーボードを閉じた後、ページが上にずれたまま残ることがあるので戻す
+  inp.addEventListener('blur', () => setTimeout(() => window.scrollTo(0, 0), 50));
   f.append(inp);
   const r = document.createElement('div'); r.className = 'row'; f.append(r);
   const ok = makeKey(T.ok, '↵', r);   // submit にすると tap と既定の送信で 2 回送られる。Enter キーは入力欄 1 つのフォームなので送信される
   tap(ok, () => f.requestSubmit());
-  if (name) tap(makeKey(T.lang, 'Tab', r), () => send(9));
-  else tap(makeKey(T.cancel, 'ESC', r), () => send(27));
+  if (name) tap(makeKey(T.lang, 'Tab', r), () => answer(9));
+  else tap(makeKey(T.cancel, 'ESC', r), () => answer(27));
   f.addEventListener('submit', e => {
     e.preventDefault();
     let s = inp.value;
     if (name) s = [...s].filter(ch => ch >= ' ' && ch !== '\x7f').join('').slice(0, 23);
+    if (!waiting) return;
     if (hint === 'char') { if (s) send(s[0]); return; }
     send(...s, 13);
     inp.blur();
@@ -365,13 +411,14 @@ function textEntry(c, T) {
 
 // 画面のタップ: 「次へ」待ちなら進める、一覧なら行の記号を選ぶ
 cv.addEventListener('click', e => {
-  if (hint === 'more' || hint === 'any') { send(32); return; }
+  if (hint === 'more' || hint === 'any') { answer(32); return; }
   if (hint !== 'list') return;
-  const y = Math.floor(e.offsetY / ch);
+  const y = rowMap[Math.floor(e.offsetY / ch)];
+  if (y === undefined) return;
   const m = rowText(y).match(/^\s*(\S)\)/);
-  if (m && valid.includes(m[1])) send(m[1]);
+  if (m && valid.includes(m[1])) answer(m[1]);
 });
-tap($('msg'), () => { if (hint === 'more' || hint === 'any') send(32); });
+tap($('msg'), () => { if (hint === 'more' || hint === 'any') answer(32); });
 cv.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('touchstart', e => {   // preventTouch: 入力欄と画面（スクロールする）以外
   if (!e.target.closest('#txt, #screenBox')) e.preventDefault();
@@ -420,7 +467,7 @@ tap($('ver'), () => { if ($('ver').classList.contains('update')) location.reload
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 setInterval(checkUpdate, 10 * 60 * 1000);
 tap($('moreClose'), () => { $('more').hidden = true; });
-addEventListener('resize', requestDraw);
+addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textContent = ''; requestDraw(); });   // 幅が変わったら詰め直す
 
 // ---------------------------------------------------------------------------
 // 起動
@@ -458,7 +505,7 @@ function start() {
     else if (d.type === 'wait') {
       $('cover').hidden = true;
       const changed = hint !== d.kind || valid !== d.valid;
-      hint = d.kind; valid = d.valid;
+      hint = d.kind; valid = d.valid; waiting = true;
       if (changed) { debug(`wait ${d.kind}`); updateControls(); }
       requestDraw();
     }
