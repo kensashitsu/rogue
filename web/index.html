@@ -58,14 +58,21 @@ body {
   grid-template-areas: "bar" "msg" "screen" "status" "pad";
   --dk: 52px; --acols: 3;
 }
-/* 横持ち: 左に十字キー、中央に画面、右に行動ボタン */
+/* 横持ち: 左に十字キー、中央に画面、右に行動ボタン。
+   設定ボタンは左の列の上に置き、1 行目（メッセージ）の高さに影響させない（言語で折り返しが変わると地図がずれる） */
 #app.landscape {
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-rows: auto minmax(0, 1fr) auto;
-  grid-template-areas: "bar msg side" "dpad screen side" "dpad status side";
   column-gap: 10px;
   --dk: 42px; --acols: 2;
 }
+.landscape .bar { grid-area: 1 / 1 / 3 / 2; align-self: start; }
+.landscape #msg { grid-area: 1 / 2 / 2 / 3; }
+.landscape #screenBox { grid-area: 2 / 2 / 3 / 3; }
+.landscape #status { grid-area: 3 / 2 / 4 / 3; }
+.landscape .dpad { grid-area: 2 / 1 / 4 / 2; }
+.landscape .side { grid-area: 1 / 3 / 4 / 4; }
+.landscape #ver { position: fixed; top: max(6px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
 .bar { grid-area: bar; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
 .landscape .bar { width: calc(var(--dk) * 3 + 10px); }
 .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -78,9 +85,14 @@ body {
 .landscape #msg { height: calc(2 * 1.45 * 13px + 4px); font-size: 13px; }
 #screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
 #screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
+/* 文字だけの画面が収まらないとき、続きがある側に出す印（ハイスコア表の右の列など） */
+.more-hint { grid-area: screen; pointer-events: none; color: var(--accent); font-size: 22px; line-height: 1; z-index: 1; }
+#moreRight { justify-self: end; align-self: center; padding: 18px 2px 18px 14px; background: linear-gradient(to right, transparent, var(--bg) 60%); }
+#moreDown { justify-self: center; align-self: end; padding: 10px 24px 0; background: linear-gradient(to bottom, transparent, var(--bg) 60%); }
+.landscape .more-hint { grid-area: 2 / 2 / 3 / 3; }
 canvas { display: block; flex: none; }
 #status {
-  grid-area: status; display: flex; flex-wrap: wrap; gap: 2px 14px; min-height: 1.4em;
+  grid-area: status; display: flex; flex-wrap: nowrap; gap: 14px; white-space: nowrap; overflow: hidden; line-height: 1.4;
   font-size: 13px; padding: 4px 6px; background: var(--fg); color: var(--bg); font-weight: 700;
   font-variant-numeric: tabular-nums; border-radius: 3px;
 }
@@ -162,6 +174,8 @@ canvas { display: block; flex: none; }
   </div>
   <div id="msg" aria-live="polite"></div>
   <div id="screenBox"><canvas id="cv" aria-label="画面"></canvas></div>
+  <div id="moreRight" class="more-hint" hidden>›</div>
+  <div id="moreDown" class="more-hint" hidden>⌄</div>
   <div id="status"></div>
   <div id="pad">
     <div class="dpad" id="dpad"></div>
