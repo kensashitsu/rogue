@@ -214,6 +214,17 @@ const keyCode = k => k === '^P' ? 16 : k;
 const DPAD = [['y', '↖'], ['k', '↑'], ['u', '↗'], ['h', '←'], ['.', ''], ['l', '→'], ['b', '↙'], ['j', '↓'], ['n', '↘']];
 let hint = 'any', valid = '';
 
+// iOS Safari は長押しで拡大鏡を出すので、画面以外の touchstart を止める（下の preventTouch）。
+// そうすると click が来なくなるため、ボタンは「押して、ボタンの上で離した」ときに動かす。
+function tap(el, fn) {
+  let down = false;
+  el.addEventListener('pointerdown', () => { down = true; });
+  el.addEventListener('pointerleave', () => { down = false; });
+  el.addEventListener('pointercancel', () => { down = false; });
+  el.addEventListener('pointerup', e => { if (down) { down = false; fn(e); } });
+  el.addEventListener('click', e => { if (e.detail === 0) fn(e); });   // キーボードで押したとき
+}
+
 function makeKey(label, sub, parent, cls) {
   const b = document.createElement('button'); b.type = 'button'; b.className = 'key' + (cls ? ' ' + cls : '');
   const bl = document.createElement('b'); bl.textContent = label; b.append(bl);
@@ -247,12 +258,12 @@ function buildButtons() {
   const acts = $('acts'); acts.textContent = '';
   for (const [k, label] of T.acts) {
     const b = makeKey(label, k === 'more' ? '…' : k, acts);
-    b.addEventListener('click', () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') send(k); });
+    tap(b, () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') send(k); });
   }
   const mg = $('moreGrid'); mg.textContent = '';
   for (const [k, label] of T.more) {
     const b = makeKey(label, k, mg);
-    b.addEventListener('click', () => { $('more').hidden = true; if (hint === 'command') send(keyCode(k)); });
+    tap(b, () => { $('more').hidden = true; if (hint === 'command') send(keyCode(k)); });
   }
   $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;
   updateControls();
@@ -271,7 +282,7 @@ function updateControls() {
   c.textContent = '';
   const note = s => { const p = document.createElement('div'); p.className = 'hint'; p.textContent = s; c.append(p); };
   const row = () => { const r = document.createElement('div'); r.className = 'row'; c.append(r); return r; };
-  const btn = (label, sub, parent, fn, cls) => { const b = makeKey(label, sub, parent, cls); b.addEventListener('click', fn); return b; };
+  const btn = (label, sub, parent, fn, cls) => { const b = makeKey(label, sub, parent, cls); tap(b, fn); return b; };
 
   if (hint === 'direction') {
     note(T.dir);
@@ -303,9 +314,10 @@ function textEntry(c, T) {
   if (hint === 'char') inp.maxLength = 1;
   f.append(inp);
   const r = document.createElement('div'); r.className = 'row'; f.append(r);
-  const ok = makeKey(T.ok, '↵', r); ok.type = 'submit';
-  if (name) makeKey(T.lang, 'Tab', r).addEventListener('click', () => send(9));
-  else makeKey(T.cancel, 'ESC', r).addEventListener('click', () => send(27));
+  const ok = makeKey(T.ok, '↵', r);   // submit にすると tap と既定の送信で 2 回送られる。Enter キーは入力欄 1 つのフォームなので送信される
+  tap(ok, () => f.requestSubmit());
+  if (name) tap(makeKey(T.lang, 'Tab', r), () => send(9));
+  else tap(makeKey(T.cancel, 'ESC', r), () => send(27));
   f.addEventListener('submit', e => {
     e.preventDefault();
     let s = inp.value;
@@ -325,7 +337,11 @@ cv.addEventListener('click', e => {
   const m = rowText(y).match(/^\s*(\S)\)/);
   if (m && valid.includes(m[1])) send(m[1]);
 });
-$('msg').addEventListener('click', () => { if (hint === 'more' || hint === 'any') send(32); });
+tap($('msg'), () => { if (hint === 'more' || hint === 'any') send(32); });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('touchstart', e => {   // preventTouch: 入力欄と画面（スクロールする）以外
+  if (!e.target.closest('#txt, #screenBox')) e.preventDefault();
+}, { passive: false });
 
 // パソコンのキーボードでも遊べるように
 addEventListener('keydown', e => {
@@ -343,25 +359,27 @@ function setView(v) {
   $('vFollow').setAttribute('aria-pressed', v === 'follow'); $('vFull').setAttribute('aria-pressed', v === 'full');
   render();
 }
-$('vFollow').addEventListener('click', () => setView('follow'));
-$('vFull').addEventListener('click', () => setView('full'));
-[...$('zoomSeg').children].forEach(b => b.addEventListener('click', () => {
+tap($('vFollow'), () => setView('follow'));
+tap($('vFull'), () => setView('full'));
+[...$('zoomSeg').children].forEach(b => tap(b, () => {
   viewCols = +b.dataset.cols; saveView();
   [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', o === b));
   render();
 }));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
-$('moreClose').addEventListener('click', () => { $('more').hidden = true; });
+tap($('moreClose'), () => { $('more').hidden = true; });
 addEventListener('resize', requestDraw);
 
 // ---------------------------------------------------------------------------
 // 起動
 // ---------------------------------------------------------------------------
+let coverFn = null;
+tap($('coverBtn'), () => coverFn && coverFn());
 function cover(text, btnLabel, fn) {
   $('cover').hidden = false; $('coverText').textContent = text;
   const b = $('coverBtn'); b.hidden = !btnLabel;
-  if (btnLabel) { b.textContent = btnLabel; b.onclick = fn; }
+  if (btnLabel) { b.textContent = btnLabel; coverFn = fn; }
 }
 
 function start() {
