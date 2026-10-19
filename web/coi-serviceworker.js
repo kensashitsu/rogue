@@ -1,4 +1,5 @@
 /*! coi-serviceworker v0.1.7 - Guido Zuidhof and contributors, licensed under MIT */
+/* rogue: modified to revalidate same-origin files on every load (see the fetch handler). */
 let coepCredentialless = false;
 if (typeof window === 'undefined') {
     self.addEventListener("install", () => self.skipWaiting());
@@ -27,7 +28,12 @@ if (typeof window === 'undefined') {
             return;
         }
 
-        const request = (coepCredentialless && r.mode === "no-cors")
+        // rogue 用の変更: 同じサイトのファイルは毎回更新を確かめる（GitHub Pages は 10 分キャッシュするため、
+        // 直した版が届くまで古い app.js や .py で動いてしまう）。変わっていなければ 304 で済む
+        const sameOrigin = new URL(r.url).origin === self.location.origin;
+        const request = (sameOrigin && r.method === "GET")
+            ? new Request(r.url, { cache: "no-cache", credentials: "same-origin" })
+            : (coepCredentialless && r.mode === "no-cors")
             ? new Request(r, {
                 credentials: "omit",
             })
