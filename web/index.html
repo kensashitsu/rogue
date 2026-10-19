@@ -156,7 +156,7 @@ canvas { display: block; flex: none; }
 #manual header { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 8px;
   padding: max(10px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) 10px max(14px, env(safe-area-inset-left, 0px));
   border-bottom: 1px solid var(--line); font-size: 14px; color: var(--accent); }
-#manualBody { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-x pan-y;
+#manualBody { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y;
   padding: 10px max(14px, env(safe-area-inset-right, 0px)) calc(28px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
   font-family: var(--font-term); font-size: 13px; line-height: 1.6; color: var(--fg); -webkit-user-select: text; user-select: text; }
 #manualBody h2 { margin: 22px 0 6px; font-size: 16px; line-height: 1.4; color: var(--accent); white-space: pre-line; }
@@ -164,7 +164,7 @@ canvas { display: block; flex: none; }
 #manualBody .ln { white-space: pre-wrap; overflow-wrap: anywhere; }
 #manualBody .gap { height: .6em; }
 #manualBody hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
-#manualBody pre.wide { margin: 6px 0; overflow-x: auto; font: inherit; font-size: 11px; line-height: 1.25; }
+#manualBody pre.wide { margin: 6px 0; overflow-x: auto; touch-action: pan-x pan-y; font: inherit; font-size: 11px; line-height: 1.25; }
 
 /* 読み込み・終了 */
 #cover {
