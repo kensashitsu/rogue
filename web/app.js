@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.13';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.15';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -119,7 +119,18 @@ const saveView = () => { try { localStorage.setItem('rogue-view', JSON.stringify
 let drawQueued = false;
 function requestDraw() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(() => { drawQueued = false; render(); }); } }
 
+// 日本語フォントは字ごとの小分けで届くが、キャンバスに描くだけでは取り寄せられない。
+// 画面に新しい字が出たら取り寄せ、届いたら描き直す（それまでは別のフォントで描かれる）
+const fontChars = new Set();
+function ensureGlyphs() {
+  if (!document.fonts) return;
+  let fresh = '';
+  for (const row of grid) for (const c of row) if (c && c[0] > '~' && !fontChars.has(c[0])) { fontChars.add(c[0]); fresh += c[0]; }
+  if (fresh) Promise.all([400, 700].map(w => document.fonts.load(`${w} 16px "BIZ UDGothic"`, fresh))).then(requestDraw, () => {});
+}
+
 function render() {
+  ensureGlyphs();
   mode = isMap() ? 'map' : 'text';
   const land = innerWidth > innerHeight;
   app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}`;
