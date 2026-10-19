@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.20';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.21';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -386,8 +386,7 @@ function updateControls() {
   } else if (hint === 'text' || hint === 'name' || hint === 'char') {
     textEntry(c, T, keep);
   } else {
-    note(T.tapAnywhere);
-    makeKey(T.next + ' ▶', '', c, 'big');   // 押すと下の「どこをタップしても次へ」で進む
+    note(T.tapAnywhere);   // ボタンは置かない（画面のどこをタップしても進む）
   }
 }
 
