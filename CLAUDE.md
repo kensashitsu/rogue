@@ -14,6 +14,7 @@ web/（ブラウザ版: index.html / app.js / worker.js / coi-serviceworker.js�
 - ゲーム本体の .py はそのまま Pyodide で動かす（worker.js の SOURCES に並べたファイルを読む。.py を増やしたらここにも足す）
 - term.py は sys.platform == 'emscripten' のとき画面を rogue_draw に渡し、キーを rogue_getch で待つ（Atomics.wait。COOP/COEP が要るので coi-serviceworker を使う）
 - ui.py の getch は _getch(hint, keys) を通す。hint（command / direction / more / char / text / name / list / any）でスマホのボタンを出し分ける。新しい入力待ちを足すときは hint も付ける
+- web/ を直して公開するときは app.js の VERSION を上げる（画面右上に出る。iPhone に新しい版が届いたかの確認用）。実機の調査は URL 末尾に #debug を付けると操作の出来事が画面に出る
 
 ## 表示言語（英語 / 日本語）
 - 画面に出す文字列は必ず tr("英語の文面 {x}", x=...) を通す。英語の文面がそのままキーになる

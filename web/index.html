@@ -136,6 +136,9 @@ canvas { display: block; flex: none; }
 }
 #cover h1 { margin: 0; font-size: 34px; letter-spacing: .3em; color: var(--accent); font-weight: 700; padding-left: .3em; }
 #cover p { margin: 0; color: var(--dim); max-width: 32em; white-space: pre-line; }
+#ver { margin-left: auto; font-size: 10px; color: var(--dim); opacity: .7; }
+#debug { position: fixed; left: 0; right: 0; top: 40%; z-index: 30; margin: 0; padding: 6px 10px; font-size: 11px; line-height: 1.35; color: #7fd17a; background: rgba(0, 0, 0, .75); pointer-events: none; white-space: pre-wrap; }
+#debug:empty { display: none; }
 #flash { position: fixed; inset: 0; background: var(--fg); opacity: 0; pointer-events: none; z-index: 20; }
 @media (prefers-reduced-motion: no-preference) { #flash { transition: opacity .12s; } }
 </style>
@@ -152,6 +155,7 @@ canvas { display: block; flex: none; }
       <button type="button" data-cols="40" aria-pressed="true">中</button>
       <button type="button" data-cols="32" aria-pressed="false">大</button>
     </span>
+    <span id="ver"></span>
   </div>
   <div id="msg" aria-live="polite"></div>
   <div id="screenBox"><canvas id="cv" aria-label="画面"></canvas></div>
@@ -176,6 +180,7 @@ canvas { display: block; flex: none; }
   <button type="button" class="plain" id="coverBtn" hidden></button>
 </div>
 <div id="flash"></div>
+<pre id="debug"></pre>
 
 <script src="app.js"></script>
 </body>
