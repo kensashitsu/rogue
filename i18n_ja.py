@@ -61,7 +61,7 @@ NAMES: dict[str, dict[str, str]] = {
         "nothing": "無", "teleport away": "追放", "teleport to": "引き寄せ",
         "cancellation": "無力化",
     },
-    'stick_kind': {"wand": "ワンド", "staff": "杖"},
+    'stick_kind': {"wand": "短い杖", "staff": "杖"},
     'bolt': {"electric": "稲妻", "fire": "炎", "cold": "冷気", "magic missile": "魔法の矢"},
     'weapon': {
         "mace": "メイス", "long sword": "ロングソード", "short bow": "ショートボウ",
@@ -97,7 +97,7 @@ NAMES: dict[str, dict[str, str]] = {
         "ruby": "ルビー", "sapphire": "サファイア", "tiger eye": "虎目石", "topaz": "トパーズ",
         "turquoise": "トルコ石", "zircon": "ジルコン",
     },
-    # 杖の素材。名詞は「の」込み、形容詞はそのまま（「樫のワンド」「ねじれたワンド」）
+    # 杖の素材。名詞は「の」込み、形容詞はそのまま（「樫の短い杖」「ねじれた短い杖」）
     'wood': {
         "avocado wood": "アボカド材の", "balsa": "バルサ材の", "bamboo": "竹の", "birch": "樺の",
         "cedar": "杉の", "cherry": "桜の", "cinnibar": "辰砂の", "curved": "曲がった",
@@ -464,7 +464,7 @@ JA: dict[str, str] = {
     "A weapon": "武器",
     "Armor": "鎧",
     "A ring": "指輪",
-    "A wand or staff": "杖・ワンド",
+    "A wand or staff": "杖",
     "The Amulet of Yendor": "イェンダーの魔除け",
     "A trap": "罠",
 
