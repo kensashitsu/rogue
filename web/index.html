@@ -51,28 +51,29 @@ body {
   padding-left: max(12px, env(safe-area-inset-left, 0px));
   padding-right: max(12px, env(safe-area-inset-right, 0px));
 }
-/* 縦持ち: 設定 / 画面 / メッセージ / 状態 / 操作（メッセージは地図のすぐ下に置く） */
+/* 縦持ち: 設定 / 画面 / メッセージ / 「タップして次へ進む」/ 状態 / 操作（メッセージは地図のすぐ下に置く） */
 #app.portrait {
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
-  grid-template-areas: "bar" "screen" "msg" "status" "pad";
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto auto;
+  grid-template-areas: "bar" "screen" "msg" "taphint" "status" "pad";
   --dk: 52px; --acols: 3;
 }
 /* 横持ち: 左に十字キー、中央に画面、右に行動ボタン。
-   中央の列は 画面 / メッセージ / 状態。設定ボタンと十字キーは左の列を縦に通して置き、
+   中央の列は 画面 / メッセージ / 「タップして次へ進む」/ 状態。設定ボタンと十字キーは左の列を縦に通して置き、
    中央の行の高さに影響させない（言語で折り返しが変わると地図がずれる） */
 #app.landscape {
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
   column-gap: 10px;
   --dk: 42px; --acols: 2;
 }
-.landscape .bar { grid-area: 1 / 1 / 4 / 2; align-self: start; }
+.landscape .bar { grid-area: 1 / 1 / 5 / 2; align-self: start; }
 .landscape #screenBox { grid-area: 1 / 2 / 2 / 3; }
 .landscape #msg { grid-area: 2 / 2 / 3 / 3; }
-.landscape #status { grid-area: 3 / 2 / 4 / 3; }
-.landscape .dpad { grid-area: 1 / 1 / 4 / 2; }
-.landscape .side { grid-area: 1 / 3 / 4 / 4; }
+.landscape #tapHint { grid-area: 3 / 2 / 4 / 3; }
+.landscape #status { grid-area: 4 / 2 / 5 / 3; }
+.landscape .dpad { grid-area: 1 / 1 / 5 / 2; }
+.landscape .side { grid-area: 1 / 3 / 5 / 4; }
 .landscape #ver { position: fixed; top: max(6px, env(safe-area-inset-top, 0px)); right: max(12px, env(safe-area-inset-right, 0px)); }
 .bar { grid-area: bar; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--dim); }
 .landscape .bar { width: calc(var(--dk) * 3 + 10px); }
@@ -84,6 +85,9 @@ body {
    2 行に収まらないときは app.js が字を小さくする */
 #msg { grid-area: msg; box-sizing: border-box; height: calc(2 * 1.45 * 15px + 4px); font-size: 15px; line-height: 1.45; padding: 2px 4px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
 .landscape #msg { height: calc(2 * 1.45 * 13px + 4px); font-size: 13px; }
+/* 「次へ」待ちのときだけ文字を出す。行の高さはいつも取っておく（出し入れで地図がずれないように） */
+#tapHint { grid-area: taphint; height: 16px; margin-top: -4px; padding: 0 4px; font-size: 12px; line-height: 16px; color: var(--accent); white-space: nowrap; overflow: hidden; visibility: hidden; }
+#tapHint.on { visibility: visible; }
 #screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
 #screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
 /* 文字だけの画面が収まらないとき、続きがある側に出す印（ハイスコア表の右の列など） */
@@ -177,6 +181,7 @@ canvas { display: block; flex: none; }
     <span id="ver"></span>
   </div>
   <div id="msg" aria-live="polite"></div>
+  <div id="tapHint"></div>
   <div id="screenBox"><canvas id="cv" aria-label="画面"></canvas></div>
   <div id="moreRight" class="more-hint" hidden>›</div>
   <div id="moreDown" class="more-hint" hidden>⌄</div>

@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.22';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.23';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -353,6 +353,7 @@ function buildButtons() {
 let restKey = null;
 function updateControls() {
   const T = t(), c = $('ctx');
+  const th = $('tapHint'); th.textContent = T.tapAnywhere; th.classList.toggle('on', hint === 'more' || hint === 'any');
   if (restKey) {   // 十字キーの真ん中: ふだんは「休む」、方向を聞かれている間は「やめる」
     const dir = hint === 'direction';
     restKey.querySelector('b').textContent = dir ? T.cancel : T.rest;
@@ -386,7 +387,7 @@ function updateControls() {
   } else if (hint === 'text' || hint === 'name' || hint === 'char') {
     textEntry(c, T, keep);
   } else {
-    note(T.tapAnywhere);   // ボタンは置かない（画面のどこをタップしても進む）
+    // ボタンは置かない（画面のどこをタップしても進む。案内はメッセージの下の #tapHint）
   }
 }
 
