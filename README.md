@@ -22,7 +22,7 @@ The same game runs in the browser: https://kensashitsu.github.io/rogue/web/
 
 Python runs in the page through Pyodide, so the rules are exactly those of the terminal version.
 On a phone, the map follows the player, and the on-screen buttons send the original keys
-(hold a direction to run). Saves, scores and the language setting stay in the browser.
+(hold a direction to keep walking). Saves, scores and the language setting stay in the browser.
 On iPhone, adding the page to the Home Screen keeps Safari from clearing them.
 
 ## Language
