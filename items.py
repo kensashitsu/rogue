@@ -421,6 +421,8 @@ class GameKnowledge:
             if self.is_known(ot, ow):
                 return tr('a scroll of {name}', name=tr_name('scroll', SCROLL_INFO[ow].name))
             title = self.get_appearance(ot, ow)
+            if is_ja():   # 音節ごとにカタカナにする（セーブの中身は英字のまま）
+                title = '・'.join(tr_name('syllable', s) for s in title.split())
             guess = self.get_guess(ot, ow)
             return (tr("a scroll titled '{title}' called {guess}", title=title, guess=guess) if guess
                     else tr("a scroll titled '{title}'", title=title))
