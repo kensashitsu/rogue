@@ -1,0 +1,36 @@
+<!doctype html>
+<!-- ホーム画面アイコンの元。Playwright で撮って icon-180.png / icon-192.png / icon-512.png に書き出す（512 で描いて縮小） -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&display=swap">
+<style>
+  html, body { margin: 0; background: #0b0d0f; }
+  #ic { position: relative; width: 512px; height: 512px; background: #0b0d0f; transform-origin: 0 0; overflow: hidden; font-family: "BIZ UDGothic", monospace; }
+  /* 部屋の床（. ）と壁（- | +）。端末の 1:2 のマスを 64×128 で並べる */
+  .t { position: absolute; width: 64px; height: 128px; line-height: 128px; text-align: center; font-size: 112px; color: #6f7780; }
+  .w { color: #9aa2ab; }
+  .door { color: #d5d9de; }
+  .me { position: absolute; left: 0; right: 0; top: 112px; text-align: center; font-size: 300px; line-height: 300px; font-weight: 700; color: #f0c652; }
+</style>
+</head>
+<body>
+<div id="ic"></div>
+<script>
+  // 8 列 × 4 行。上の壁に扉、残りは床。真ん中は @ の場所なので空ける
+  const ic = document.getElementById('ic');
+  const rows = ['-----+--', '........', '........', '........'];
+  rows.forEach((row, y) => [...row].forEach((c, x) => {
+    if (y >= 1 && y <= 3 && x >= 2 && x <= 5) return;
+    const e = document.createElement('div');
+    e.className = 't' + (c === '-' ? ' w' : c === '+' ? ' door' : '');
+    e.textContent = c;
+    e.style.left = x * 64 + 'px'; e.style.top = y * 128 + 'px';
+    ic.append(e);
+  }));
+  const me = document.createElement('div'); me.className = 'me'; me.textContent = '@'; ic.append(me);
+  const size = +(new URLSearchParams(location.search).get('size') || 512);
+  ic.style.transform = `scale(${size / 512})`;
+</script>
+</body>
+</html>
