@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.15';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.16';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -37,7 +37,7 @@ const L = {
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'],
            ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['S', '保存して終了'], ['Q', 'あきらめる']],
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
-    next: '次へ', cancel: 'やめる', ok: '決定', lang: 'English',
+    next: '次へ', tapAnywhere: 'どこをタップしても進みます', cancel: 'やめる', ok: '決定', lang: 'English',
     dir: '方向を選んでください', list: '一覧の行をタップして選びます', name: '名前', text: '文字を入力',
     char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
@@ -51,7 +51,7 @@ const L = {
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'],
            ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['S', 'Save & quit'], ['Q', 'Quit']],
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
-    next: 'Next', cancel: 'Cancel', ok: 'OK', lang: '日本語',
+    next: 'Next', tapAnywhere: 'Tap anywhere to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
     dir: 'Choose a direction', list: 'Tap a line to choose', name: 'Name', text: 'Type here',
     char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
@@ -386,7 +386,8 @@ function updateControls() {
   } else if (hint === 'text' || hint === 'name' || hint === 'char') {
     textEntry(c, T, keep);
   } else {
-    btn(T.next + ' ▶', '', c, () => answer(32), 'big');
+    note(T.tapAnywhere);
+    makeKey(T.next + ' ▶', '', c, 'big');   // 押すと下の「どこをタップしても次へ」で進む
   }
 }
 
@@ -422,14 +423,23 @@ function textEntry(c, T, keep) {
 
 // 画面のタップ: 「次へ」待ちなら進める、一覧なら行の記号を選ぶ
 cv.addEventListener('click', e => {
-  if (hint === 'more' || hint === 'any') { answer(32); return; }
   if (hint !== 'list') return;
   const y = rowMap[Math.floor(e.offsetY / ch)];
   if (y === undefined) return;
   const m = rowText(y).match(/^\s*(\S)\)/);
   if (m && valid.includes(m[1])) answer(m[1]);
 });
-tap($('msg'), () => { if (hint === 'more' || hint === 'any') answer(32); });
+// 「次へ」待ちの間は、画面のどこをタップしても次へ進む（十字キーや行動ボタンの上でも）。
+// 読み飛ばしを防ぐため、待ちになってから 0.3 秒以内に指を置いたタップは数えない
+// （歩くつもりの連打や、長押しで歩いていて離した指では進まない）。上の設定ボタンは除く
+let moreSince = 0, downAt = 0;
+const advancing = () => hint === 'more' || hint === 'any';
+document.addEventListener('pointerdown', () => { downAt = performance.now(); }, true);
+document.addEventListener('pointerup', e => {
+  if (!advancing() || e.target.closest('.bar, #ver')) return;
+  if (downAt - moreSince < 300) return;
+  answer(32);
+}, true);
 cv.addEventListener('contextmenu', e => e.preventDefault());
 document.addEventListener('touchstart', e => {   // preventTouch: 入力欄と画面（スクロールする）以外
   if (!e.target.closest('#txt, #screenBox')) e.preventDefault();
@@ -516,6 +526,7 @@ function start() {
     else if (d.type === 'wait') {
       $('cover').hidden = true;
       const changed = hint !== d.kind || valid !== d.valid;
+      if (d.kind === 'more' || d.kind === 'any') moreSince = performance.now();   // メッセージが続くときも 1 つごとに数え直す
       hint = d.kind; valid = d.valid; waiting = true;
       if (changed) { debug(`wait ${d.kind}`); updateControls(); }
       requestDraw();
