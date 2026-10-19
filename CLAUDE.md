@@ -10,7 +10,7 @@ main.py / game.py / dungeon.py / player.py / monsters.py / items.py / combat.py 
 web/（ブラウザ版: index.html / app.js / worker.js / coi-serviceworker.js）
 
 ## ブラウザ版（スマホ）
-- 公開先は https://kensashitsu.github.io/rogue/web/ 。GitHub Pages（main のルート）なので push すれば約1分で反映される
+- 公開先は https://kensashitsu.github.io/rogue/web/ 。GitHub Pages（master のルート）なので push すれば約1分で反映される
 - ゲーム本体の .py はそのまま Pyodide で動かす（worker.js の SOURCES に並べたファイルを読む。.py を増やしたらここにも足す）
 - term.py は sys.platform == 'emscripten' のとき画面を rogue_draw に渡し、キーを rogue_getch で待つ（Atomics.wait。COOP/COEP が要るので coi-serviceworker を使う）
 - ui.py の getch は _getch(hint, keys) を通す。hint（command / direction / more / char / text / name / list / any）でスマホのボタンを出し分ける。新しい入力待ちを足すときは hint も付ける
