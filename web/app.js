@@ -6,7 +6,18 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
+const VERSION = '10-19.7';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
+
+// URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
+const DEBUG = location.hash === '#debug';
+const debugLines = [];
+function debug(s) {
+  if (!DEBUG) return;
+  debugLines.push(`${(performance.now() / 1000).toFixed(2)} ${s}`);
+  if (debugLines.length > 8) debugLines.shift();
+  document.getElementById('debug').textContent = debugLines.join('\n');
+}
 const KEY = { DOWN: 0x102, UP: 0x103, LEFT: 0x104, RIGHT: 0x105, NPAGE: 0x152, PPAGE: 0x153 };
 const PALETTE = ['#0b0d0f', '#ff6a5c', '#7fd17a', '#f0c652', '#6f9df2', '#d58cf0', '#6cc6d6', '#c8ccd1'];
 const DEFAULT_FG = '#c8ccd1', DEFAULT_BG = '#0b0d0f';
@@ -246,19 +257,30 @@ function buildButtons() {
     // 長押し: 押している間 1 歩ずつ歩き続ける（休むも同じ）。前の 1 歩をゲームが受け取ってから次を送るので、
     // 離せばすぐ止まる。メッセージの「次へ」待ちなどになったら止まる
     const repeat = () => {
+      debug(`repeat ${k} hint=${hint} queued=${Atomics.load(keys, 0) - keys[1]}`);
       if (hint === 'command' && Atomics.load(keys, 0) === keys[1]) send(k);
       timer = setTimeout(repeat, 110);
     };
-    b.addEventListener('pointerdown', e => {
-      e.preventDefault(); b.classList.add('on');
-      try { b.setPointerCapture(e.pointerId); } catch {}   // 指が少しずれても離すまで押したまま
+    const press = () => {
+      b.classList.add('on'); clearTimeout(timer);
       if (hint === 'direction') { send(rest ? 27 : k); return; }
       if (hint !== 'command') return;
       send(k);
       timer = setTimeout(repeat, 300);
+    };
+    const release = () => { b.classList.remove('on'); clearTimeout(timer); };
+    // 指はタッチイベントで扱う（iOS ではこれがいちばん確実）。マウス・ペンはポインターイベント
+    b.addEventListener('touchstart', e => { e.preventDefault(); debug(`touchstart ${k} hint=${hint}`); press(); }, { passive: false });
+    b.addEventListener('touchend', e => { e.preventDefault(); debug(`touchend ${k}`); release(); }, { passive: false });
+    b.addEventListener('touchcancel', () => { debug(`touchcancel ${k}`); release(); });
+    b.addEventListener('pointerdown', e => {
+      if (e.pointerType === 'touch') return;
+      e.preventDefault();
+      try { b.setPointerCapture(e.pointerId); } catch {}   // 少しずれても離すまで押したまま
+      press();
     });
-    const up = () => { b.classList.remove('on'); clearTimeout(timer); };
-    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
+    b.addEventListener('pointerup', e => { if (e.pointerType !== 'touch') release(); });
+    b.addEventListener('pointercancel', e => { debug(`pointercancel ${e.pointerType} ${k}`); if (e.pointerType !== 'touch') release(); });
     b.addEventListener('contextmenu', e => e.preventDefault());
   }
 
@@ -375,6 +397,7 @@ tap($('vFull'), () => setView('full'));
 }));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
+$('ver').textContent = 'v' + VERSION;
 tap($('moreClose'), () => { $('more').hidden = true; });
 addEventListener('resize', requestDraw);
 
@@ -415,7 +438,7 @@ function start() {
       $('cover').hidden = true;
       const changed = hint !== d.kind || valid !== d.valid;
       hint = d.kind; valid = d.valid;
-      if (changed) updateControls();
+      if (changed) { debug(`wait ${d.kind}`); updateControls(); }
       requestDraw();
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
