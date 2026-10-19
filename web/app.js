@@ -243,15 +243,22 @@ function buildButtons() {
     const b = makeKey(rest ? T.rest : arrow, rest ? '.' : '', dp, rest ? 'rest' : '');
     b.setAttribute('aria-label', rest ? T.rest : k);
     let timer = 0;
+    // 長押し: 押している間 1 歩ずつ歩き続ける（休むも同じ）。前の 1 歩をゲームが受け取ってから次を送るので、
+    // 離せばすぐ止まる。メッセージの「次へ」待ちなどになったら止まる
+    const repeat = () => {
+      if (hint === 'command' && Atomics.load(keys, 0) === keys[1]) send(k);
+      timer = setTimeout(repeat, 110);
+    };
     b.addEventListener('pointerdown', e => {
       e.preventDefault(); b.classList.add('on');
+      try { b.setPointerCapture(e.pointerId); } catch {}   // 指が少しずれても離すまで押したまま
       if (hint === 'direction') { send(rest ? 27 : k); return; }
       if (hint !== 'command') return;
       send(k);
-      if (!rest) timer = setTimeout(() => send(k.toUpperCase()), 350);   // 長押し: 走る
+      timer = setTimeout(repeat, 300);
     });
     const up = () => { b.classList.remove('on'); clearTimeout(timer); };
-    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+    b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
     b.addEventListener('contextmenu', e => e.preventDefault());
   }
 
