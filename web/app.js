@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.30';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.31';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -497,6 +497,7 @@ let manualLoaded = false;
 async function openManual() {
   $('manual').hidden = false;
   $('manualClose').textContent = t().close;
+  $('manualTop').textContent = lang === 'ja' ? '↑ 目次へ' : '↑ Contents';
   if (manualLoaded) return;
   const body = $('manualBody');
   body.textContent = t().loading;
@@ -555,7 +556,19 @@ function buildManual(body, text) {
     d.style.paddingLeft = pad;
     if (hang) d.style.textIndent = `max(${-hang / 2}em, calc(${ind / 2}em - ${pad}))`;
   }
+  // 目次の「1. はじめに」などをタップすると、その章の見出しへ飛ぶ
+  const heads = [...body.querySelectorAll('h2')];
+  for (const d of body.querySelectorAll('.ln')) {
+    if (heads[1] && !(d.compareDocumentPosition(heads[1]) & Node.DOCUMENT_POSITION_FOLLOWING)) break;   // 目次は最初の章より前だけ
+    const m = d.textContent.match(/^(\d+)\.\s/);
+    const h = m && heads.find(h => h.textContent.startsWith(m[1] + '.'));
+    if (!h) continue;
+    d.classList.add('toc');
+    d.addEventListener('click', () => body.scrollTo({ top: h.offsetTop - body.offsetTop - 8, behavior: 'smooth' }));
+  }
 }
+$('manualBody').addEventListener('scroll', e => { $('manualTop').hidden = e.target.scrollTop < 400; }, { passive: true });
+tap($('manualTop'), () => $('manualBody').scrollTo({ top: 0, behavior: 'smooth' }));
 tap($('manualClose'), () => { $('manual').hidden = true; });
 addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textContent = ''; requestDraw(); });   // 幅が変わったら詰め直す
 

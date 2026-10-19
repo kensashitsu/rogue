@@ -164,6 +164,10 @@ canvas { display: block; flex: none; }
 #manualBody .ln { white-space: pre-wrap; overflow-wrap: anywhere; }
 #manualBody .gap { height: .6em; }
 #manualBody hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
+#manualBody .toc { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+#manualTop { position: absolute; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  padding: 10px 16px; font-size: 14px; border-color: var(--accent); box-shadow: 0 2px 10px rgba(0, 0, 0, .5); }
+#manualTop[hidden] { display: none; }
 #manualBody pre.wide { margin: 6px 0; overflow-x: auto; touch-action: pan-x pan-y; font: inherit; font-size: 11px; line-height: 1.25; }
 
 /* 読み込み・終了 */
@@ -219,6 +223,7 @@ canvas { display: block; flex: none; }
 <div id="manual" hidden>
   <header><span>説明書</span><button type="button" class="plain" id="manualClose"></button></header>
   <div id="manualBody"></div>
+  <button type="button" class="plain" id="manualTop" hidden></button>
 </div>
 
 <div id="cover">
