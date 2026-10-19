@@ -699,7 +699,7 @@ class Player:
     def detail_lines(self) -> list[str]:
         """ステータス詳細画面用の行リストを返す。"""
         nxt = self.exp_to_next()
-        nxt_str = str(nxt) if nxt is not None else "MAX"
+        nxt_str = str(nxt) if nxt is not None else tr("MAX")
         weapon_name = self.weapon.name if self.weapon else tr("bare hands")
         armor_name  = self.armor.name if self.armor else tr("none")
         left_ring   = self.rings[0].name if self.rings[0] else tr("none")

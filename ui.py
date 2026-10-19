@@ -280,10 +280,10 @@ class UI:
         rows, cols = self.stdscr.getmaxyx()
         if rows < 24 or cols < 80:
             curses.endwin()
-            raise RuntimeError(
-                f"Terminal too small: {cols}\xd7{rows}.  "
-                "Rogue requires at least 80\xd7 24 characters."
-            )
+            raise RuntimeError(tr(
+                "Terminal too small: {cols}\xd7{rows}.  Rogue requires at least 80\xd724 characters.",
+                cols=cols, rows=rows,
+            ))
         curses.noecho()
         curses.cbreak()
         try:
@@ -1370,13 +1370,14 @@ def run_with_curses(main_func) -> None:
             if ui.stdscr:
                 ui.stdscr.clear()
                 lines = _tb.format_exc().splitlines()
-                for i, line in enumerate(lines[:22]):
+                for i, line in enumerate(lines[:21]):
                     try:
                         ui.stdscr.addstr(i, 0, line[:79])
                     except curses.error:
                         pass
                 try:
-                    ui.stdscr.addstr(23, 0, " Press any key to exit...")
+                    ui.stdscr.addstr(22, 0, tr(" The game stopped because of an error. The details are in error.log."))
+                    ui.stdscr.addstr(23, 0, tr(" Press any key to exit..."))
                 except curses.error:
                     pass
                 ui.stdscr.refresh()

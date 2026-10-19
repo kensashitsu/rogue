@@ -4,6 +4,7 @@ import os
 import sys
 import traceback
 from game import run_game
+from i18n import tr
 
 _HERE      = os.path.dirname(os.path.abspath(__file__))
 _ERROR_LOG = os.path.join(_HERE, 'error.log')
@@ -13,7 +14,7 @@ if __name__ == "__main__":
     try:
         run_game()
     except RuntimeError as e:
-        sys.stderr.write(f"Error: {e}\n")
+        sys.stderr.write(tr("Error: {e}", e=e) + "\n")
         sys.exit(1)
     except (KeyboardInterrupt, SystemExit):
         raise

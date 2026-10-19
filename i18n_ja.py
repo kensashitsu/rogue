@@ -383,6 +383,7 @@ JA: dict[str, str] = {
     "  Armor:      {effective_ac}": "  防御:       {effective_ac}",
     "  Level:      {level}": "  レベル:     {level}",
     "  Experience: {exp}  (next level: {nxt_str})": "  経験値:     {exp}（次のレベルまで: {nxt_str}）",
+    "MAX": "最高レベル",
     "  Gold:       {gold}": "  金貨:       {gold}",
     "  Hunger:     {value}": "  空腹:       {value}",
     "  Status:     {value}": "  状態:       {value}",
@@ -482,6 +483,11 @@ JA: dict[str, str] = {
     " Top 10 Rogues of the Dungeon of Doom": " 運命の迷宮 ハイスコア トップ10",
     "Score": "スコア", "Name": "名前", "Cause": "死因", "Fl": "階", "Gold": "金貨",
     " Press any key to exit...": " 何かキーを押すと終了します...",
+    " The game stopped because of an error. The details are in error.log.":
+        " エラーでゲームが止まりました。詳しい内容は error.log に残しています。",
+    "Terminal too small: {cols}\xd7{rows}.  Rogue requires at least 80\xd724 characters.":
+        "ウィンドウが小さすぎます（{cols}×{rows}）。80×24 文字以上の大きさにしてください。",
+    "Error: {e}": "エラー: {e}",
     "  Congratulations!": "  おめでとう！",
     "  You have retrieved the Amulet of Yendor": "  あなたはイェンダーの魔除けを手に入れ、",
     "  and escaped the Dungeon of Doom!": "  運命の迷宮から生還した！",
