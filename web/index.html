@@ -72,8 +72,10 @@ body {
 .seg button { font: inherit; font-size: 12px; color: var(--dim); background: transparent; border: 0; padding: 4px 10px; cursor: pointer; }
 .seg button[aria-pressed="true"] { background: var(--key-hi); color: var(--fg); }
 .seg button + button { border-left: 1px solid var(--line); }
-#msg { grid-area: msg; min-height: 1.5em; font-size: 15px; line-height: 1.5; padding: 2px 4px; min-width: 0; overflow-wrap: anywhere; }
-.landscape #msg { font-size: 13px; }
+/* メッセージ欄はいつも 2 行分の高さ（1 行と 2 行で地図の欄の大きさが変わると、地図がずれて見える）。
+   2 行に収まらないときは app.js が字を小さくする */
+#msg { grid-area: msg; box-sizing: border-box; height: calc(2 * 1.45 * 15px + 4px); font-size: 15px; line-height: 1.45; padding: 2px 4px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+.landscape #msg { height: calc(2 * 1.45 * 13px + 4px); font-size: 13px; }
 #screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
 #screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
 canvas { display: block; flex: none; }

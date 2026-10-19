@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.9';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.10';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -124,7 +124,12 @@ function render() {
   $('zoomSeg').hidden = view !== 'follow';
 
   if (mode === 'map') {
-    $('msg').textContent = rowText(0).trim();
+    const msg = $('msg'), text = rowText(0).trim();
+    if (msg.textContent !== text) {
+      msg.textContent = text; msg.style.fontSize = '';
+      for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
+        msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする
+    }
     const st = $('status'); st.textContent = '';
     for (const s of rowText(H - 1).trim().split(/\s{2,}/)) { const e = document.createElement('span'); e.textContent = s; st.append(e); }
   }
