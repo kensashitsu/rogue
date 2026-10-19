@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-19.28';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-19.30';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -515,6 +515,8 @@ function buildManual(body, text) {
   const lines = text.replace(/\r/g, '').split('\n');
   const isRule = l => /^\s*[=─-]{8,}\s*$/.test(l);
   const isBox = l => /^\s*[┌│└]/.test(l);
+  // 4 列以上ある行か、深く字下げした続きの行（表の右端の列）
+  const isTable = l => (l.trim().match(/\S {2,}(?=\S)/g) || []).length >= 3 || (l.trim() && l.match(/^ */)[0].length >= 30);
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     // ===== で挟まれた 1〜3 行は見出し
@@ -527,23 +529,31 @@ function buildManual(body, text) {
       }
       continue;
     }
-    if (isRule(l)) { add('hr'); continue; }
-    if (isBox(l)) {   // 画面の図は崩さず、横にスクロールして見る
-      const block = [];
-      while (i < lines.length && isBox(lines[i])) block.push(lines[i++]);
-      i--;
-      const n = Math.min(...block.map(s => s.match(/^ */)[0].length));
-      add('pre', 'wide', block.map(s => s.slice(n)).join('\n'));
-      continue;
+    // 段落の頭で、図や列の多い表（モンスター図鑑など）なら段落ごと崩さずに出し、横にスクロールして見る。
+    // 狭い幅で折り返すと、右の列が数文字ずつの縦読みになるため
+    const prev = i ? lines[i - 1].trim() : '';
+    if (l.trim() && (!prev || /^=+$/.test(prev))) {
+      let j = i;
+      while (j < lines.length && lines[j].trim() && !/^=+$/.test(lines[j].trim())) j++;
+      const para = lines.slice(i, j);
+      if (para.some(s => isBox(s) || isTable(s))) {
+        const n = Math.min(...para.map(s => s.match(/^ */)[0].length));
+        add('pre', 'wide', para.map(s => s.slice(n)).join('\n'));
+        i = j - 1;
+        continue;
+      }
     }
+    if (isRule(l)) { add('hr'); continue; }
     if (!l.trim()) { add('div', 'gap'); continue; }
     const ind = l.match(/^ */)[0].length;
     const d = add('div', 'ln', l.slice(ind));
     // 折り返した行の字下げ（半角 2 文字 = 1em）。「名前    説明」の表の行は、説明の列に揃えて折り返す
     const m = l.slice(ind).match(/^(\S.*?\S|\S) {2,}(?=\S)/);
     const hang = m && textCols(m[0]) <= 40 ? textCols(m[0]) : 0;
-    d.style.paddingLeft = `${(ind + hang) / 2}em`;
-    if (hang) d.style.textIndent = `${-hang / 2}em`;
+    // 深い字下げは画面の半分までに抑える（はみ出すとスクロールのたびに左右にぶれる）
+    const pad = `min(${(ind + hang) / 2}em, 45vw)`;
+    d.style.paddingLeft = pad;
+    if (hang) d.style.textIndent = `max(${-hang / 2}em, calc(${ind / 2}em - ${pad}))`;
   }
 }
 tap($('manualClose'), () => { $('manual').hidden = true; });
