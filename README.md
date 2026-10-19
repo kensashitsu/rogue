@@ -129,3 +129,8 @@ web/
   worker.js      Browser version: runs the game in Pyodide
   coi-serviceworker.js  Enables cross-origin isolation on GitHub Pages
 ```
+
+## License
+
+This is a Python reimplementation of Rogue 5.4 by Michael Toy, Ken Arnold and Glenn Wichman.
+The original copyright notice and license are in [LICENSE.txt](LICENSE.txt).
