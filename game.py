@@ -45,7 +45,7 @@ from constants import (
     CH_RING, CH_STICK, CH_FOOD, CH_GOLD, CH_AMULET,
     CH_STAIRS,
     LEFT, RIGHT,
-    ISMANY, ISCURSED, ISKNOW, ISMISL, ISRUN, ISFOUND,
+    ISMANY, ISCURSED, ISKNOW, ISMISL, ISRUN, ISFOUND, ISINVIS,
     STOMACHSIZE,
     R_AGGR, R_TELEPORT,
     MACE, BOW, ARROW, RING_MAIL,
@@ -485,10 +485,46 @@ class Game:
             if not ui._msgs:
                 n = self._rest_streak
                 ui.add_message(tr('You rest.') if n == 1 else tr('You rest. ({n} turns)', n=n))
+        elif action == 'rest_well':
+            self._rest_until_well(ui)
         elif action == 'godmode':
             self.player.godmode = not self.player.godmode
             state = "ON" if self.player.godmode else "OFF"
             ui.add_message(tr('[DEBUG] God mode {state}.', state=state))
+
+    def _rest_until_well(self, ui: UI) -> None:
+        """Z: 状態異常が治って HP が満タンになるまで休み続ける。
+        メッセージが出た・HP が減った・見えるモンスターが現れたか動いたら止める。"""
+        st = self.player.status
+
+        def unwell() -> bool:
+            return bool(st.blind or st.hallucinating or st.confused or st.slowed
+                        or st.poisoned or self.player.hp < self.player.max_hp)
+
+        def seen_monsters() -> dict:
+            return {id(m): (m.y, m.x) for m in self.monsters
+                    if m.is_alive and ui._is_visible(self.dungeon, self.player, m.y, m.x)
+                    and not ((m.flags & ISINVIS) and not st.can_see_invisible)}
+
+        if not unwell():
+            ui.add_message(tr("You don't need to rest."))
+            return
+        n = 0
+        self._resting = True
+        try:
+            while n < 1000 and unwell():   # 念のための上限
+                hp, before = self.player.hp, seen_monsters()
+                self._end_turn(ui)
+                n += 1
+                if not self._running or not self.player.is_alive or ui._msgs:
+                    break
+                after = seen_monsters()
+                if self.player.hp < hp or any(before.get(k) != v for k, v in after.items()):
+                    break
+        finally:
+            self._resting = False
+        if not ui._msgs and self.player.is_alive:
+            ui.add_message(tr('You rest. ({n} turns)', n=n))
 
     # -------------------------------------------------------------------------
     # 移動・攻撃
@@ -1320,7 +1356,8 @@ class Game:
                 ui.add_message(tr('The ring teleports you!'))
 
         # 加速中: モンスターAI前に追加行動を1回与える（再帰は1段まで）
-        if self.player.status.is_hasted and not self._in_extra_turn and self.player.status.is_mobile:
+        if (self.player.status.is_hasted and not self._in_extra_turn and self.player.status.is_mobile
+                and not getattr(self, '_resting', False)):
             self._in_extra_turn = True
             ui.draw_all(self.dungeon, self.player, self.monsters, self.floor_items)
             action, key = ui.get_command()
