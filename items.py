@@ -48,7 +48,7 @@ from constants import (
     WS_MISSILE, WS_HASTE_M, WS_SLOW_M, WS_DRAIN, WS_NOP, WS_TELAWAY,
     WS_TELTO, WS_CANCEL,
     # ゲームパラメータ
-    HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, BOLT_LENGTH,
+    HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, SIGHT_POTION_CUT, BOLT_LENGTH,
     ISHASTE, ISSLOW, ISRUN, ISHUH, ISINVIS, ISMEAN, ISCANC, ISHELD,
     VS_MAGIC, VS_POISON,
     LEFT, RIGHT,
@@ -773,7 +773,7 @@ def use_potion(
         msgs.append(player.apply_confusion(HUHDURATION))
 
     elif which == P_LSD:
-        player.apply_hallucination(_spread(SEEDURATION))
+        player.apply_hallucination(_spread(SEEDURATION - SIGHT_POTION_CUT))
         msgs.append(tr('Oh, wow!  Everything seems so cosmic!'))
 
     elif which == P_POISON:
@@ -858,7 +858,7 @@ def use_potion(
         msgs.append(msg if msg else tr('You feel your strength returning.'))
 
     elif which == P_BLIND:
-        msgs.append(player.apply_blindness(_spread(SEEDURATION)))   # 5.4: SEEDURATION
+        msgs.append(player.apply_blindness(_spread(SEEDURATION - SIGHT_POTION_CUT)))   # 5.4: SEEDURATION
 
     elif which == P_LEVIT:
         turns = HUHDURATION + random.randint(0, HUHDURATION)
