@@ -19,7 +19,7 @@ from constants import (
     R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
     R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
     R_NOP, R_AGGR, R_SUSTARM,
-    LEVEL_HP_BONUS, SEEDURATION, SIGHT_POTION_CUT,
+    LEVEL_HP_BONUS, SEEDURATION, SIGHT_POTION_CUT, HUHDURATION, CONFUSE_CUT,
 )
 
 # ---------------------------------------------------------------------------
@@ -112,6 +112,7 @@ class StatusEffects:
         cap += cap // 10
         for k in ('blind', 'hallucinating'):
             state[k] = min(state.get(k, 0), cap)
+        state['confused'] = min(state.get('confused', 0), HUHDURATION - CONFUSE_CUT)
         self.__dict__.update(state)
 
     # ---- タイマー処理 ----
