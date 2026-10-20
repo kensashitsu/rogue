@@ -53,6 +53,7 @@ KEY_MAP: dict[str, str] = {
     # 探索・情報
     '^': 'check_trap', '/': 'identify', 's': 'search',
     '.': 'rest',      '@': 'show_status', '?': 'help',
+    'Z': 'rest_well', # 治るまで休む（状態異常が治り HP が満タンになるまで）
     # システム
     'Q': 'quit',      'S': 'save',
     'o': 'language',  # 表示言語（英語 / 日本語）の切り替え
@@ -208,7 +209,7 @@ _HELP_LINES = [
     "  f  Fight monster    s  Search",
     "  .  Rest one turn    @  Show status",
     "  ?/F1  This help      ^  Check for traps",
-    "  /  Identify symbol",
+    "  /  Identify symbol Z  Rest until well",
     "  S  Save & quit      Q  Quit (no save)",
     "  Ctrl-P  Repeat last message",
     "  Ctrl-R  Redraw screen",
