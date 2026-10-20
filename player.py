@@ -19,7 +19,7 @@ from constants import (
     R_REGEN, R_SEEINVIS, R_SEARCH, R_STEALTH, R_SUSTSTR,
     R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
     R_NOP, R_AGGR, R_SUSTARM,
-    LEVEL_HP_BONUS,
+    LEVEL_HP_BONUS, SEEDURATION, SIGHT_POTION_CUT,
 )
 
 # ---------------------------------------------------------------------------
@@ -107,6 +107,11 @@ class StatusEffects:
     def __setstate__(self, state: dict) -> None:
         """古いセーブファイルに存在しないフィールドをデフォルト値で補完する。"""
         state.setdefault('held', False)
+        # 効き目を短くする前のセーブで残っている盲目・幻覚も、今の長さまでに縮める
+        cap = SEEDURATION - SIGHT_POTION_CUT
+        cap += cap // 10
+        for k in ('blind', 'hallucinating'):
+            state[k] = min(state.get(k, 0), cap)
         self.__dict__.update(state)
 
     # ---- タイマー処理 ----
