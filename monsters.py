@@ -334,7 +334,7 @@ class Monster:
     ) -> list[str]:
         """
         Medusa が隣接かつ ISFOUND でない状態で初めて見られたとき、
-        プレイヤーは VS_MAGIC セーブ or 混乱（HUHDURATION ターン）。
+        プレイヤーは VS_MAGIC セーブ or 混乱（HUHDURATION - CONFUSE_CUT ターン）。
         """
         if self.flags & ISFOUND:
             return []
@@ -345,9 +345,9 @@ class Monster:
 
         self.flags |= ISFOUND
         from combat import save_throw
-        from constants import VS_MAGIC, HUHDURATION
+        from constants import VS_MAGIC, HUHDURATION, CONFUSE_CUT
         if not save_throw(player.level, VS_MAGIC, player.protect_bonus):
-            player.apply_confusion(HUHDURATION)
+            player.apply_confusion(HUHDURATION - CONFUSE_CUT)   # 5.4: HUHDURATION
             return [
                 tr("You are confused by the Medusa's hideous visage!")
             ]

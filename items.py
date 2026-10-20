@@ -48,7 +48,7 @@ from constants import (
     WS_MISSILE, WS_HASTE_M, WS_SLOW_M, WS_DRAIN, WS_NOP, WS_TELAWAY,
     WS_TELTO, WS_CANCEL,
     # ゲームパラメータ
-    HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, SIGHT_POTION_CUT, BOLT_LENGTH,
+    HUNGERTIME, MORETIME, STOMACHSIZE, HUHDURATION, SEEDURATION, SIGHT_POTION_CUT, CONFUSE_CUT, BOLT_LENGTH,
     ISHASTE, ISSLOW, ISRUN, ISHUH, ISINVIS, ISMEAN, ISCANC, ISHELD,
     VS_MAGIC, VS_POISON,
     LEFT, RIGHT,
@@ -770,7 +770,7 @@ def use_potion(
     item.o_flags |= ISKNOW
 
     if which == P_CONFUSE:
-        msgs.append(player.apply_confusion(HUHDURATION))
+        msgs.append(player.apply_confusion(HUHDURATION - CONFUSE_CUT))   # 5.4: HUHDURATION
 
     elif which == P_LSD:
         player.apply_hallucination(_spread(SEEDURATION - SIGHT_POTION_CUT))
