@@ -485,7 +485,7 @@ JA: dict[str, str] = {
     "  f  Fight monster    s  Search": _row("  f  攻撃する", "s  調べる"),
     "  .  Rest one turn    @  Show status": _row("  .  1ターン休む", "@  状態を見る"),
     "  ?/F1  This help      ^  Check for traps": _row("  ?/F1  このヘルプ", "^  罠を確かめる"),
-    "  /  Identify symbol Z  Rest until well": _row("  /  記号を調べる", "Z  治るまで休む"),
+    "  /  Identify symbol Z  Rest until healed": _row("  /  記号を調べる", "Z  回復するまで休む"),
     "  S  Save & quit      Q  Quit (no save)": _row("  S  セーブして終了", "Q  やめる（セーブなし）"),
     "  Ctrl-P  Repeat last message": "  Ctrl-P  直前のメッセージを再表示",
     "  Ctrl-R  Redraw screen": "  Ctrl-R  画面を描き直す",
