@@ -70,6 +70,33 @@ const dirtTex = texture((g, s) => {    // 通路の土
   noise(g, s, 1600, 0.18);
 });
 
+// 灯火: 大きさのばらばらな小文字を詰め込んだ壁（松明の光で照らすので、字は白っぽく、地は黒）
+function letterTex(n, lo, hi, bright) {
+  const t = texture((g, s) => {
+    g.fillStyle = '#050403'; g.fillRect(0, 0, s, s);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const abc = 'abcdefghijklmnopqrstuvwxyz';
+    for (let i = 0; i < n; i++) {
+      const size = lo + Math.random() ** 2 * (hi - lo), l = Math.round(bright * (0.45 + Math.random() * 0.55));
+      g.font = `400 ${size}px "BIZ UDGothic", monospace`;
+      g.fillStyle = `rgb(${l},${l},${l})`;
+      g.fillText(abc[Math.random() * 26 | 0], Math.random() * s, Math.random() * s);
+    }
+  }, 256);
+  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
+  return t;
+}
+// 灯火: 光る点の格子の床（1 マスに 4 × 4）
+function dotFloorTex(col, r) {
+  const t = texture((g, s) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+    g.fillStyle = col;
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.beginPath(); g.arc((x + 0.5) * s / 4, (y + 0.5) * s / 4, r, 0, 7); g.fill(); }
+  }, 128);
+  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
+  return t;
+}
+
 // 文字の見た目: 黒地に記号を並べた質感（壁は - と |、床は .、通路は #、扉は +）
 function glyphTile(ch, cols, rows, col, size) {
   const t = texture((g, s) => {
@@ -176,6 +203,15 @@ export function init(canvas) {
         doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals,
         steps: stepsMat, pits: stone },
     },
+    // 灯火: 小文字を詰め込んだ壁と光る点の床を、暖色の松明だけで照らす（ROGUE-FP の見せ方に寄せたもの）
+    torch: {
+      bg: '#000000', fog: [1.2, 9], light: true, ambient: 0.1, torch: ['#ff9a48', 7, 7.5, 1.25],
+      mat: { hwalls: lam({ map: letterTex(170, 12, 46, 235) }), vwalls: lam({ map: letterTex(170, 12, 46, 235) }),
+        rocks: lam({ map: letterTex(120, 10, 34, 150) }), floors: lam({ map: dotFloorTex('#e8e0d0', 4.5) }),
+        dirts: lam({ map: dotFloorTex('#b8b0a0', 3.5) }), doors: lam({ map: decalTex('+'), color: '#ffd28a' }),
+        ceils: lam({ map: letterTex(60, 8, 22, 90) }), lintels: lam({ color: '#5a3d22' }), ...decals,
+        steps: lam({ map: letterTex(90, 10, 30, 200), color: '#9fd8e0' }), pits: lam({ map: letterTex(120, 10, 34, 150) }) },
+    },
     // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
     ascii: {
       bg: '#000000', fog: [2, 13], light: false,
@@ -211,6 +247,10 @@ function applyTheme() {
   scene.background.set(th.bg);
   scene.fog.color.set(th.bg); [scene.fog.near, scene.fog.far] = th.fog;
   ambient.visible = torch.visible = th.light;
+  // 明かりの強さ（灯火は周りを暗くして松明を強く。ほかは石の見た目の値）
+  ambient.intensity = th.ambient ?? 1.25;
+  const [tc, ti, td, tk] = th.torch || ['#ffcf8a', 1.6, 6, 1.6];
+  torch.color.set(tc); torch.intensity = ti; torch.distance = td; torch.decay = tk;
   edges.visible = !!th.edges;
   cv.style.visibility = th.term ? 'hidden' : '';
   tcv.style.display = th.term ? '' : 'none';
@@ -1428,4 +1468,34 @@ function draw() {
   if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
   jitterSprites(now, false);
   drawFx(now);
+  drawCompass();
+}
+
+// 方位計の帯: 画面の下に、向いている方角を中心に N・E・S・W と目盛りが流れる（地図の上が北）
+let compass, cctx;
+function drawCompass() {
+  if (!compass) {
+    compass = document.createElement('canvas'); compass.id = 'v3compass'; compass.setAttribute('aria-hidden', 'true');
+    cv.parentElement.append(compass); cctx = compass.getContext('2d');
+  }
+  const dpr = Math.min(devicePixelRatio || 1, 2), w = compass.clientWidth, h = compass.clientHeight;
+  if (!w) return;
+  if (compass.width !== Math.round(w * dpr)) { compass.width = Math.round(w * dpr); compass.height = Math.round(h * dpr); }
+  cctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  cctx.clearRect(0, 0, w, h);
+  const head = -cam.yaw;   // 北から右回りの角度
+  cctx.textAlign = 'center'; cctx.textBaseline = 'middle';
+  for (let a = 0; a < 360; a += 15) {
+    let d = a * Math.PI / 180 - head;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    if (Math.abs(d) > Math.PI / 2) continue;
+    const x = w / 2 + d / (Math.PI / 2) * w / 2, fade = 1 - Math.abs(d) / (Math.PI / 2);
+    const main = a % 90 === 0;
+    cctx.globalAlpha = 0.25 + 0.75 * fade;
+    cctx.font = `${main ? 700 : 400} ${main ? h * 0.7 : h * 0.5}px "BIZ UDGothic", monospace`;
+    cctx.fillStyle = main ? '#f0c652' : '#8d939a';
+    cctx.fillText(main ? 'NESW'[a / 90] : a % 45 === 0 ? '+' : '.', x, h / 2);
+  }
+  cctx.globalAlpha = 1;
+  cctx.fillStyle = '#f0c652'; cctx.fillRect(w / 2 - 0.5, 0, 1, 3);   // 真ん中の印
 }
