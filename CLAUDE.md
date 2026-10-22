@@ -16,7 +16,7 @@ web/（ブラウザ版: index.html / app.js / worker.js / coi-serviceworker.js�
 - ui.py の getch は _getch(hint, keys) を通す。hint（command / direction / more / char / text / name / list / any）でスマホのボタンを出し分ける。新しい入力待ちを足すときは hint も付ける
 - 説明書は「その他 → 説明書」で manual.txt をそのまま読み込んで組む（app.js の buildManual。===== で挟んだ行が見出し、┌│└ で始まる図は横スクロール）。manual.txt を直せば exe 版と両方に反映される
 - web/ を直して公開するときは app.js の VERSION を上げる（画面右上に出る。iPhone に新しい版が届いたかの確認用）。実機の調査は URL 末尾に #debug を付けると操作の出来事が画面に出る
-- web3d/ は一人称 3D 表示の試作（https://kensashitsu.github.io/rogue/web3d/）。web/ の写しを元に、地図の画面を r3d.js（Three.js）で立体にしたもの。ゲーム本体は同じ .py を使い、セーブは 2D 版と分けている（rogue3d-files）。web/ を直しても web3d/ には自動では入らない
+- web3d/ は一人称 3D 表示の試作（https://kensashitsu.github.io/rogue/web3d/）。web/ の写しを元に、地図の画面を r3d.js（Three.js）で立体にし、ASCII（端末の字の升目）で描くもの。見た目は ASCII 一本（2026-10-22 に絞った。ほかの見た目は git 履歴にある）。ゲーム本体は同じ .py を使い、セーブは 2D 版と分けている（rogue3d-files）。web/ を直しても web3d/ には自動では入らない
 
 ## 表示言語（英語 / 日本語）
 - 画面に出す文字列は必ず tr("英語の文面 {x}", x=...) を通す。英語の文面がそのままキーになる
