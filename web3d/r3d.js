@@ -191,6 +191,8 @@ function applyTheme() {
   edges.visible = !!th.edges;
   cv.style.visibility = th.term ? 'hidden' : '';
   tcv.style.display = th.term ? '' : 'none';
+  const seg = document.getElementById('cellSeg');
+  if (seg) seg.hidden = !th.term;   // 升目の大きさは ASCII のときだけ
 }
 
 export function setTheme(name) {
@@ -417,10 +419,19 @@ function kindMat(kind) {
   });
 }
 
-const CELL_W = 7.5;   // 升目 1 つの横幅（CSS の px）。縦はその 2 倍
+// 升目 1 つの横幅（CSS の px。縦はその 2 倍）。小さいほど細かく描けるが字も小さくなる
+export const CELL_SIZES = { coarse: 7.5, mid: 5.5, fine: 4 };
+let cellSize = 'mid';
+try { cellSize = localStorage.getItem('rogue3d-cell') || cellSize; } catch {}
+export const getCellSize = () => cellSize;
+export function setCellSize(k) {
+  cellSize = k;
+  try { localStorage.setItem('rogue3d-cell', k); } catch {}
+  resize();
+}
 let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null;
 function sizeTerm(w, h) {
-  tcols = Math.max(24, Math.round(w / CELL_W)); tcw = w / tcols;
+  tcols = Math.max(24, Math.round(w / (CELL_SIZES[cellSize] || CELL_SIZES.mid))); tcw = w / tcols;
   tch = tcw * 2; trows = Math.max(12, Math.floor(h / tch));
   const dpr = Math.min(devicePixelRatio || 1, 2);
   tcv.width = Math.round(w * dpr); tcv.height = Math.round(h * dpr);
