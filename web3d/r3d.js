@@ -1032,7 +1032,9 @@ function tint(hex, v) {
   return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
 }
 
-const WALL_RAMP = ' .:-=+*#';    // 壁の濃さ（暗い → 明るい）。@ や % は重すぎるので使わない
+// ASCII の濃さのつまみ（見比べて決める用）: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無
+const tune = { ramp: ' .:-=+*#', wallV: 1, floorV: 0.85, passV: 0.7, ceil: true };
+export function setTune(o) { Object.assign(tune, o); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
   if (!rt) return;
@@ -1068,15 +1070,15 @@ function drawTerm() {
     if (ln) {
       ch = ln.ch; v = Math.min(1, ln.v * 1.2 + 0.12);
     } else if (kind === 1) {
-      ch = WALL_RAMP[Math.min(WALL_RAMP.length - 1, Math.floor(lit * WALL_RAMP.length))];
+      ch = tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
     } else if (kind === 3) {
       ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
-    } else if (kind === 4) { ch = '.'; v = lit * 0.85; }
-    else if (kind === 5) { ch = '#'; v = lit * 0.7; }
+    } else if (kind === 4) { ch = '.'; v = lit * tune.floorV; }
+    else if (kind === 5) { ch = '#'; v = lit * tune.passV; }
     else if (kind === 6) { ch = '+'; }
     else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
-    else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
+    else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
     if (mood.halu) {   // 幻覚: 升ごとに色相をずらし、時間で流す
