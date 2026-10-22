@@ -605,9 +605,9 @@ function drawArt(o, u) {
   const rows = art.length, cols = art[0].length;
   // 形の 1 升の高さ（縦に長い形ほど背が高くなる。ただし画面の 9 割まで）
   const h = Math.min(o.size * 1.15 / Math.min(rows, 9), trows * tch * 0.9 / rows);
-  if (h < tch * 0.75) return false;
-  // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
-  const w = h / 2, x0 = o.px - cols * w / 2, y0 = o.py + o.size / 2.3 - rows * h;
+  const bottom = o.py + o.size / 2.3;   // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
+  if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px);
+  const w = h / 2, x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
   tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const m = art[r][c];
@@ -618,6 +618,30 @@ function drawArt(o, u) {
     tctx.fillText(m === 'e' ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
   return true;
+}
+
+// 遠くて形の 1 升が画面の升より小さいとき: 形を画面の升目の粗さに縮めて、升目にそろえて描く。
+// 縮めた 1 升に当たる範囲の 3 割以上が埋まっていれば字を置く（細い所が消えないように、少なくとも 1 升は残す）
+function drawArtSmall(art, u, h, bottom, cx) {
+  const rows = art.length, cols = art[0].length;
+  const tr = Math.max(1, Math.round(rows * h / tch)), tc = Math.max(1, Math.round(cols * h / 2 / tcw));
+  if (tr * tc <= 1) return false;   // 1 升にしかならないなら 1 文字で
+  const gx0 = Math.round(cx / tcw - tc / 2), gy0 = Math.round(bottom / tch - tr);
+  tctx.font = `700 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+  let drawn = 0;
+  for (let r = 0; r < tr; r++) for (let c = 0; c < tc; c++) {
+    const r0 = Math.floor(r * rows / tr), r1 = Math.max(r0 + 1, Math.floor((r + 1) * rows / tr));
+    const c0 = Math.floor(c * cols / tc), c1 = Math.max(c0 + 1, Math.floor((c + 1) * cols / tc));
+    let n = 0, eye = false;
+    for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ') n++; if (m === 'e') eye = true; }
+    if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
+    const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
+    tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch);
+    tctx.fillStyle = eye && tr >= 3 ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillText(eye && tr >= 3 ? '*' : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
+    drawn++;
+  }
+  return drawn > 0;
 }
 
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
