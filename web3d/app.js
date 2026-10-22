@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.9';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.10';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -670,7 +670,7 @@ markTheme();
 const markCell = () => { for (const b of $('cellSeg').children) b.setAttribute('aria-pressed', b.dataset.cell === r3d.getCellSize()); };
 for (const b of $('cellSeg').children) tap(b, () => { r3d.setCellSize(b.dataset.cell); markCell(); });
 markCell();
-window.__rogue = { rowText, findPlayer, r3d };   // 試験用（自動で歩かせて撮る）
+window.__rogue = { rowText, findPlayer, r3d, grid };   // 試験用（自動で歩かせて撮る）
 new ResizeObserver(() => { r3d.resize(); }).observe(box);
 start();
 document.fonts && document.fonts.ready.then(requestDraw);
