@@ -135,6 +135,7 @@ export function init(canvas) {
   tcv.id = 'v3t'; tcv.setAttribute('aria-hidden', 'true');
   canvas.after(tcv);
   tctx = tcv.getContext('2d');
+  initFx(canvas);
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   scene = new THREE.Scene();
@@ -222,6 +223,7 @@ export function resize() {
   renderer.setSize(w, h, true);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   sizeTerm(w, h);
+  sizeFx(w, h);
   draw();
 }
 
@@ -283,6 +285,7 @@ export function update(grid, pos) {
   if (pos) player = pos;
   const learned = learnRock(grid, pos);
   lastGrid = grid;
+  watchHp(grid);
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
@@ -972,12 +975,13 @@ function drawTerm() {
     const u = o.sp.userData;
     const fade = 1 - Math.min(0.75, Math.max(0, (o.dist - 2) / 12));
     tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade;
-    if (drawArt(o, u)) continue;
+    const uu = u.flash ? { ...u, col: '#ffffff' } : u;
+    if (drawArt(o, uu)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
     tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
-    tctx.fillStyle = u.col || '#c8ccd1';
+    tctx.fillStyle = uu.col || '#c8ccd1';
     tctx.fillText(u.ch, o.px, o.py + o.size * 0.04);
   }
   tctx.globalAlpha = 1;
@@ -1042,12 +1046,166 @@ export function missile(m) {
   requestAnimationFrame(frame);
 }
 
+// ---------------------------------------------------------------------------
+// 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
+// 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
+// ---------------------------------------------------------------------------
+const fx = { hits: [], nums: [], debris: [], shakeT0: -1e9, lastHp: null };
+let fxcv, fxctx, hurtEl, fxRunning = false;
+const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320;
+
+function initFx(canvas) {
+  fxcv = document.createElement('canvas');
+  fxcv.id = 'v3fx'; fxcv.setAttribute('aria-hidden', 'true');
+  canvas.parentElement.append(fxcv);
+  fxctx = fxcv.getContext('2d');
+  hurtEl = document.createElement('div');
+  hurtEl.id = 'v3hurt'; hurtEl.setAttribute('aria-hidden', 'true');
+  canvas.parentElement.append(hurtEl);
+}
+function sizeFx(w, h) {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  fxcv.width = Math.round(w * dpr); fxcv.height = Math.round(h * dpr);
+  fxctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+export function effect(d) {
+  const now = performance.now();
+  if (d.type === 'hit') {
+    const cell = lastGrid && lastGrid[d.y] && lastGrid[d.y][d.x];
+    const ch = cell ? cell[0] : '*', col = cell && (cell[1] & 15) ? PALETTE[(cell[1] & 15) - 1] : '#ff6a5c';
+    fx.hits.push({ y: d.y, x: d.x, t0: now });
+    fx.nums.push({ y: d.y, x: d.x, t0: now, text: '-' + d.dmg });
+    if (d.killed) {
+      for (let i = 0; i < 16; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.2;
+        fx.debris.push({ y: d.y, x: d.x, t0: now, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
+      }
+    }
+  } else if (d.type === 'hurt') {
+    hurt(d.y == null ? null : [d.y, d.x]);
+  }
+  startFx();
+}
+
+// くらった: 揺らして、殴ってきた方向の端を赤く（方向が分からないときは画面のふち全体をうっすら）
+function hurt(from) {
+  fx.shakeT0 = performance.now();
+  let side = 'all';
+  if (from && player) {
+    const dy = Math.sign(from[0] - player[0]), dx = Math.sign(from[1] - player[1]);
+    const abs = DIRS.findIndex(([a, b]) => a === dy && b === dx);
+    const rel = abs < 0 ? 0 : (abs - facing + 8) % 8;
+    side = rel === 0 ? 'front' : rel <= 2 ? 'right' : rel <= 5 ? 'back' : 'left';   // 右回りに数えた 8 方向
+  }
+  const red = 'rgba(255, 40, 30, .75)';
+  hurtEl.style.background = {
+    left: `linear-gradient(to right, ${red}, transparent 32%)`,
+    right: `linear-gradient(to left, ${red}, transparent 32%)`,
+    back: `linear-gradient(to top, ${red}, transparent 35%)`,
+    front: `radial-gradient(ellipse at center, transparent 45%, rgba(255, 40, 30, .45))`,
+    all: `radial-gradient(ellipse at center, transparent 50%, rgba(255, 40, 30, .5))`,
+  }[side];
+  hurtEl.style.transition = 'none'; hurtEl.style.opacity = '1';
+  void hurtEl.offsetWidth;   // いったん描かせてから消えていくように
+  hurtEl.style.transition = 'opacity .7s ease-out'; hurtEl.style.opacity = '0';
+}
+
+// 状態行の HP が減ったのに知らせがなかったとき（罠・毒・空腹など）も揺らす
+function watchHp(grid) {
+  const status = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
+  const m = status.match(/HP:\s*(\d+)/i);
+  if (!m) return;
+  const hp = +m[1];
+  if (fx.lastHp !== null && hp < fx.lastHp && performance.now() - fx.shakeT0 > 400) { hurt(null); startFx(); }
+  fx.lastHp = hp;
+}
+
+const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length;
+function startFx() {
+  if (fxRunning) return;
+  fxRunning = true;
+  requestAnimationFrame(function tick(now) {
+    fx.hits = fx.hits.filter(h => now - h.t0 < HIT_MS);
+    fx.nums = fx.nums.filter(n => now - n.t0 < NUM_MS);
+    fx.debris = fx.debris.filter(p => now - p.t0 < DEBRIS_MS);
+    draw();
+    if (fxActive(now)) requestAnimationFrame(tick);
+    else { fxRunning = false; draw(); }
+  });
+}
+
+// 当てたモンスターの札を震わせる（draw の間だけ位置をずらす）。点滅は ASCII では drawTerm、ほかは材質を白に
+function hitAt(y, x, now) { return fx.hits.find(h => h.y === y && h.x === x && now - h.t0 < HIT_MS); }
+function jitterSprites(now, on) {
+  if (!fx.hits.length) return;
+  for (const sp of glyphGroup.children) {
+    const y = Math.round(sp.position.z - 0.5), x = Math.round(sp.position.x - 0.5);
+    if (on) {
+      const h = hitAt(y, x, now); if (!h) continue;
+      const k = 1 - (now - h.t0) / HIT_MS;
+      sp.userData.base = sp.position.clone();
+      sp.position.x += (Math.random() - 0.5) * 0.12 * k; sp.position.y += (Math.random() - 0.5) * 0.06 * k;
+      sp.userData.flash = ((now - h.t0) / 65 | 0) % 2 === 0;
+      if (theme !== 'term' && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = glyphMat(sp.userData.ch, '#ffffff'); }
+    } else if (sp.userData.base) {
+      sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false;
+      if (sp.userData.mat) { sp.material = sp.userData.mat; sp.userData.mat = null; }
+    }
+  }
+}
+
+// ダメージの数字と飛び散る字（どの見た目でも上に重ねて描く）
+const _v = new THREE.Vector3();
+function project(x, y, z) {
+  _v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
+  const dist = -_v.z;
+  if (dist < 0.12) return null;
+  _v.set(x, y, z).project(camera);
+  const W2 = fxcv.width / Math.min(devicePixelRatio || 1, 2), H2 = fxcv.height / Math.min(devicePixelRatio || 1, 2);
+  return { px: (_v.x + 1) / 2 * W2, py: (1 - _v.y) / 2 * H2, dist, unit: H2 / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) };
+}
+function drawFx(now) {
+  if (!fxctx) return;
+  fxctx.clearRect(0, 0, fxcv.width, fxcv.height);
+  fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
+  for (const n of fx.nums) {
+    const k = (now - n.t0) / NUM_MS;
+    const p = project(n.x + 0.5, 0.95 + k * 0.45, n.y + 0.5); if (!p) continue;
+    const size = Math.max(14, Math.min(48, p.unit * 0.3));
+    fxctx.globalAlpha = 1 - Math.max(0, (k - 0.5) * 2);
+    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(n.text, p.px, p.py);
+    fxctx.fillStyle = '#ffe08a'; fxctx.fillText(n.text, p.px, p.py);
+  }
+  for (const d of fx.debris) {
+    const t = (now - d.t0) / 1000, k = (now - d.t0) / DEBRIS_MS;
+    const y = Math.max(0.02, d.h + d.vy * t - 4.5 * t * t);
+    const p = project(d.x + 0.5 + d.vx * t, y, d.y + 0.5 + d.vz * t); if (!p) continue;
+    const size = Math.max(8, Math.min(40, p.unit * 0.16));
+    fxctx.globalAlpha = 1 - k;
+    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.fillStyle = d.col; fxctx.fillText(d.ch, p.px, p.py);
+  }
+  fxctx.globalAlpha = 1;
+}
+
 function draw() {
   if (!renderer || !cam) return;
+  const now = performance.now();
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
   camera.position.set(cam.x + Math.sin(cam.yaw) * back, EYE, cam.z + Math.cos(cam.yaw) * back);
   camera.rotation.set(0, cam.yaw, 0, 'YXZ');
+  const sk = 1 - (now - fx.shakeT0) / SHAKE_MS;   // くらったときの揺れ
+  if (sk > 0) {
+    camera.position.x += (Math.random() - 0.5) * 0.14 * sk; camera.position.y += (Math.random() - 0.5) * 0.08 * sk;
+    camera.rotation.z = (Math.random() - 0.5) * 0.06 * sk;
+  }
+  camera.updateMatrixWorld();
   torch.position.set(cam.x, 0.8, cam.z);
+  jitterSprites(now, true);
   if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
+  jitterSprites(now, false);
+  drawFx(now);
 }

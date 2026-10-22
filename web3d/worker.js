@@ -48,6 +48,7 @@ function syncSaves() {
 self.rogue_draw = rows => postMessage({ type: 'draw', rows });
 self.rogue_flash = () => postMessage({ type: 'flash' });
 self.rogue_missile = json => postMessage({ type: 'missile', data: JSON.parse(json) });
+self.rogue_effect = json => postMessage({ type: 'effect', data: JSON.parse(json) });
 const nap = new Int32Array(new SharedArrayBuffer(4));   // 待つだけに使う（投げた物が飛ぶ間）
 self.rogue_sleep = ms => { Atomics.wait(nap, 0, 0, ms); };
 self.rogue_flushinp = () => { keys[1] = Atomics.load(keys, 0); };

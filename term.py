@@ -179,6 +179,12 @@ def missile(path: list, ch: str, attr: int, step_ms: int) -> bool:
     return True
 
 
+def effect(data: dict) -> None:
+    """ブラウザ版: 画面の演出のきっかけ（攻撃が当たった・くらった など）を画面側に知らせる。端末では何もしない。"""
+    if _WEB:
+        js.rogue_effect(json.dumps(data, ensure_ascii=False))
+
+
 def flushinp() -> None:
     if _WEB:
         js.rogue_flushinp()
