@@ -99,9 +99,9 @@ canvas { display: block; flex: none; }
 /* 3D: 一人称の画面を欄いっぱいに、2D の地図は右上に小さく重ねる。持ち物などの文字の画面では 2D だけ */
 #screenBox { position: relative; }
 #v3 { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border-radius: 6px; }
-#app:not(.text) #cv { position: absolute; z-index: 3; top: 6px; right: 6px; background: rgba(11, 13, 15, .35); border: 1px solid var(--line); border-radius: 4px; }
+#app:not(.text) #cv { position: absolute; z-index: 3; top: 6px; right: 6px; background: rgba(11, 13, 15, .65); border: 1px solid var(--line); border-radius: 4px; }
 /* 全体の地図: 3D の画面の真ん中に大きく（もう一度タップで小さな地図に戻る） */
-#app.fullmap:not(.text) #cv { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); background: rgba(11, 13, 15, .5); }
+#app.fullmap:not(.text) #cv { top: 50%; left: 50%; right: auto; transform: translate(-50%, -50%); background: rgba(11, 13, 15, .65); }
 #v3t { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; pointer-events: none; }
 #v3fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 #v3compass { position: absolute; left: 20%; right: 20%; bottom: 4px; height: 18px; width: 60%; pointer-events: none; z-index: 2;
