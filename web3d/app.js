@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.38';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.39';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -225,7 +225,6 @@ function drawFacing() {
   ctx.restore();
 }
 function turnView(d) { r3d.turn(d); requestDraw(); }
-function faceKey(key) { r3d.faceKey(key); requestDraw(); }
 
 // 文字だけの画面が収まらず、まだ見ていない続きがあるとき、その側に印を出す
 function updateMoreHints() {
@@ -342,19 +341,17 @@ function buildButtons() {
     let timer = 0;
     // 長押し: 押している間 1 歩ずつ歩き続ける（休むも同じ）。前の 1 歩をゲームが受け取ってから次を送るので、
     // 離せばすぐ止まる。メッセージの「次へ」待ちなどになったら止まる
-    let key = '';   // 押したときの方向のキー。長押しの間は同じ向きへ歩き続ける（歩くと向きが変わるので、押し直さない限り作り直さない）
     const repeat = () => {
       debug(`repeat ${k} hint=${hint} queued=${Atomics.load(keys, 0) - keys[1]}`);
-      if (hint === 'command' && Atomics.load(keys, 0) === keys[1]) send(key);
+      if (hint === 'command' && Atomics.load(keys, 0) === keys[1]) send(dirKey(k));
       timer = setTimeout(repeat, 110);
     };
     const press = () => {
       b.classList.add('on'); clearTimeout(timer);
       if (k === 'turnL' || k === 'turnR') { turnView(k === 'turnL' ? -1 : 1); return; }
-      key = dirKey(k);
-      if (hint === 'direction') { answer(rest ? 27 : key); if (!rest) faceKey(key); return; }
+      if (hint === 'direction') { answer(rest ? 27 : dirKey(k)); return; }
       if (hint !== 'command') return;
-      send(key); faceKey(key);
+      send(dirKey(k));
       timer = setTimeout(repeat, 300);
     };
     const release = () => { b.classList.remove('on'); clearTimeout(timer); };
@@ -472,6 +469,19 @@ cv.addEventListener('click', e => {
   const m = rowText(y).match(/^\s*(\S)\)/);
   if (m && valid.includes(m[1])) answer(m[1]);
 });
+// 3D の画面を左右にスワイプして向きを変える（90 度）。景色を指でつかんで回す向き: 左へ払うと右を向く。
+// 地図（#cv）の上から始めたときは地図のタップなので回さない
+let swipe = null;
+box.addEventListener('pointerdown', e => {
+  swipe = mode === 'map' && !e.target.closest('#cv') ? { x: e.clientX, y: e.clientY } : null;
+});
+box.addEventListener('pointerup', e => {
+  if (!swipe) return;
+  const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
+  if (Math.abs(dx) < 30 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  if (hint === 'command' || hint === 'direction') turnView(dx < 0 ? 2 : -2);
+});
+box.addEventListener('pointercancel', () => { swipe = null; });
 // 「次へ」待ちの間は、画面のどこをタップしても次へ進む（十字キーや行動ボタンの上でも）。
 // 読み飛ばしを防ぐため、待ちになってから 0.3 秒以内に指を置いたタップは数えない
 // （歩くつもりの連打や、長押しで歩いていて離した指では進まない）。上の設定ボタンは除く
@@ -496,7 +506,7 @@ addEventListener('keydown', e => {
   if ((hint === 'command' || hint === 'direction') && e.key.startsWith('Arrow')) {   // 矢印: ←→ で向きを変え、↑↓ で前後へ
     e.preventDefault();
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') turnView(e.key === 'ArrowLeft' ? -1 : 1);
-    else if (hint === 'command') send(r3d.keyFor(e.key === 'ArrowUp' ? 0 : 4));   // ↑↓ は前後なので向きは変わらない
+    else if (hint === 'command') send(r3d.keyFor(e.key === 'ArrowUp' ? 0 : 4));
     else answer(r3d.keyFor(e.key === 'ArrowUp' ? 0 : 4));
     return;
   }
@@ -505,7 +515,6 @@ addEventListener('keydown', e => {
   else if (code === undefined && e.key.length === 1 && !e.metaKey) code = e.key;
   if (code === undefined) return;
   e.preventDefault(); send(code);
-  if ((hint === 'command' || hint === 'direction') && typeof code === 'string') faceKey(code);   // h j k l y u b n（大文字は走る）
 });
 
 function setView(v) {

@@ -17,12 +17,6 @@ let facing = 0;
 try { facing = +localStorage.getItem('rogue3d-facing') || 0; } catch {}
 export const getFacing = () => facing;
 export const keyFor = rel => KEYS[(facing + rel + 8) % 8];   // rel: 0 = 前、2 = 右、4 = 後ろ、6 = 左
-// 歩いた（殴った・杖を振った）方向を向く。真後ろだけは向きを変えない（敵に背を向けずに下がれるように）
-export function faceKey(key) {
-  const f = KEYS.indexOf(String(key).toLowerCase());
-  if (f < 0 || f === facing || f === (facing + 4) % 8) return;
-  turn(f - facing);
-}
 
 // ---------------------------------------------------------------------------
 // 場面
@@ -132,7 +126,6 @@ export function update(grid, pos) {
   if (!renderer) return;
   const sig = grid.slice(MAP_TOP, MAP_BOT + 1).map(r => r.map(c => c ? c[0] + (c[1] & 512 ? '_' : '') : '').join('')).join('\n');
   const moved = !player || !pos || player[0] !== pos[0] || player[1] !== pos[1];
-  const prev = player;
   if (pos) player = pos;
   const lvBefore = rockLevel;
   const learned = learnRock(grid, pos);
@@ -144,32 +137,8 @@ export function update(grid, pos) {
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
   if (jumped) faceOpen(grid);
-  else if (moved && prev) followCorridor(grid, prev);
   if (moved) startMove();
   draw();
-}
-
-// 通路の角で自動的に曲がる: 前が塞がっていて、来た道のほかに進める通路が 1 方向だけなら、そちらを向く。
-// 部屋の中（隣に床 . がある）では曲がらない
-function followCorridor(grid, prev) {
-  const open = c => c !== '-' && c !== '|' && c !== ' ';
-  const [ay, ax] = DIRS[facing];
-  if (open(cellAt(grid, player[0] + ay, player[1] + ax)[0])) return;
-  const opts = [];
-  let back = -1, bestD = Infinity;
-  for (let f = 0; f < 8; f += 2) {
-    const [dy, dx] = DIRS[f], c = cellAt(grid, player[0] + dy, player[1] + dx)[0];
-    if (c === '.') return;
-    if (!open(c)) continue;
-    const d = Math.hypot(player[0] + dy - prev[0], player[1] + dx - prev[1]);   // 来た道 = いちばん前にいた所に近い方向
-    if (d < bestD) { bestD = d; back = f; }
-    opts.push(f);
-  }
-  const ways = opts.filter(f => f !== back);
-  if (ways.length !== 1) return;
-  facing = ways[0];
-  try { localStorage.setItem('rogue3d-facing', facing); } catch {}
-  build(grid);   // 床に描いた字（階段・罠）の向きを合わせ直す
 }
 
 function faceOpen(grid) {
