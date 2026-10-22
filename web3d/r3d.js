@@ -117,9 +117,7 @@ function decalTex(ch) {
   return t;
 }
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
-let edgeSegs = [], edgeBright = [];
-let anchors = [], solidCh = [];   // すっきり: 字を置く点
-const ANCHOR_CH = { floors: '.', dirts: '#', doors: '+', ceils: '`' };          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
+let edgeSegs = [], edgeBright = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
 let theme = 'term';
 try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
 export const getTheme = () => theme;
@@ -170,8 +168,6 @@ export function init(canvas) {
   for (const [ch, d] of Object.entries(DECALS))
     d.mat = new THREE.MeshBasicMaterial({ map: decalTex(ch), transparent: true, depthWrite: false, color: d.color });
   const decals = { traps: DECALS['^'].mat };
-  const termMat = { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
-    doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1) };
   stepsMat = new THREE.MeshLambertMaterial({ map: stoneTex, color: '#9fd8e0' });
   themes = {
     stone: {
@@ -189,9 +185,11 @@ export function init(canvas) {
       edges: true,
     },
     // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
-    term: { bg: '#000000', fog: [2, 13], light: false, term: true, mat: termMat },
-    // すっきり: ASCII と同じ描き方で、床・壁・天井の字はダンジョンの 1 マスに 1 つだけ置き、面は余白にする（形は境界線で見せる）
-    clean: { bg: '#000000', fog: [2, 13], light: false, term: true, clean: true, mat: termMat },
+    term: {
+      bg: '#000000', fog: [2, 13], light: false, term: true,
+      mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
+        doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1) },
+    },
   };
   // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
   edges = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
@@ -333,11 +331,7 @@ function build(grid) {
     const i = counts[name]++;
     mesh.setMatrixAt(i, dummy.matrix);
     mesh.setColorAt(i, color.setScalar(bright));
-    const ac = ANCHOR_CH[name];   // すっきり: 床・天井の真ん中に字を 1 つ
-    if (ac && !at) anchors.push({ x: x + 0.5, y: name === 'ceils' ? 0.995 : 0.005, z: z + 0.5, ch: ac, b: bright, kind: name });
   };
-  anchors = [];
-  solidCh = new Array(W * 24);
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   const stairCells = [];
@@ -346,8 +340,8 @@ function build(grid) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
-      if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; solidCh[y * W + x] = '-'; continue; }
-      if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; solidCh[y * W + x] = '|'; continue; }
+      if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
+      if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
         if (!rock.has(y * W + x)) {
@@ -368,7 +362,7 @@ function build(grid) {
         }
         let byRoom = false;
         for (const [dy, dx] of DIRS) if (ch(y + dy, x + dx) === '.' && (dy === 0 || dx === 0)) byRoom = true;
-        if (!byRoom) { put(rocks, 'rocks', x, 0.5, y, 0.8); solid[y * W + x] = 0.5; solidCh[y * W + x] = ':'; }
+        if (!byRoom) { put(rocks, 'rocks', x, 0.5, y, 0.8); solid[y * W + x] = 0.5; }
         continue;
       }
       if (!walk(c) && c !== '@') continue;
@@ -415,7 +409,7 @@ function build(grid) {
   }
   for (const k of aheadRocks) {
     const y = Math.floor(k / W), x = k % W;
-    put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD; solidCh[k] = ':';
+    put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
   }
   buildEdges(solid, stairCells);
   for (const [name, mesh] of Object.entries(meshes)) {
@@ -442,12 +436,6 @@ function buildEdges(solid, stairCells = []) {
       const py = dx, px = dy;                       // 面に沿った向き
       const fx = x + 0.5 + dx * 0.505, fz = y + 0.5 + dy * 0.505;   // 面の中心（面の手前に少し浮かせる）
       const ax = fx - px * 0.5, az = fz - py * 0.5, bx = fx + px * 0.5, bz = fz + py * 0.5;
-      // すっきり: 壁の面に字を並べる（文字の見た目の壁と同じ間隔: - は横 3 × 縦 4、| は横 4 × 縦 2、岩 : は 2 × 2）
-      const wc = solidCh[y * W + x] || '-', [nc, nr] = wc === '-' ? [3, 4] : wc === '|' ? [4, 2] : [2, 2];
-      for (let i = 0; i < nc; i++) for (let j = 0; j < nr; j++) {
-        const u = (i + 0.5) / nc - 0.5;
-        anchors.push({ x: fx + px * u, y: 1 - (j + 0.5) / nr, z: fz + py * u, ch: wc, b, kind: 'wall' });
-      }
       line(ax, 0.002, az, bx, 0.002, bz, b);
       line(ax, 0.998, az, bx, 0.998, bz, b);
       for (const sgn of [-1, 1]) {
@@ -1038,38 +1026,6 @@ function drawArtSmall(art, u, h, bottom, cx) {
   return drawn > 0;
 }
 
-// すっきり: 床・天井・壁の面の真ん中の点を升目に写し、そこにだけ字を置く。手前の面に隠れる点や、境界線のある升は描かない。
-// 遠くの点ほど升目の上で詰まって並ぶので、文字版と同じ粗密で遠近が出る
-const ANCHOR_KIND = { floors: 4, dirts: 5, doors: 6, ceils: 7 };
-function drawAnchors(C, R, depthOf, lines, kindAt) {
-  const best = new Map();
-  for (const a of anchors) {
-    _p.set(a.x, a.y, a.z).applyMatrix4(camera.matrixWorldInverse);
-    const dist = -_p.z;
-    if (dist < 0.15) continue;
-    _p.set(a.x, a.y, a.z).project(camera);
-    const x = Math.floor((_p.x + 1) / 2 * C), y = Math.floor((1 - _p.y) / 2 * R);
-    if (x < 0 || y < 0 || x >= C || y >= R || lines[y * C + x]) continue;
-    // 隠れていないか: 升に写っている面が同じ種類なら、距離の差はゆるく見る（床を浅い角度で見ると升の中でも距離が大きく変わる）
-    const kc = kindAt(x, y), same = kc === ANCHOR_KIND[a.kind] || (a.kind === 'wall' && (kc === 1 || kc === 3));
-    if (depthOf(x, y) < dist - (same ? 0.6 + dist * 0.25 : 0.3 + dist * 0.08)) continue;
-    const k = y * C + x, o = best.get(k);
-    if (!o || o.dist > dist) best.set(k, { a, dist });
-  }
-  const now = performance.now();
-  for (const [k, { a, dist }] of best) {
-    const x = k % C, y = (k / C) | 0;
-    const far = 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4));
-    let v = a.b >= 0.9 ? far : Math.min(1, a.b * 2.3 / (1 + 0.11 * dist * dist));
-    if (a.kind === 'ceils') v *= 0.45; else if (a.ch === ':') v *= 0.6; else if (a.kind === 'dirts') v *= 0.8;
-    if (v < 0.04) continue;
-    const g = Math.round(40 + v * 215);
-    tctx.fillStyle = mood.halu ? `hsl(${(x * 9 + y * 13 + now / 8) % 360},80%,${Math.round(18 + v * 52)}%)`
-      : a.kind === 'doors' ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})` : `rgb(${g},${g},${Math.min(255, g + 8)})`;
-    tctx.fillText(a.ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
-  }
-}
-
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
@@ -1098,7 +1054,6 @@ function drawTerm() {
   const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
 
   const lines = drawLines(C, R, depthOf);
-  const clean = !!themes[theme].clean;
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
   tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
@@ -1109,7 +1064,6 @@ function drawTerm() {
     if (!tbuf[i + 3] && !ln) continue;
     const lit = tbuf[i] / 255, kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0;
     if (lit < 0.03 && !ln) continue;
-    if (clean && !ln && kind !== 8 && kind !== 9) continue;   // すっきり: 面は余白（段と罠だけ塗る）
     let ch = null, v = lit;
     if (ln) {
       ch = ln.ch; v = Math.min(1, ln.v * 1.2 + 0.12);
@@ -1135,8 +1089,6 @@ function drawTerm() {
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
     tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
   }
-
-  if (clean) drawAnchors(C, R, depthOf, lines, (x, y) => { const i = at(x, y); return tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0; });
 
   // 3. モンスター・アイテム・飛んでいる物: 升目に写して、壁の向こうでなければ描く（近いほど大きく）
   const list = [];
@@ -1382,7 +1334,7 @@ function jitterSprites(now, on) {
       sp.userData.base = sp.position.clone();
       sp.position.x += (Math.random() - 0.5) * 0.12 * k; sp.position.y += (Math.random() - 0.5) * 0.06 * k;
       sp.userData.flash = ((now - h.t0) / 65 | 0) % 2 === 0;
-      if (!themes[theme].term && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = glyphMat(sp.userData.ch, '#ffffff'); }
+      if (theme !== 'term' && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = glyphMat(sp.userData.ch, '#ffffff'); }
     } else if (sp.userData.base) {
       sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false;
       if (sp.userData.mat) { sp.material = sp.userData.mat; sp.userData.mat = null; }
@@ -1468,9 +1420,9 @@ function draw() {
   camera.updateMatrixWorld();
   torch.position.set(cam.x, 0.8, cam.z);
   jitterSprites(now, true);
-  const hue = mood.halu && !themes[theme].term ? `hue-rotate(${Math.round(now / 8) % 360}deg) saturate(2.5)` : '';
+  const hue = mood.halu && theme !== 'term' ? `hue-rotate(${Math.round(now / 8) % 360}deg) saturate(2.5)` : '';
   if (cv.style.filter !== hue) cv.style.filter = hue;   // 文字・石の見た目の幻覚は、画面の色相を回す
-  if (themes[theme].term) drawTerm(); else renderer.render(scene, camera);
+  if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
   jitterSprites(now, false);
   drawFx(now);
 }

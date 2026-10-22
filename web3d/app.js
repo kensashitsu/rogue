@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.20';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.19';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -36,7 +36,7 @@ const app = $('app'), cv = $('cv'), ctx = cv.getContext('2d'), box = $('screenBo
 // ---------------------------------------------------------------------------
 const L = {
   ja: {
-    themes: { term: 'ASCII', clean: 'すっきり', ascii: '文字', stone: '石' }, cells: { coarse: '粗', mid: '中', fine: '細' },
+    themes: { term: 'ASCII', ascii: '文字', stone: '石' }, cells: { coarse: '粗', mid: '中', fine: '細' },
     follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
     acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'], ['Z', '回復するまで休む'],
@@ -51,7 +51,7 @@ const L = {
     crash: 'エラーで止まりました', reload: '読み込み直す',
   },
   en: {
-    themes: { term: 'ASCII', clean: 'Clean', ascii: 'Text', stone: 'Stone' }, cells: { coarse: 'L', mid: 'M', fine: 'S' },
+    themes: { term: 'ASCII', ascii: 'Text', stone: 'Stone' }, cells: { coarse: 'L', mid: 'M', fine: 'S' },
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'], ['Z', 'Rest to heal'],
