@@ -261,7 +261,7 @@ function applyTheme() {
 export function setTheme(name) {
   theme = name;
   try { localStorage.setItem('rogue3d-theme', theme); } catch {}
-  if (renderer) { applyTheme(); draw(); }
+  if (renderer) { applyTheme(); if (lastGrid) build(lastGrid); draw(); }   // モンスターの描き方が見た目で変わるので組み直す
 }
 
 export function resize() {
@@ -437,12 +437,19 @@ function build(grid) {
         continue;
       }
       // モンスター（大文字）は立たせ、それ以外（アイテム・罠）は床の近くに浮かべる
-      const sp = new THREE.Sprite(glyphMat(c, fg));
       const mon = c >= 'A' && c <= 'Z';
-      sp.userData = { ch: c, col: fg, dim: !!(s & 512) };
       const size = mon ? 0.78 : 0.42;
-      sp.scale.set(size, size, 1);
-      sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
+      const px = theme === 'torch' && ART[c] ? pixelMat(c, fg) : null;   // 灯火: 形の型をドット絵の立て札にする
+      const sp = new THREE.Sprite(px ? px.mat : glyphMat(c, fg));
+      sp.userData = { ch: c, col: fg, dim: !!(s & 512), flashMat: px ? pixelMat(c, '#ffffff').mat : null };
+      if (px) {   // 大きさは字で編んだ形と同じ決め方（縦に長い形ほど背が高い）。足元を床にそろえる
+        const h = size * 1.15 * px.rows / Math.min(px.rows, 9), w = h * px.aspect;
+        sp.scale.set(w, h, 1);
+        sp.position.set(x + 0.5, h / 2 + 0.02, y + 0.5);
+      } else {
+        sp.scale.set(size, size, 1);
+        sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
+      }
       if (s & 512) { sp.material = sp.material.clone(); sp.material.opacity = 0.5; }
       glyphGroup.add(sp);
     }
@@ -1066,6 +1073,34 @@ function drawArtSmall(art, u, h, bottom, cx) {
   return drawn > 0;
 }
 
+// 灯火: 形の型（X = 体、e = 目）をドット絵にした立て札。1 升を横 1 : 縦 2 のドットにして、
+// 上を明るく下を暗く、ドットごとに色を少し揺らす。輪郭は暗い色で縁取り、目は光る黄色
+const pixelMats = new Map();
+function pixelMat(ch, col) {
+  const key = ch + col;
+  if (pixelMats.has(key)) return pixelMats.get(key);
+  const art = ART[ch], rows = art.length, cols = art[0].length;
+  const PW = 8, PH = 16, pad = 2;
+  const c = document.createElement('canvas'); c.width = cols * PW + pad * 2; c.height = rows * PH + pad * 2;
+  const g = c.getContext('2d');
+  const base = new THREE.Color(col), hsl = {};
+  base.getHSL(hsl);
+  const filled = (r, k) => r >= 0 && r < rows && k >= 0 && k < cols && art[r][k] !== ' ';
+  for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+    const m = art[r][k]; if (m === ' ') continue;
+    const x = pad + k * PW, y = pad + r * PH;
+    if (m === 'e') { g.fillStyle = '#fff2a0'; g.fillRect(x, y, PW, PH); continue; }
+    const edge = !filled(r - 1, k) || !filled(r + 1, k) || !filled(r, k - 1) || !filled(r, k + 1);
+    const l = Math.min(0.85, Math.max(0.08, hsl.l * (1.25 - 0.6 * r / rows) + (Math.random() - 0.5) * 0.12 - (edge ? 0.12 : 0)));
+    g.fillStyle = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.05), l).getStyle();
+    g.fillRect(x, y, PW, PH);
+    g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(x, y + PH - 2, PW, 2); g.fillRect(x + PW - 1, y, 1, PH);   // ドットの継ぎ目
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter;
+  const v = { mat: new THREE.SpriteMaterial({ map: t, transparent: true, fog: true }), rows, aspect: c.width / c.height };
+  pixelMats.set(key, v); return v;
+}
+
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
@@ -1377,7 +1412,7 @@ function jitterSprites(now, on) {
       sp.userData.base = sp.position.clone();
       sp.position.x += (Math.random() - 0.5) * 0.12 * k; sp.position.y += (Math.random() - 0.5) * 0.06 * k;
       sp.userData.flash = ((now - h.t0) / 65 | 0) % 2 === 0;
-      if (theme !== 'term' && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = glyphMat(sp.userData.ch, '#ffffff'); }
+      if (theme !== 'term' && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = sp.userData.flashMat || glyphMat(sp.userData.ch, '#ffffff'); }
     } else if (sp.userData.base) {
       sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false;
       if (sp.userData.mat) { sp.material = sp.userData.mat; sp.userData.mat = null; }
