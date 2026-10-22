@@ -1203,7 +1203,7 @@ function drawTerm() {
 // ---------------------------------------------------------------------------
 // カメラ（歩く・向きを変えるときは少しだけ滑らかに動かす）
 // ---------------------------------------------------------------------------
-let cam = null, from = null, to = null, t0 = 0, animating = false;
+let cam = null, from = null, to = null, t0 = 0, animating = false, bob = 0, stepSide = 1;
 const DUR = 140;
 const yawOf = f => -f * Math.PI / 4;
 
@@ -1218,6 +1218,7 @@ function startMove() {
 }
 function animateTo(tg) {
   from = { ...cam };
+  if (Math.hypot(tg.x - cam.x, tg.z - cam.z) > 0.01) stepSide = -stepSide;   // 左足・右足
   // 回る向きは近いほうへ
   let d = tg.yaw - from.yaw;
   d = Math.atan2(Math.sin(d), Math.cos(d));
@@ -1229,6 +1230,9 @@ function tick(now) {
   const dur = mood.haste ? DUR * 0.5 : mood.slow ? DUR * 2.2 : DUR;   // 加速中は速く、減速中はゆっくり動く
   const k = Math.min(1, (now - t0) / dur), e = k * (2 - k);
   cam.x = from.x + (to.x - from.x) * e; cam.z = from.z + (to.z - from.z) * e; cam.yaw = from.yaw + (to.yaw - from.yaw) * e;
+  // 歩くときは視点が一度沈んで戻る（向きを変えるだけのときは揺らさない）。一歩ごとに左右へわずかに傾く
+  const walking = Math.hypot(to.x - from.x, to.z - from.z) > 0.01;
+  bob = walking ? Math.sin(k * Math.PI) : 0;
   draw();
   if (k < 1) requestAnimationFrame(tick); else animating = false;
 }
@@ -1483,8 +1487,8 @@ function draw() {
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
   eye += ((mood.lev ? EYE + 0.3 : EYE) - eye) * 0.15;   // 浮遊中は視点を高く（ゆっくり上がり下がりする）
-  camera.position.set(cam.x + Math.sin(cam.yaw) * back, eye, cam.z + Math.cos(cam.yaw) * back);
-  camera.rotation.set(0, cam.yaw, 0, 'YXZ');
+  camera.position.set(cam.x + Math.sin(cam.yaw) * back, eye - bob * 0.07, cam.z + Math.cos(cam.yaw) * back);
+  camera.rotation.set(0, cam.yaw, bob * 0.012 * stepSide, 'YXZ');
   if (mood.conf) {   // 混乱: 視界がふらふら傾いて揺れる
     camera.rotation.z = Math.sin(now / 520) * 0.09;
     camera.rotation.y += Math.sin(now / 830) * 0.05;
