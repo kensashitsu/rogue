@@ -91,6 +91,8 @@ const asciiTex = {
   floor: glyphTile('.', 1, 1, '#b4bac0', 7),
   passage: glyphTile('#', 1, 1, '#a0a6ad', 96),
   door: glyphTile('+', 1, 1, '#e0c080', 96),
+  rock: glyphTile('.', 4, 4, '#3a3f46', 3),      // 通路の両脇: ごく薄い点の面（原作の地図では空白の所なので目立たせない）
+  ceil: glyphTile('.', 1, 1, '#6a7078', 6),      // 天井: 床の点を薄くしたもの
 };
 
 // ---------------------------------------------------------------------------
@@ -99,7 +101,7 @@ const asciiTex = {
 let renderer, scene, camera, torch, ambient, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
 let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
-let meshes = {}, themes = {};
+let meshes = {}, themes = {}, edges;
 let theme = 'ascii';
 try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
 export const getTheme = () => theme;
@@ -148,10 +150,15 @@ export function init(canvas) {
     // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
     ascii: {
       bg: '#000000', fog: [2, 13], light: false,
-      mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: null, floors: basic(asciiTex.floor),
-        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: null, lintels: basic(asciiTex.door) },
+      mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: basic(asciiTex.rock), floors: basic(asciiTex.floor),
+        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null },
+      edges: true,
     },
   };
+  // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
+  edges = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
+  edges.frustumCulled = false;
+  scene.add(edges);
   scene.add(glyphGroup);
   applyTheme();
   resize();
@@ -167,6 +174,7 @@ function applyTheme() {
   scene.background.set(th.bg);
   scene.fog.color.set(th.bg); [scene.fog.near, scene.fog.far] = th.fog;
   ambient.visible = torch.visible = th.light;
+  edges.visible = !!th.edges;
 }
 
 export function setTheme(name) {
@@ -276,18 +284,19 @@ function build(grid) {
     mesh.setColorAt(i, color.setScalar(bright));
   };
   glyphGroup.clear();
+  const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
-      if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); continue; }
-      if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); continue; }
+      if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
+      if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
         if (!rock.has(y * W + x)) continue;
         let byRoom = false;
         for (const [dy, dx] of DIRS) if (ch(y + dy, x + dx) === '.' && (dy === 0 || dx === 0)) byRoom = true;
-        if (!byRoom) put(rocks, 'rocks', x, 0.5, y, 0.8);
+        if (!byRoom) { put(rocks, 'rocks', x, 0.5, y, 0.8); solid[y * W + x] = 0.5; }
         continue;
       }
       if (!walk(c) && c !== '@') continue;
@@ -309,15 +318,49 @@ function build(grid) {
       const size = mon ? 0.78 : 0.42;
       sp.scale.set(size, size, 1);
       sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
-      if (s & 512) sp.material.opacity = 0.5;
+      if (s & 512) { sp.material = sp.material.clone(); sp.material.opacity = 0.5; }
       glyphGroup.add(sp);
     }
   }
+  buildEdges(solid);
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
+}
+
+// 壁・岩の面のうち、開いた側を向いた面の輪郭を線にする。床と天井との境目は面ごとに、
+// 縦の線は面が途切れる所（部屋の角・通路の曲がり角）にだけ引く（マスごとに引くと格子になってうるさい）
+function buildEdges(solid) {
+  const pos = [], col = [];
+  const isSolid = (y, x) => y >= MAP_TOP && y <= MAP_BOT && x >= 0 && x < W && solid[y * W + x] > 0;
+  const line = (ax, ay, az, bx, by, bz, b) => {
+    pos.push(ax, ay, az, bx, by, bz);
+    const v = 0.5 * b; col.push(v, v * 1.04, v * 1.1, v, v * 1.04, v * 1.1);
+  };
+  for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) {
+    const b = solid[y * W + x]; if (!b) continue;
+    for (const [dy, dx] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+      if (isSolid(y + dy, x + dx)) continue;
+      const py = dx, px = dy;                       // 面に沿った向き
+      const fx = x + 0.5 + dx * 0.505, fz = y + 0.5 + dy * 0.505;   // 面の中心（面の手前に少し浮かせる）
+      const ax = fx - px * 0.5, az = fz - py * 0.5, bx = fx + px * 0.5, bz = fz + py * 0.5;
+      line(ax, 0.002, az, bx, 0.002, bz, b);
+      line(ax, 0.998, az, bx, 0.998, bz, b);
+      for (const sgn of [-1, 1]) {
+        const sy = y + py * sgn, sx = x + px * sgn;
+        if (isSolid(sy, sx) && !isSolid(sy + dy, sx + dx)) continue;   // 面が隣へ続く
+        const vx = sgn < 0 ? ax : bx, vz = sgn < 0 ? az : bz;
+        line(vx, 0, vz, vx, 1, vz, b);
+      }
+    }
+  }
+  edges.geometry.dispose();
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  edges.geometry = g;
 }
 
 // ---------------------------------------------------------------------------
