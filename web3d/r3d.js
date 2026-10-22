@@ -39,6 +39,9 @@ const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見�
 //   - 眠っているモンスター: 目を閉じて（* の代わりに -）、頭の上に z
 //   - 傷ついたモンスター: 体力が半分を切ると、形の升が欠けていく
 let trapCells = new Set(), monState = new Map();
+// 部屋（壁の上下左右と、暗い部屋か）。明るい部屋の壁には燭台を灯す。暗い部屋の燭台は火が消えている
+let rooms = [], sconces = [];
+const SCONCE_GAP = 4;   // 燭台を置く間隔（マス）
 // アミュレットを持っている間は、階段を上り階段に描く（段が北へ上っていき、天井に口が開いて上の階へ抜ける）
 let upStairs = false;
 let stairAt = { level: '', cell: -1 };
@@ -229,6 +232,21 @@ function transDark(now) {
   return Math.max(0, 1 - (now - trans.fadeT0) / FADEIN_MS);
 }
 
+// 燭台: 部屋の壁の内側に、角と扉を避けて SCONCE_GAP マスおきに。見えている（画面に出ている）壁にだけ
+function buildSconces(grid) {
+  sconces = [];
+  const wall = (y, x) => '-|'.includes(cellAt(grid, y, x)[0]);
+  for (const r of rooms) {
+    const add = (y, x, px, pz) => { if (wall(y, x)) sconces.push({ x: px, z: pz, dark: r.dark }); };
+    for (let x = r.left + 2; x <= r.right - 2; x += SCONCE_GAP) {
+      add(r.top, x, x + 0.5, r.top + 1.03); add(r.bottom, x, x + 0.5, r.bottom - 0.03);
+    }
+    for (let y = r.top + 2; y <= r.bottom - 2; y += SCONCE_GAP) {
+      add(y, r.left, r.left + 1.03, y + 0.5); add(y, r.right, r.right - 0.03, y + 0.5);
+    }
+  }
+}
+
 function faceOpen(grid) {
   let best = -1;
   for (let f = 0; f < 8; f += 2) {   // 斜めは扉を通れないので、上下左右から選ぶ
@@ -364,6 +382,7 @@ function build(grid) {
     put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
   }
   buildEdges(solid, stairCells, doorCells);
+  buildSconces(grid);
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
@@ -969,6 +988,80 @@ function drawArt(o, u) {
   return true;
 }
 
+// 燭台の形（たいまつ: 炎 ^ と火皿の * は橙、( ) と柄 | は灰色の金具）。2026-10-23 に 3 案から選んだ
+const SCONCE_ART = {
+  B: { rows: [' ^ ', '(*)', ' | '], flame: [[0, 1], [1, 1]] },
+};
+// 燭台の光が届く所（画面の升目での中心・半径と、燭台までの距離）。drawTerm が字を橙に明るくするのに使う
+function sconceLights(C, R) {
+  if (!SCONCE_ART[tune.sconce] || !tune.glow) return [];
+  const v3 = new THREE.Vector3(), out = [];
+  const unitK = R * tch / (2 * Math.tan(camera.fov * Math.PI / 360));
+  for (const s of sconces) {
+    if (s.dark) continue;
+    v3.set(s.x, 0.62, s.z).applyMatrix4(camera.matrixWorldInverse);
+    const dist = -v3.z;
+    if (dist < 0.2) continue;
+    v3.set(s.x, 0.62, s.z).project(camera);
+    if (Math.abs(v3.x) > 1.6 || Math.abs(v3.y) > 1.6) continue;
+    out.push({ cx: (v3.x + 1) / 2 * C, cy: (1 - v3.y) / 2 * R, dist, rad: unitK / dist * tune.glow / tch });   // rad は升（縦）の数
+  }
+  return out;
+}
+function glowAt(lights, x, y, depth) {
+  let k = 0;
+  for (const l of lights) {
+    if (Math.abs(depth - l.dist) > 1.6) continue;   // 燭台から離れた奥や手前の面は照らさない
+    const dx = (x + 0.5 - l.cx) * tcw / tch, dy = y + 0.5 - l.cy;
+    const d = Math.hypot(dx, dy) / l.rad;
+    if (d < 1) k = Math.max(k, (1 - d) * (1 - d));
+  }
+  return k;
+}
+function drawSconces(C, R, depthOf) {
+  const st = tune.sconce, art = SCONCE_ART[st];
+  if (!art) return;
+  const v3 = new THREE.Vector3(), now = performance.now();
+  const unitK = R * tch / (2 * Math.tan(camera.fov * Math.PI / 360));
+  for (const s of sconces) {
+    v3.set(s.x, 0.62, s.z).applyMatrix4(camera.matrixWorldInverse);
+    const dist = -v3.z;
+    if (dist < 0.2) continue;
+    v3.set(s.x, 0.62, s.z).project(camera);
+    if (Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1) continue;
+    const cx = (v3.x + 1) / 2 * C, cy = (1 - v3.y) / 2 * R;
+    const ix = Math.min(C - 1, Math.max(0, Math.floor(cx))), iy = Math.min(R - 1, Math.max(0, Math.floor(cy)));
+    if (depthOf(ix, iy) < dist - 0.2) continue;   // 手前の壁に隠れている
+    const unit = unitK / dist, rows = art.rows.length, cols = art.rows[0].length;
+    const lit = !s.dark;
+    const fade = 1 - Math.min(0.7, Math.max(0, (dist - 2) / 12));
+    let h = unit * 0.36 / rows;
+    if (h < tch * 0.8) {   // 遠い: 炎の 1 字だけ
+      if (!lit) continue;
+      tctx.font = `700 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+      tctx.globalAlpha = fade; tctx.fillStyle = '#ffb054';
+      tctx.fillText('*', (ix + 0.5) * tcw, (iy + 0.5) * tch + tch * 0.04);
+      tctx.globalAlpha = 1;
+      continue;
+    }
+    h = Math.min(h, tch * 4);
+    const w = h / 2, x0 = cx * tcw - cols * w / 2, y0 = cy * tch - rows * h / 2;
+    tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
+    tctx.globalAlpha = fade;
+    const flick = 0.85 + 0.15 * Math.sin(now / 90 + s.x * 3 + s.z * 7);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const ch = art.rows[r][c];
+      if (ch === ' ') continue;
+      const isFlame = art.flame.some(([fr, fc]) => fr === r && fc === c);
+      if (isFlame && !lit) continue;   // 暗い部屋: 火の消えた金具だけ
+      tctx.fillStyle = '#000'; tctx.fillRect(x0 + c * w - 0.5, y0 + r * h, w + 1, h);
+      tctx.fillStyle = isFlame ? `rgb(255,${Math.round(150 + 60 * flick)},${Math.round(70 * flick)})` : lit ? '#9a8f80' : '#5a5650';
+      tctx.fillText(ch, x0 + c * w + w / 2, y0 + r * h + h / 2 + h * 0.04);
+    }
+    tctx.globalAlpha = 1;
+  }
+}
+
 // 傷ついたモンスターの欠ける升: 体力が半分を切ると、残りが少ないほど多く欠ける（升ごとに決まった順で）
 function wounded(hp, r, c) {
   if (hp >= 0.5) return false;
@@ -1021,7 +1114,7 @@ function tint(hex, v) {
 
 // ASCII の濃さのつまみ: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無。
 // 2026-10-22 に案を並べて見比べ、壁は . : の点描（* + や - = は横じまや重さでうるさい）、床は暗めに決めた
-const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true };
+const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0 };   // sconce: 燭台の形、glow: 光の広さ（0 で光なし）
 export function setTune(o) { Object.assign(tune, o); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -1044,6 +1137,7 @@ function drawTerm() {
   const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
 
   const lines = drawLines(C, R, depthOf);
+  const lights = sconceLights(C, R);
   const tnow = performance.now(), warpK = Math.max(0, 1 - (tnow - trans.warpT0) / WARP_MS);
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
   tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
@@ -1092,8 +1186,14 @@ function drawTerm() {
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
       : kind === 6 ? tint('#d39a5c', v)
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+    if (lights.length && !ln && kind !== 7) {   // 燭台の光: 近くの字を橙に明るく
+      const k = glowAt(lights, x, y, tbuf[i + 3] / 255 * 16);
+      if (k > 0.02) tctx.fillStyle = `rgb(${Math.min(255, Math.round(g + 150 * k))},${Math.min(255, Math.round(g + 70 * k))},${Math.round(g * (1 - 0.4 * k))})`;
+    }
     tctx.fillText(ch, tx, (y + 0.5) * tch + tch * 0.04);
   }
+
+  drawSconces(C, R, depthOf);
 
   // 3. モンスター・アイテム・飛んでいる物: 升目に写して、壁の向こうでなければ描く（近いほど大きく）
   const list = [];
@@ -1251,6 +1351,10 @@ export function effect(d) {
   } else if (d.type === 'mons') {
     monState = new Map(d.mons.map(([y, x, sleep, hp]) => [y * W + x, { sleep: !!sleep, hp }]));
     if (lastGrid) draw();
+    return;
+  } else if (d.type === 'rooms') {
+    rooms = d.rooms.map(([top, left, bottom, right, dark]) => ({ top, left, bottom, right, dark: !!dark }));
+    if (lastGrid) { build(lastGrid); draw(); }
     return;
   } else if (d.type === 'secrets') {
     secretCells = new Set(d.cells.map(([y, x]) => y * W + x));

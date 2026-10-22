@@ -371,6 +371,9 @@ class Game:
                     self._secrets_sent = self.dungeon
                     ui.effect('secrets', cells=[[y, x] for y, row in enumerate(self.dungeon.map)
                                                 for x, t in enumerate(row) if t.flags & F_SECRETDOOR])
+                    # 部屋の壁の位置と、明るい部屋か暗い部屋か（3D 版は明るい部屋の壁に燭台を灯す）
+                    ui.effect('rooms', rooms=[[r.top, r.left, r.bottom, r.right, 1 if r.is_dark else 0]
+                                              for r in self.dungeon.rooms if not r.is_gone and not r.is_maze])
                 # 3D 版へ、まだ見つけていない罠の場所と、モンスターの様子（眠っているか・体力の残り）を知らせる。
                 # 3D の画面では、近くで床を見ると罠の気配があり、モンスターは寝顔や傷で描き分ける（意図的な改変）
                 traps3d = [[t.y, t.x] for t in self.dungeon.traps if not t.known]
