@@ -103,6 +103,7 @@ const MAX = W * (MAP_BOT - MAP_TOP + 1);
 let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
 let meshes = {}, themes = {}, edges, tcv, tctx;
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
+let edgeSegs = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
 let theme = 'term';
 try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
 export const getTheme = () => theme;
@@ -373,6 +374,7 @@ function buildEdges(solid) {
       }
     }
   }
+  edgeSegs = pos;
   edges.geometry.dispose();
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -428,6 +430,79 @@ function sizeTerm(w, h) {
   tbuf = new Uint8Array(tcols * trows * 4);
 }
 
+// 輪郭の線分を升目に写す。線の見た目の傾き（升は縦が横の 2 倍）で置き方を変える:
+//   急（ほぼ縦） → 1 行に 1 字 |
+//   斜め       → 1 行に 1 字 / か \。行の間で横に飛ぶ分は _ で埋める（\_  _/ の形）
+//   ゆるやか   → 1 列に 1 字。升の中の高さで _ . - ' を使い分ける（__..--'' のように滑らかにつながる）
+// 手前の面に隠れる所は引かない。同じ升に何本も通るときは手前の線
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
+function drawLines(C, R, depthOf) {
+  const out = new Array(C * R);
+  const near = 0.12;
+  const put = (x, y, ch, dist) => {
+    if (x < 0 || y < 0 || x >= C || y >= R) return;
+    if (depthOf(x, y) < dist - 0.35) return;   // 手前の壁に隠れる
+    const o = out[y * C + x];
+    if (o && o.d <= dist) return;
+    out[y * C + x] = { ch, d: dist, v: 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4)) };
+  };
+  for (let i = 0; i < edgeSegs.length; i += 6) {
+    _a.set(edgeSegs[i], edgeSegs[i + 1], edgeSegs[i + 2]).applyMatrix4(camera.matrixWorldInverse);
+    _b.set(edgeSegs[i + 3], edgeSegs[i + 4], edgeSegs[i + 5]).applyMatrix4(camera.matrixWorldInverse);
+    // カメラの後ろに出る分は切る（視点の空間で z < -near が前）
+    if (_a.z > -near && _b.z > -near) continue;
+    if (_a.z > -near) _a.lerp(_b, (_a.z + near) / (_a.z - _b.z));
+    else if (_b.z > -near) _b.lerp(_a, (_b.z + near) / (_b.z - _a.z));
+    // 線分上の点を細かく取って升目に写す（視点の空間で取るので遠近で歪まない）
+    const pa = _p.copy(_a).applyMatrix4(camera.projectionMatrix), ax = (pa.x + 1) / 2 * C, ay = (1 - pa.y) / 2 * R;
+    const pb = _p.copy(_b).applyMatrix4(camera.projectionMatrix), bx = (pb.x + 1) / 2 * C, by = (1 - pb.y) / 2 * R;
+    if ((ax < 0 && bx < 0) || (ax > C && bx > C) || (ay < 0 && by < 0) || (ay > R && by > R)) continue;
+    const n = Math.min(600, Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) * 4) + 2);
+    const pts = [];
+    for (let k = 0; k <= n; k++) {
+      _p.copy(_a).lerp(_b, k / n);
+      const dist = -_p.z;
+      _p.applyMatrix4(camera.projectionMatrix);
+      pts.push([(_p.x + 1) / 2 * C, (1 - _p.y) / 2 * R, dist]);
+    }
+    const dxc = bx - ax, dyc = by - ay;
+    const slope = Math.abs(dyc * 2 / (dxc || 1e-6));
+    if (slope >= 1) {
+      // 1 行に 1 字: 行の真ん中を通る所
+      const rows = new Map();
+      for (const q of pts) {
+        const y = Math.floor(q[1]); if (y < 0 || y >= R) continue;
+        const e = Math.abs(q[1] - (y + 0.5)), r = rows.get(y);
+        if (!r || e < r.e) rows.set(y, { e, x: q[0], d: q[2] });
+      }
+      const ch = slope > 3 ? '|' : (dyc > 0) === (dxc > 0) ? '\\' : '/';
+      const ys = [...rows.keys()].sort((p, q) => p - q);
+      ys.forEach((y, j) => {
+        const r = rows.get(y), x = Math.floor(r.x);
+        put(x, y, ch, r.d);
+        const nx = rows.has(y + 1) ? Math.floor(rows.get(y + 1).x) : null;
+        if (ch === '|' || nx === null) return;
+        // 次の行まで横に 2 升以上ずれるなら、この行の続きを _ で埋める
+        if (ch === '\\') for (let k = x + 1; k < nx; k++) put(k, y, '_', r.d);
+        else for (let k = nx + 1; k < x; k++) put(k, y, '_', r.d);
+      });
+    } else {
+      // 1 列に 1 字: 列の真ん中を通る所の高さで字を選ぶ
+      const cols = new Map();
+      for (const q of pts) {
+        const x = Math.floor(q[0]); if (x < 0 || x >= C) continue;
+        const e = Math.abs(q[0] - (x + 0.5)), c = cols.get(x);
+        if (!c || e < c.e) cols.set(x, { e, y: q[1], d: q[2] });
+      }
+      for (const [x, c] of cols) {
+        const y = Math.floor(c.y), f = c.y - y;   // 升の中の高さ（0 = 上、1 = 下）
+        put(x, y, f > 0.72 ? '_' : f > 0.5 ? '.' : f > 0.28 ? '-' : "'", c.d);
+      }
+    }
+  }
+  return out;
+}
+
 const WALL_RAMP = ' .:-=+*#';    // 壁の濃さ（暗い → 明るい）。@ や % は重すぎるので使わない
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -447,31 +522,22 @@ function drawTerm() {
   const C = tcols, R = trows;
   const inside = (x, y) => x >= 0 && y >= 0 && x < C && y < R;
   const at = (x, y) => ((R - 1 - y) * C + x) * 4;   // 読み出しは下の行から
-  const keyOf = (x, y) => { if (!inside(x, y)) return -1; const i = at(x, y); return tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 8) * 3 + Math.round(tbuf[i + 2] / 255 * 2) : -1; };
   const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
 
+  const lines = drawLines(C, R, depthOf);
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
   tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
   for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) {
     const i = at(x, y);
-    if (!tbuf[i + 3]) continue;
-    const lit = tbuf[i] / 255, kind = Math.round(tbuf[i + 1] / 255 * 8), d = tbuf[i + 3] / 255 * 16;
-    if (lit < 0.03) continue;
-    // 2. 境目（面の種類・向きが変わる所、手前と奥の段差）なら、境目の向きの字（| - / \）
-    const k = keyOf(x, y);
-    const differs = (nx, ny) => {
-      const nk = keyOf(nx, ny), nd = depthOf(nx, ny);
-      if (nk === k && Math.abs(nd - d) < 0.25 + d * 0.12) return false;
-      return d <= nd + 0.05;   // 線は手前側の升だけに引く（二重にならないように）
-    };
-    const L = differs(x - 1, y), Rt = differs(x + 1, y), U = differs(x, y - 1), D = differs(x, y + 1);
+    // 2. 壁の輪郭の線が通る升は、線の傾きに合った字（drawLines で決めたもの）。面がない所（闇との境）にも引く
+    const ln = lines[y * C + x];
+    if (!tbuf[i + 3] && !ln) continue;
+    const lit = tbuf[i] / 255, kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 8) : 0;
+    if (lit < 0.03 && !ln) continue;
     let ch = null, v = lit;
-    if (kind !== 7 && (L || Rt || U || D)) {
-      if ((U || D) && !(L || Rt)) ch = D ? '_' : '-';
-      else if ((L || Rt) && !(U || D)) ch = '|';
-      else ch = (D && Rt) || (U && L) ? '/' : '\\';
-      v = Math.min(1, lit * 1.25 + 0.1);
+    if (ln) {
+      ch = ln.ch; v = Math.min(1, ln.v * 1.2 + 0.12);
     } else if (kind === 1) {
       ch = WALL_RAMP[Math.min(WALL_RAMP.length - 1, Math.floor(lit * WALL_RAMP.length))];
     } else if (kind === 3) {
