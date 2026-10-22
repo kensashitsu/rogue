@@ -541,6 +541,12 @@ class UI:
         """画面の演出のきっかけを知らせる（ブラウザの 3D 版が使う。端末では何もしない）。"""
         curses.effect({'type': kind, **data})
 
+    def effect_wait(self, kind: str, ms: int, **data) -> None:
+        """演出を知らせ、3D 版ではそれが終わるまで待つ（階段を下りる・落とし穴に落ちる。端末では待たない）。"""
+        self.effect(kind, **data)
+        if curses.variant() == '3d':
+            curses.napms(ms)
+
     MISSILE_STEP_MS = 35   # 投げた物が 1 マス進む間
 
     # 杖の光線の色（炎 = 赤、冷気 = 水色、電撃 = 黄、魔法の矢 = 白）

@@ -170,10 +170,57 @@ export function update(grid, pos) {
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
+  if (cam && (jumped || lvBefore !== rockLevel)) {   // 新しい階に着いた（暗転から明ける。落ちてきたなら揺れる）か、同じ階でテレポートした
+    const now = performance.now();
+    if (trans.how) { if (trans.how === 'fall') fx.shakeT0 = now; trans.how = null; trans.fadeT0 = now; startFx(); }
+    else if (jumped && lvBefore === rockLevel) { trans.warpT0 = now; startFx(); }
+  }
   if (jumped) faceOpen(grid);
   look(grid);
   if (moved) startMove();
   draw();
+}
+
+// モンスター（大文字）は立たせ、それ以外（アイテム）は床の近くに。描くのは drawTerm（字で編んだ形）。det: 探知で見えている物
+function addGlyph(c, s, x, y, det) {
+  const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
+  const mon = c >= 'A' && c <= 'Z';
+  const size = mon ? 0.78 : 0.42;
+  const sp = new THREE.Sprite(SPRITE_MAT);
+  sp.userData = { ch: c, col: fg, dim: !!(s & 512), cell: y * W + x, det };
+  sp.scale.set(size, size, 1);
+  sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
+  glyphGroup.add(sp);
+}
+
+// ---------------------------------------------------------------------------
+// 移り変わりの演出: 階段を下りる（段を下りて暗転）・落とし穴（床を抜けて落ちて暗転、着いたら揺れる）・
+// テレポート（同じ階で遠くへ移った直後に、景色の字が乱れて落ち着く）。新しい階は暗転から明ける
+// ---------------------------------------------------------------------------
+const DESCEND_MS = { stairs: 900, fall: 650 }, FADEIN_MS = 400, WARP_MS = 600;
+const WARP_CHARS = '#%&*+=~:;!?';
+const trans = { how: null, t0: 0, fadeT0: -1e9, warpT0: -1e9 };
+const transActive = now => (trans.how && now - trans.t0 < DESCEND_MS[trans.how] + 3000) || now - trans.fadeT0 < FADEIN_MS || now - trans.warpT0 < WARP_MS;
+// 階段・落とし穴の途中の視点（null なら普段どおり）
+function transCamera(now) {
+  if (trans.how && now - trans.t0 > DESCEND_MS[trans.how] + 3000) trans.how = null;   // 着いた知らせが来なかったときの戻し
+  if (!trans.how || !cam) return null;
+  const k = Math.min(1, (now - trans.t0) / DESCEND_MS[trans.how]);
+  if (trans.how === 'fall') {   // 床を抜けて、だんだん速く落ちる
+    return { x: cam.x, z: cam.z, y: EYE - 2.4 * k * k, yaw: cam.yaw, pitch: 0.25 * k };
+  }
+  // 階段: 北（段の下りていく向き）へ向き直りながら、段を下りていく
+  const turnK = Math.min(1, k / 0.35), e = Math.max(0, (k - 0.2) / 0.8);
+  const dYaw = ((0 - cam.yaw) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+  return { x: cam.x, z: cam.z + 0.3 - e * 1.1, y: EYE - e * 1.0, yaw: cam.yaw + dYaw * turnK, pitch: -0.2 * e };
+}
+// 暗さ（0〜1）: 下りる終わりに暗くなり、新しい階で明ける
+function transDark(now) {
+  if (trans.how) {
+    const k = Math.min(1, (now - trans.t0) / DESCEND_MS[trans.how]);
+    return Math.max(0, (k - 0.5) / 0.5);
+  }
+  return Math.max(0, 1 - (now - trans.fadeT0) / FADEIN_MS);
 }
 
 function faceOpen(grid) {
@@ -238,6 +285,9 @@ function build(grid) {
         continue;
       }
       if (!walk(c) && c !== '@') continue;
+      // 探知の薬・魔法探知で一時的に出た字（反転）。まだ見ていない所なら床を作らず、形だけを置く（壁越しに透けて見える）
+      const det = !!(s & 2048) && c !== '@' && !TERRAIN.has(c);
+      if (det && !seen.has(y * W + x)) { addGlyph(c, s, x, y, true); continue; }
       // 床: 通路か部屋か。文字の下は周りから決める
       let corr = c === '#';
       if (c !== '#' && c !== '.' && c !== '+') {
@@ -283,14 +333,7 @@ function build(grid) {
         dc.color = fg;
         continue;
       }
-      const mon = c >= 'A' && c <= 'Z';
-      const size = mon ? 0.78 : 0.42;
-      // モンスター（大文字）は立たせ、それ以外（アイテム）は床の近くに。描くのは drawTerm（字で編んだ形）
-      const sp = new THREE.Sprite(SPRITE_MAT);
-      sp.userData = { ch: c, col: fg, dim: !!(s & 512), cell: y * W + x };
-      sp.scale.set(size, size, 1);
-      sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
-      glyphGroup.add(sp);
+      addGlyph(c, s, x, y, det);
     }
   }
   for (const k of aheadRocks) {
@@ -883,7 +926,7 @@ function drawArt(o, u) {
     if (m === ' ') continue;
     if (st && m !== 'e' && wounded(st.hp, r, c)) continue;   // 傷: 欠けた升は描かない（後ろが透ける）
     const x = x0 + c * w, y = y0 + r * h;
-    tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h);   // 後ろの壁の字を消す
+    if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
     if (m === '.') continue;
     const eye = m === 'e', shut = eye && st && st.sleep;
     tctx.fillStyle = eye && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
@@ -925,7 +968,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
     if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
     if (u.st && !(eye && tr >= 3) && wounded(u.st.hp, r, c)) continue;
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
-    tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch);
+    if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch); }
     const shut = u.st && u.st.sleep;
     tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
     tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
@@ -968,6 +1011,7 @@ function drawTerm() {
   const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
 
   const lines = drawLines(C, R, depthOf);
+  const tnow = performance.now(), warpK = Math.max(0, 1 - (tnow - trans.warpT0) / WARP_MS);
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
   tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
@@ -999,6 +1043,11 @@ function drawTerm() {
     else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
+    let tx = (x + 0.5) * tcw;
+    if (warpK > 0) {
+      if (Math.random() < warpK * 0.7) ch = WARP_CHARS[(Math.random() * WARP_CHARS.length) | 0];
+      tx += Math.sin(y * 0.55 + tnow / 45) * tcw * 3 * warpK;
+    }
     if (mood.halu) {   // 幻覚: 升ごとに色相をずらし、時間で流す
       tctx.fillStyle = `hsl(${(x * 9 + y * 13 + performance.now() / 8) % 360},80%,${Math.round(18 + v * 52)}%)`;
       tctx.fillText(ch, (x + 0.5) * tcw + Math.sin(performance.now() / 300 + y * 0.6) * tcw * 0.35, (y + 0.5) * tch + tch * 0.04);
@@ -1007,7 +1056,7 @@ function drawTerm() {
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
       : kind === 6 ? tint('#d39a5c', v)
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
-    tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
+    tctx.fillText(ch, tx, (y + 0.5) * tch + tch * 0.04);
   }
 
   // 3. モンスター・アイテム・飛んでいる物: 升目に写して、壁の向こうでなければ描く（近いほど大きく）
@@ -1021,22 +1070,23 @@ function drawTerm() {
     if (Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1) continue;
     const cx = (v3.x + 1) / 2 * C, cy = (1 - v3.y) / 2 * R;
     const ix = Math.min(C - 1, Math.max(0, Math.floor(cx))), iy = Math.min(R - 1, Math.max(0, Math.floor(cy)));
-    if (depthOf(ix, iy) < dist - 0.45) continue;   // 壁の向こう
+    const behind = depthOf(ix, iy) < dist - 0.45;   // 壁の向こう: 探知で見えている物だけ、透けた形で描く
+    if (behind && !sp.userData.det) continue;
     const hPx = sp.scale.y / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) * R * tch;
-    list.push({ sp, dist, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(R * tch * 0.6, hPx * 1.15)) });   // 上限は画面の高さに対して（升目の大きさで変わらないように）
+    list.push({ sp, dist, ghost: behind, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(R * tch * 0.6, hPx * 1.15)) });   // 上限は画面の高さに対して（升目の大きさで変わらないように）
   }
   list.sort((a, b) => b.dist - a.dist);   // 遠い物から
   for (const o of list) {
     const u = o.sp.userData;
     const fade = 1 - Math.min(0.75, Math.max(0, (o.dist - 2) / 12));
-    tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade;
+    tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade * (o.ghost ? 0.5 : 1);
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
-    const uu = { ...u, st, ...(u.flash ? { col: '#ffffff' } : {}) };
+    const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
     if (drawArt(o, uu)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
-    tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
+    if (!o.ghost) tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
     tctx.fillStyle = uu.col || '#c8ccd1';
     tctx.fillText(u.ch, o.px, o.py + o.size * 0.04);
   }
@@ -1147,6 +1197,8 @@ export function effect(d) {
         fx.debris.push({ y: d.y, x: d.x, t0: now, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
       }
     }
+  } else if (d.type === 'descend') {
+    trans.how = d.how === 'fall' ? 'fall' : 'stairs'; trans.t0 = performance.now();
   } else if (d.type === 'mapped') {   // 魔法の地図: 分かっている所を全部、地図に載せる
     if (lastGrid) for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) if (cellAt(lastGrid, y, x)[0] !== ' ') seen.add(y * W + x);
     saveSeen();
@@ -1244,7 +1296,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || moodActive();
+const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -1332,6 +1384,8 @@ function drawFx(now) {
     fxctx.fillStyle = '#ffe08a'; fxctx.fillText(o.ch, p.px, p.py);
     fxctx.shadowBlur = 0;
   }
+  const dark = transDark(now);   // 階段・落とし穴の暗転
+  if (dark > 0) { fxctx.globalAlpha = dark; fxctx.fillStyle = '#000'; fxctx.fillRect(0, 0, fxcv.width, fxcv.height); }
   fxctx.globalAlpha = 1;
 }
 
@@ -1343,6 +1397,8 @@ function draw() {
   eye += ((mood.lev ? EYE + 0.3 : EYE) - eye) * 0.15;   // 浮遊中は視点を高く（ゆっくり上がり下がりする）
   camera.position.set(cam.x + Math.sin(cam.yaw) * back, eye, cam.z + Math.cos(cam.yaw) * back);
   camera.rotation.set(0, cam.yaw, 0, 'YXZ');
+  const tc = transCamera(now);
+  if (tc) { camera.position.set(tc.x, tc.y, tc.z); camera.rotation.set(tc.pitch, tc.yaw, 0, 'YXZ'); }
   if (mood.conf) {   // 混乱: 視界がふらふら傾いて揺れる
     camera.rotation.z = Math.sin(now / 520) * 0.09;
     camera.rotation.y += Math.sin(now / 830) * 0.05;
