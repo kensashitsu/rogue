@@ -577,7 +577,7 @@ function drawTerm() {
     const ix = Math.min(C - 1, Math.max(0, Math.floor(cx))), iy = Math.min(R - 1, Math.max(0, Math.floor(cy)));
     if (depthOf(ix, iy) < dist - 0.45) continue;   // 壁の向こう
     const hPx = sp.scale.y / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) * R * tch;
-    list.push({ sp, dist, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(tch * 8, hPx * 1.15)) });
+    list.push({ sp, dist, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(R * tch * 0.6, hPx * 1.15)) });   // 上限は画面の高さに対して（升目の大きさで変わらないように）
   }
   list.sort((a, b) => b.dist - a.dist);   // 遠い物から
   for (const o of list) {
