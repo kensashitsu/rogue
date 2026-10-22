@@ -62,7 +62,7 @@ export function init(canvas) {
   // 材質は「何の面か」を書き出すだけ（kindMat の番号: 1 壁、3 岩、4 床、5 通路、6 扉、7 天井、8 階段の段、9 罠）
   meshes = {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
-    floors: instanced(plane), dirts: instanced(plane), doors: instanced(plane),
+    floors: instanced(plane), dirts: instanced(plane), doors: instanced(box),   // doors: 戸口の枠と開いた扉の板
     ceils: instanced(ceil), traps: instanced(plane),
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
   };
@@ -166,7 +166,7 @@ function build(grid) {
   };
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
-  const stairCells = [];
+  const stairCells = [], doorCells = [];
   const aheadRocks = new Set();   // 1 マス先へ延ばした通路の脇の岩
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
@@ -215,7 +215,24 @@ function build(grid) {
         for (const [px, pz, sx, sz] of [[x + 0.5, y + 0.02, 1, 0.04], [x + 0.5, y + 0.98, 1, 0.04], [x + 0.02, y + 0.5, 0.04, 1], [x + 0.98, y + 0.5, 0.04, 1]])
           put(meshes.pits, 'pits', px, -0.6, pz, bright * 0.8, 0, sx, 1.2, sz, true);
         stairCells.push([y, x, bright]);
-      } else if (c === '+') put(doors, 'doors', x, 0, y, bright);
+      } else if (c === '+') {
+        // 扉: 床は普通の床。壁の向きに合わせて戸口の枠（左右の柱と上の横木）を立て、部屋の側へ開いた扉の板を 1 枚
+        put(floors, 'floors', x, 0, y, bright);
+        const wallEW = '-|'.includes(ch(y, x - 1)) || '-|'.includes(ch(y, x + 1));   // 壁が東西に続く（通り抜けは南北）
+        const out = (c2) => c2 === '#' || c2 === ' ';   // 部屋の外（通路・闇）
+        const side = wallEW ? (out(ch(y + 1, x)) ? -1 : 1) : (out(ch(y, x + 1)) ? -1 : 1);   // 部屋のある側
+        doorCells.push([y, x, bright, wallEW, side]);
+        const [ux, uz] = wallEW ? [1, 0] : [0, 1];   // 戸口の幅の向き
+        const [nx, nz] = wallEW ? [0, side] : [side, 0];   // 部屋へ向かう向き
+        const cx = x + 0.5, cz = y + 0.5, J = 0.1, TOP = 0.82, D = 0.18;   // 柱の幅、戸口の高さ、枠の奥行き
+        const fx = cx + nx * (0.5 - D / 2), fz = cz + nz * (0.5 - D / 2);   // 枠は部屋側の縁に、額縁のように薄く付ける
+        for (const k of [-1, 1])   // 左右の柱
+          put(doors, 'doors', fx + ux * k * (0.5 - J / 2), 0.5, fz + uz * k * (0.5 - J / 2), bright, 0, wallEW ? J : D, 1, wallEW ? D : J, true);
+        put(doors, 'doors', fx, (TOP + 1) / 2, fz, bright, 0, wallEW ? 1 : D, 1 - TOP, wallEW ? D : 1, true);   // 上の横木
+        // 開いた扉の板: 片側の柱を軸に、部屋の側へ直角に開いている
+        const hx = cx - ux * (0.5 - J - 0.03), hz = cz - uz * (0.5 - J - 0.03);
+        put(doors, 'doors', hx + nx * 0.9, TOP / 2, hz + nz * 0.9, bright, 0, wallEW ? 0.05 : 0.8, TOP, wallEW ? 0.8 : 0.05, true);
+      }
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
@@ -241,7 +258,7 @@ function build(grid) {
     const y = Math.floor(k / W), x = k % W;
     put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
   }
-  buildEdges(solid, stairCells);
+  buildEdges(solid, stairCells, doorCells);
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
@@ -251,7 +268,7 @@ function build(grid) {
 
 // 壁・岩の面のうち、開いた側を向いた面の輪郭を線にする。床と天井との境目は面ごとに、
 // 縦の線は面が途切れる所（部屋の角・通路の曲がり角）にだけ引く（マスごとに引くと格子になってうるさい）
-function buildEdges(solid, stairCells = []) {
+function buildEdges(solid, stairCells = [], doorCells = []) {
   const pos = [], bri = [];
   const isSolid = (y, x) => y >= MAP_TOP && y <= MAP_BOT && x >= 0 && x < W && solid[y * W + x] > 0;
   const line = (ax, ay, az, bx, by, bz, b) => {
@@ -274,6 +291,18 @@ function buildEdges(solid, stairCells = []) {
         line(vx, 0, vz, vx, 1, vz, b);
       }
     }
+  }
+  // 扉: 戸口の内側の角（柱と横木）と、開いた扉の板の縁
+  for (const [y, x, b, wallEW, side] of doorCells) {
+    const [ux, uz] = wallEW ? [1, 0] : [0, 1], [nx, nz] = wallEW ? [0, side] : [side, 0];
+    const cx = x + 0.5, cz = y + 0.5, J = 0.1, TOP = 0.82, at = (u, n) => [cx + ux * u + nx * n, cz + uz * u + nz * n];
+    for (const n of [0.5 - 0.18, 0.5]) {   // 枠は部屋側の縁だけ（奥行き 0.18）
+      const [ax, az] = at(-0.5 + J, n), [bx, bz] = at(0.5 - J, n);
+      line(ax, 0, az, ax, TOP, az, b); line(bx, 0, bz, bx, TOP, bz, b);   // 柱の内側の角
+      line(ax, TOP, az, bx, TOP, bz, b);                                 // 横木の下の角
+    }
+    const h = -0.5 + J + 0.03, [px, pz] = at(h, 0.5), [qx, qz] = at(h, 1.3);   // 扉の板（戸口の部屋側の縁から 0.8 開く）
+    line(px, 0, pz, qx, 0, qz, b); line(px, TOP, pz, qx, TOP, qz, b); line(qx, 0, qz, qx, TOP, qz, b);
   }
   // 下り階段: 穴の縁と、段の角（踏み面の先と、蹴込みの下）
   for (const [y, x, b] of stairCells) {
@@ -892,7 +921,7 @@ function drawTerm() {
       ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
     } else if (kind === 4) { ch = '.'; v = lit * tune.floorV; }
     else if (kind === 5) { ch = '#'; v = lit * tune.passV; }
-    else if (kind === 6) { ch = '+'; }
+    else if (kind === 6) { ch = tbuf[i + 2] < 64 ? '=' : '|'; }   // 扉の木（縦の面は縦板の |、横木の下面などは =）
     else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
     else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
@@ -904,7 +933,7 @@ function drawTerm() {
       continue;
     }
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
-      : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})`
+      : kind === 6 ? tint('#d39a5c', v)
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
     tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
   }
