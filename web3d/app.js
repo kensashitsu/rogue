@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.36';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.37';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -246,7 +246,9 @@ function follow() {
 }
 
 function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
-  ctx.fillStyle = DEFAULT_BG; ctx.fillRect(0, 0, cols * cw, rows * ch);
+  // 地図は 3D の画面に重ねるので地を塗らず透かす（背景は CSS の半透明の色だけ）。文字の画面は塗りつぶす
+  if (mode === 'text') { ctx.fillStyle = DEFAULT_BG; ctx.fillRect(0, 0, cols * cw, rows * ch); }
+  else ctx.clearRect(0, 0, cols * cw, rows * ch);
   ctx.textBaseline = 'middle';
   const size = Math.round(cw * 1.9);
   const family = getComputedStyle(document.documentElement).getPropertyValue('--font-term');
