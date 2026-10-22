@@ -532,14 +532,28 @@ class UI:
 
     MISSILE_STEP_MS = 35   # 投げた物が 1 マス進む間
 
+    # 杖の光線の色（炎 = 赤、冷気 = 水色、電撃 = 黄、魔法の矢 = 白）
+    BOLT_CP = {'fire': _CP_MONSTER, 'cold': _CP_STAIRS, 'electric': _CP_GOLD, 'magic missile': _CP_DEFAULT}
+
+    def animate_bolt(self, bolt: dict, direction: tuple, dungeon, player, monsters, objects) -> None:
+        """杖の光線が飛ぶ様子（5.4 と同じく、向きに合わせた | - / \\ の字で）。当たったら当てた演出も。"""
+        dy, dx = direction
+        ch = '|' if dx == 0 else '-' if dy == 0 else '\\' if dy == dx else '/'
+        self.animate_missile(bolt['path'], ch, dungeon, player, monsters, objects,
+                             cp=self.BOLT_CP.get(bolt['name'], _CP_DEFAULT))
+        if bolt['hit']:
+            y, x, dmg, killed = bolt['hit']
+            self.effect('hit', y=y, x=x, dmg=dmg, killed=killed)
+
     def animate_missile(
         self, path: list, ch: str,
         dungeon: "Dungeon", player: "Player", monsters: list, objects: list,
+        cp: Optional[int] = None,
     ) -> None:
         """投げた物が飛んでいく様子を見せる（5.4 の do_motion と同じく 1 マスずつ）。目が見えないときは出さない。"""
         if self.stdscr is None or not path or player.status.blind:
             return
-        attr = self._cp(_TILE_CP.get(ch, _CP_ITEM)) | curses.A_BOLD
+        attr = self._cp(cp if cp is not None else _TILE_CP.get(ch, _CP_ITEM)) | curses.A_BOLD
         step = self.MISSILE_STEP_MS
         self.draw_all(dungeon, player, monsters, objects)   # 持ち物の一覧などが出たままにならないよう、先に地図に戻す
         if curses.missile([list(p) for p in path], ch, attr, step):

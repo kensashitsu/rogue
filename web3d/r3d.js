@@ -296,6 +296,7 @@ export function update(grid, pos) {
   findReveals(grid, lvBefore === rockLevel);
   lastGrid = grid;
   watchHp(grid);
+  watchStatus(grid);
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
@@ -896,6 +897,72 @@ const ART = {
     '  XXX XXX  ',
     ' XXXX XXXX ',
   ],
+  // 床のアイテム（e の升は光る点 * で描く）
+  '!': [   // 薬: 瓶
+    '  XX  ',
+    '  XX  ',
+    ' XXXX ',
+    'XXXXXX',
+    'XXXXXX',
+    ' XXXX ',
+  ],
+  '?': [   // 巻物: 巻いた紙
+    'XXXXXXXX',
+    'X XXXX X',
+    ' XXXXXX ',
+    ' XXXXXX ',
+    'XXXXXXXX',
+  ],
+  ')': [   // 武器: 床に置いた剣
+    '       XX',
+    '      XX ',
+    '     XX  ',
+    '  XXXX   ',
+    '   XX    ',
+    '  X X    ',
+    ' X       ',
+  ],
+  ']': [   // 鎧: 胸当て
+    'XX    XX',
+    'XXXXXXXX',
+    ' XXXXXX ',
+    ' XXXXXX ',
+    '  XXXX  ',
+  ],
+  '=': [   // 指輪: 宝石の付いた輪
+    '   ee   ',
+    '  XXXX  ',
+    ' X    X ',
+    ' X    X ',
+    '  XXXX  ',
+  ],
+  '/': [   // 杖: 先の光る棒
+    '      e',
+    '     X ',
+    '    X  ',
+    '   X   ',
+    '  X    ',
+    ' X     ',
+  ],
+  ':': [   // 食料: パン
+    '  XXXX  ',
+    ' XXXXXX ',
+    'XXXXXXXX',
+    'XXXXXXXX',
+  ],
+  '*': [   // 金貨: 小山
+    '   X   ',
+    '  XXX  ',
+    ' XXXXX ',
+    'XXXXXXX',
+  ],
+  ',': [   // 魔除け: 首飾り
+    'X     X',
+    ' X   X ',
+    '  X X  ',
+    '   e   ',
+    '  XXX  ',
+  ],
   Z: [   // ゾンビ: 腕を前に突き出した死体
     '   XXX      ',
     '  XeXeX     ',
@@ -1012,6 +1079,11 @@ function drawTerm() {
     else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
+    if (mood.halu) {   // 幻覚: 升ごとに色相をずらし、時間で流す
+      tctx.fillStyle = `hsl(${(x * 9 + y * 13 + performance.now() / 8) % 360},80%,${Math.round(18 + v * 52)}%)`;
+      tctx.fillText(ch, (x + 0.5) * tcw + Math.sin(performance.now() / 300 + y * 0.6) * tcw * 0.35, (y + 0.5) * tch + tch * 0.04);
+      continue;
+    }
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
       : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})`
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
@@ -1076,7 +1148,8 @@ function animateTo(tg) {
   if (!animating) { animating = true; requestAnimationFrame(tick); }
 }
 function tick(now) {
-  const k = Math.min(1, (now - t0) / DUR), e = k * (2 - k);
+  const dur = mood.haste ? DUR * 0.5 : mood.slow ? DUR * 2.2 : DUR;   // 加速中は速く、減速中はゆっくり動く
+  const k = Math.min(1, (now - t0) / dur), e = k * (2 - k);
   cam.x = from.x + (to.x - from.x) * e; cam.z = from.z + (to.z - from.z) * e; cam.yaw = from.yaw + (to.yaw - from.yaw) * e;
   draw();
   if (k < 1) requestAnimationFrame(tick); else animating = false;
@@ -1098,9 +1171,13 @@ export function missile(m) {
   sp.userData = { ch: m.ch, col };
   scene.add(sp); flying.add(sp);
   const pts = [player, ...m.path], dur = m.step * m.path.length, t0 = performance.now();
+  const bolt = '|-/\\'.includes(m.ch);   // 杖の光線は、通った所に光が尾を引く
+  if (bolt) { sp.material = glyphMat('*', col); sp.userData.ch = '*'; }
+  let passed = 0;
   const frame = now => {
     const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
     const i = Math.min(pts.length - 2, Math.floor(k)), f = k - i;
+    if (bolt) while (passed <= i) { const [ty, tx] = pts[passed++ + 1] || []; if (ty != null) { fx.trail.push({ y: ty, x: tx, t0: now, col }); startFx(); } }
     const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
     sp.position.set(x + 0.5, 0.42, y + 0.5);
     draw();
@@ -1113,9 +1190,9 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], shakeT0: -1e9, lastHp: null };
-let fxcv, fxctx, hurtEl, fxRunning = false;
-const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900;
+const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null };
+let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
+const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900, TRAIL_MS = 450;
 
 function initFx(canvas) {
   fxcv = document.createElement('canvas');
@@ -1125,6 +1202,9 @@ function initFx(canvas) {
   hurtEl = document.createElement('div');
   hurtEl.id = 'v3hurt'; hurtEl.setAttribute('aria-hidden', 'true');
   canvas.parentElement.append(hurtEl);
+  blindEl = document.createElement('div');   // 盲目: 足元の少しだけ残して暗くする
+  blindEl.id = 'v3blind'; blindEl.setAttribute('aria-hidden', 'true');
+  canvas.parentElement.append(blindEl);
 }
 function sizeFx(w, h) {
   const dpr = Math.min(devicePixelRatio || 1, 2);
@@ -1202,6 +1282,20 @@ function reveal(y, x, ch) {
   startFx();
 }
 
+// 自分の状態（状態行の表示から読む）: 幻覚 = 壁が虹色に揺れる、混乱 = 視界がふらつく、盲目 = 暗転、
+// 浮遊 = 視点が高い、加速・減速 = 歩く動きが速い・遅い
+const mood = { halu: false, conf: false, blind: false, lev: false, haste: false, slow: false };
+let eye = EYE;
+function watchStatus(grid) {
+  const t = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
+  const was = moodActive();
+  mood.halu = /幻覚|Halu/.test(t); mood.conf = /混乱|Conf/.test(t); mood.blind = /盲目|Blind/.test(t);
+  mood.lev = /浮遊|Lev/.test(t); mood.haste = /加速|Haste/.test(t); mood.slow = /減速|Slow/.test(t);
+  if (blindEl) blindEl.classList.toggle('on', mood.blind);
+  if (moodActive() && !was) startFx();
+}
+const moodActive = () => mood.halu || mood.conf || Math.abs(eye - (mood.lev ? EYE + 0.3 : EYE)) > 0.005;
+
 // 状態行の HP が減ったのに知らせがなかったとき（罠・毒・空腹など）も揺らす
 function watchHp(grid) {
   const status = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
@@ -1212,7 +1306,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length;
+const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -1221,6 +1315,7 @@ function startFx() {
     fx.nums = fx.nums.filter(n => now - n.t0 < NUM_MS);
     fx.debris = fx.debris.filter(p => now - p.t0 < DEBRIS_MS);
     fx.pops = fx.pops.filter(p => now - p.t0 < POP_MS);
+    fx.trail = fx.trail.filter(p => now - p.t0 < TRAIL_MS);
     draw();
     if (fxActive(now)) requestAnimationFrame(tick);
     else { fxRunning = false; draw(); }
@@ -1279,6 +1374,17 @@ function drawFx(now) {
     fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
     fxctx.fillStyle = d.col; fxctx.fillText(d.ch, p.px, p.py);
   }
+  // 光線の通り道: 光る * が残って消えていく
+  for (const o of fx.trail) {
+    const k = (now - o.t0) / TRAIL_MS;
+    const p = project(o.x + 0.5, 0.42, o.y + 0.5); if (!p) continue;
+    const size = Math.max(10, Math.min(120, p.unit * 0.35));
+    fxctx.globalAlpha = 1 - k;
+    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.shadowColor = o.col; fxctx.shadowBlur = 18;
+    fxctx.fillStyle = o.col; fxctx.fillText('*', p.px, p.py);
+    fxctx.shadowBlur = 0;
+  }
   // 見つけた扉: + が光りながら大きくなって消える
   for (const o of fx.pops) {
     const k = (now - o.t0) / POP_MS;
@@ -1298,8 +1404,14 @@ function draw() {
   const now = performance.now();
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
-  camera.position.set(cam.x + Math.sin(cam.yaw) * back, EYE, cam.z + Math.cos(cam.yaw) * back);
+  eye += ((mood.lev ? EYE + 0.3 : EYE) - eye) * 0.15;   // 浮遊中は視点を高く（ゆっくり上がり下がりする）
+  camera.position.set(cam.x + Math.sin(cam.yaw) * back, eye, cam.z + Math.cos(cam.yaw) * back);
   camera.rotation.set(0, cam.yaw, 0, 'YXZ');
+  if (mood.conf) {   // 混乱: 視界がふらふら傾いて揺れる
+    camera.rotation.z = Math.sin(now / 520) * 0.09;
+    camera.rotation.y += Math.sin(now / 830) * 0.05;
+    camera.rotation.x = Math.sin(now / 670) * 0.04;
+  }
   const sk = 1 - (now - fx.shakeT0) / SHAKE_MS;   // くらったときの揺れ
   if (sk > 0) {
     camera.position.x += (Math.random() - 0.5) * 0.14 * sk; camera.position.y += (Math.random() - 0.5) * 0.08 * sk;
@@ -1308,6 +1420,8 @@ function draw() {
   camera.updateMatrixWorld();
   torch.position.set(cam.x, 0.8, cam.z);
   jitterSprites(now, true);
+  const hue = mood.halu && theme !== 'term' ? `hue-rotate(${Math.round(now / 8) % 360}deg) saturate(2.5)` : '';
+  if (cv.style.filter !== hue) cv.style.filter = hue;   // 文字・石の見た目の幻覚は、画面の色相を回す
   if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
   jitterSprites(now, false);
   drawFx(now);

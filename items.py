@@ -1237,6 +1237,9 @@ def _ws_light(dungeon: 'Dungeon', player: 'Player') -> list[str]:
     return [tr('Your wand glows brightly for a moment.')]
 
 
+last_bolt: Optional[dict] = None   # 直前に放った光線の道筋と当たった所（画面の演出用。game が読む）
+
+
 def _ws_bolt(
     dungeon:   'Dungeon',
     monsters:  list['Monster'],
@@ -1249,11 +1252,14 @@ def _ws_bolt(
     ボルト攻撃。壁で1回反射し逆方向に進む。プレイヤーにも命中する。
     Rogue 5.4 準拠。
     """
+    global last_bolt
     msgs: list[str] = []
     dy, dx = direction
     if dy == 0 and dx == 0:
         msgs.append(tr('The {bolt_name} bolt discharges harmlessly.', bolt_name=tr_name('bolt', bolt_name)))
         return msgs
+    path: list[tuple[int, int]] = []
+    last_bolt = {'name': bolt_name, 'path': path, 'hit': None}
 
     rows = len(dungeon.map)
     cols = len(dungeon.map[0]) if rows else 0
@@ -1278,10 +1284,12 @@ def _ws_bolt(
             x += dx
             continue
 
+        path.append((y, x))
         # モンスターに命中
         for m in monsters:
             if m.is_alive and m.y == y and m.x == x:
                 m.hp -= dmg
+                last_bolt['hit'] = (y, x, dmg, not m.is_alive)
                 msgs.append(tr('The {bolt_name} bolt hits the {name} for {dmg} damage.', bolt_name=tr_name('bolt', bolt_name), name=m.name, dmg=dmg))
                 if not m.is_alive:
                     msgs.append(tr('The {name} is killed!', name=m.name))
