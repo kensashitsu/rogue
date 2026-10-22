@@ -111,14 +111,42 @@ let rock = new Set(), rockLevel = '';
 try { const r = JSON.parse(localStorage.getItem('rogue3d-rock') || '{}'); rockLevel = r.level || ''; rock = new Set(r.cells || []); } catch {}
 export function forgetRock() {   // 新しく始めるとき（前の冒険の同じ階の岩を引き継がない）
   rock.clear(); rockLevel = '';
-  try { localStorage.removeItem('rogue3d-rock'); } catch {}
+  seen.clear();
+  try { localStorage.removeItem('rogue3d-rock'); localStorage.removeItem('rogue3d-seen'); } catch {}
+}
+
+// 地図に載せるマス: 3D の画面に映った所だけ（前を向いて見た所と、自分の隣）。振り向いて見回すと地図が埋まる。
+// 原作は明るい部屋に入ると部屋全体が地図に出る。3D 版だけの意図的な改変（2026-10-22。ユーザー指定）。
+// 魔法の地図の巻物を読んだときは、そのとき分かっている所を全部載せる。階ごとに覚え、端末に残す
+let seen = new Set();
+try { const r = JSON.parse(localStorage.getItem('rogue3d-seen') || '{}'); if (r.level === rockLevel) seen = new Set(r.cells || []); } catch {}
+export const isSeen = (y, x) => seen.has(y * W + x);
+const saveSeen = () => { try { localStorage.setItem('rogue3d-seen', JSON.stringify({ level: rockLevel, cells: [...seen] })); } catch {} };
+function look(grid) {
+  if (!player || !camera) return;
+  const n0 = seen.size, [py, px] = player;
+  for (const [dy, dx] of [[0, 0], ...DIRS]) seen.add((py + dy) * W + px + dx);
+  // 画面の横の画角に、少しゆとりを持たせて光線を飛ばす。壁・岩・闇に当たったら、そのマスまで
+  const half = Math.atan(Math.tan(camera.fov * Math.PI / 360) * camera.aspect) + 0.05;
+  const [fy, fx] = DIRS[facing], base = Math.atan2(fy, fx);
+  for (let a = -half; a <= half; a += 0.012) {
+    const dy = Math.sin(base + a), dx = Math.cos(base + a);
+    for (let t = 0.3; t < 24; t += 0.08) {
+      const y = Math.floor(py + 0.5 + dy * t), x = Math.floor(px + 0.5 + dx * t);
+      if (y < MAP_TOP || y > MAP_BOT || x < 0 || x >= W) break;
+      seen.add(y * W + x);
+      const c = cellAt(grid, y, x)[0];
+      if (c === '-' || c === '|' || c === ' ') break;
+    }
+  }
+  if (seen.size !== n0) saveSeen();
 }
 function learnRock(grid, pos) {
   const status = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
   const lv = (status.match(/(?:階|Level):\s*(\d+)/) || [])[1];
   if (!lv || !pos) return false;
   let changed = false;
-  if (lv !== rockLevel) { rockLevel = lv; rock.clear(); changed = true; }
+  if (lv !== rockLevel) { rockLevel = lv; rock.clear(); seen.clear(); saveSeen(); changed = true; }
   if (/盲目|Blind/.test(status)) return changed;   // 目が見えないときは隣も見えない
   for (const [dy, dx] of DIRS) {
     const y = pos[0] + dy, x = pos[1] + dx, k = y * W + x;
@@ -143,6 +171,7 @@ export function update(grid, pos) {
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
   if (jumped) faceOpen(grid);
+  look(grid);
   if (moved) startMove();
   draw();
 }
@@ -1050,6 +1079,7 @@ function tick(now) {
 export function turn(d) {
   facing = (facing + d + 8) % 8;
   try { localStorage.setItem('rogue3d-facing', facing); } catch {}
+  if (lastGrid) look(lastGrid);
   if (lastGrid) build(lastGrid);   // 床に描いた字（階段・罠）の向きを合わせ直す
   if (player && cam) animateTo(target());
 }
@@ -1117,6 +1147,10 @@ export function effect(d) {
         fx.debris.push({ y: d.y, x: d.x, t0: now, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
       }
     }
+  } else if (d.type === 'mapped') {   // 魔法の地図: 分かっている所を全部、地図に載せる
+    if (lastGrid) for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) if (cellAt(lastGrid, y, x)[0] !== ' ') seen.add(y * W + x);
+    saveSeen();
+    return;
   } else if (d.type === 'traps') {
     trapCells = new Set(d.cells.map(([y, x]) => y * W + x));
     if (lastGrid) { build(lastGrid); draw(); }
