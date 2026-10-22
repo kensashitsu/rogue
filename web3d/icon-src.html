@@ -1,0 +1,240 @@
+<!doctype html>
+<!-- 3D 版のホーム画面アイコンの元。Playwright で撮って icon-180.png / icon-192.png / icon-512.png に書き出す（512 で描いて縮小）。
+     一人称で見た通路を、3D 版の画面と同じく端末の字（壁の点描・床の . ・青い輪郭線）で描く。?v= で案を切り替える -->
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDGothic:wght@400;700&display=swap">
+<style>
+  html, body { margin: 0; background: #000; }
+  canvas { display: block; }
+  /* L 案: 2D 版のアイコン（壁の線と扉・床の点・@）を、そのまま立体の部屋に（CSS の 3D 変形） */
+  #room { display: none; position: relative; width: 512px; height: 512px; overflow: hidden; background: #0b0d0f; perspective: var(--persp, 700px); perspective-origin: 50% var(--po, 10%); font-family: "BIZ UDGothic", monospace; }
+  #room .stage { position: absolute; left: 0; top: 0; width: 512px; height: 512px; transform-style: preserve-3d; transform: var(--stage, none); }
+  #room .floor { position: absolute; left: -128px; top: 300px; width: 768px; height: 512px; transform-origin: 50% 0; transform: rotateX(82deg); }
+  #room .wall { position: absolute; left: -128px; top: 30px; width: 768px; height: 270px; }
+  #room .t { position: absolute; width: 64px; text-align: center; font-size: 112px; line-height: 128px; color: #6f7780; }
+  #room .w { color: #9aa2ab; } #room .door { color: #d5d9de; } #room .s { color: #3d434a; font-size: 72px; }
+  #room .me { position: absolute; left: 0; right: 0; top: 120px; text-align: center; font-size: 300px; line-height: 300px; font-weight: 700; color: #f0c652;
+    transform: translateZ(60px); }
+</style>
+</head>
+<body>
+<div id="shot"><canvas id="ic" width="512" height="512"></canvas><div id="room"><div class="stage"></div></div></div>
+<script>
+const base = new Image(); base.src = '../web/icon-512.png';
+Promise.all([document.fonts.load('700 40px "BIZ UDGothic"'), document.fonts.load('400 40px "BIZ UDGothic"'), base.decode().catch(() => {})]).then(() => {
+  const q = new URLSearchParams(location.search), v = q.get('v') || 'A', size = +(q.get('size') || 512);
+  const cv = document.getElementById('ic'), ctx = cv.getContext('2d');
+  cv.width = cv.height = size; ctx.scale(size / 512, size / 512);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 512, 512);
+  // 升目: 横 32 px × 縦 64 px（端末の 1:2）。16 列 × 8 行
+  const CW = 32, CH = 64, COLS = 16, ROWS = 8;
+  // 奥の口（通路の先）
+  const L = 192, R = 320, T = 176, B = 304;
+  const font = (px, w = 400) => `${w} ${px}px "BIZ UDGothic", monospace`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  // 点描: 半分の細かさ（16 px × 32 px）で、壁は : 、床は . 、天井はまばらに `
+  const fw = 16, fh = 32;
+  for (let y = 0; y < 512; y += fh) for (let x = 0; x < 512; x += fw) {
+    const cx = x + fw / 2, cy = y + fh / 2;
+    if (cx > L && cx < R && cy > T && cy < B) continue;   // 奥は闇
+    const nx = (cx - 256) / 256, ny = (cy - 240) / 256;
+    const leftWall = cx < L && Math.abs(cy - 240) < (256 - Math.abs(nx) * 0) && (cy - T) / (L - cx) > -T / L && (B - cy) / (L - cx) > -(512 - B) / L;
+    // 4 本の対角線で、壁（左右）・床・天井に分ける
+    const k = cx < 256 ? (L - cx) / L : (cx - R) / (512 - R);   // 左右の壁なら手前ほど 1
+    const top = T - (cx < 256 ? (L - cx) / L : (cx - R) / (512 - R)) * T;
+    const bot = B + (cx < 256 ? (L - cx) / L : (cx - R) / (512 - R)) * (512 - B);
+    let ch, g;
+    if ((cx < L || cx > R) && cy > top && cy < bot) { ch = k > 0.45 ? ':' : '.'; g = 70 + k * 150; }   // 壁
+    else if (cy >= B || cy >= bot) { const d = (cy - B) / (512 - B); ch = '.'; g = 40 + d * 90; }      // 床
+    else { if ((x / fw + y / fh) % 3) continue; ch = '`'; g = 50; }                                     // 天井
+    ctx.font = font(26); ctx.fillStyle = `rgb(${g},${g},${Math.min(255, g + 8)})`;
+    ctx.fillText(ch, cx, cy + 2);
+  }
+  // 青い輪郭線: 手前の角から奥の口の角へ、字（\ / _ |）で
+  ctx.font = font(30, 700);
+  const blue = (k) => `rgb(${Math.round(60 + k * 80)},${Math.round(90 + k * 90)},${Math.round(160 + k * 95)})`;
+  const diag = (x0, y0, x1, y1, ch) => {
+    const n = Math.max(Math.abs(x1 - x0) / fw, Math.abs(y1 - y0) / fh) | 0;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, x = x0 + (x1 - x0) * t, y = y0 + (y1 - y0) * t;
+      ctx.fillStyle = blue(1 - t * 0.6); ctx.fillText(ch, Math.round(x / fw) * fw + fw / 2, Math.round(y / fh) * fh + fh / 2);
+    }
+  };
+  diag(0, 0, L, T, '\\'); diag(512, 0, R, T, '/'); diag(0, 512, L, B, '/'); diag(512, 512, R, B, '\\');
+  ctx.fillStyle = blue(0.4);
+  for (let x = L; x <= R; x += fw) { ctx.fillText('_', x + fw / 2, T - 8); ctx.fillText('_', x + fw / 2, B - 6); }
+  for (let y = T; y < B; y += fh) { ctx.fillText('|', L, y + fh / 2); ctx.fillText('|', R, y + fh / 2); }
+  if (v === 'B') {   // 奥に @（2D 版のアイコンと同じ主人公の字）
+    ctx.font = font(120, 700); ctx.fillStyle = '#f0c652'; ctx.fillText('@', 256, 246);
+  }
+  if (v === 'C') {   // 奥にモンスター（3D 版の字で編んだ形を小さく）
+    ctx.font = font(30, 700); ctx.fillStyle = '#ff6a5c';
+    const art = ['K   K', 'KK KK', ' KKK ', ' K K '];
+    art.forEach((row, r) => [...row].forEach((c, i) => { if (c !== ' ') ctx.fillText(c, 256 + (i - 2) * 16, 214 + r * 24); }));
+    ctx.fillStyle = '#ffe08a'; ctx.fillText('*', 248, 238); ctx.fillText('*', 264, 238);
+  }
+  if (v === 'D') {   // 2D 版と並べたとき分かるよう、水色の 3D を奥に
+    ctx.font = font(96, 700); ctx.fillStyle = '#6cc6d6'; ctx.fillText('3D', 256, 244);
+  }
+  if ('EFGH'.includes(v)) {   // 字を大きく少なく。2D 版のアイコン（大きな @）と同じ考え方
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, 512, 512);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    if (v === 'E') {   // 立体の @: 同じ字を奥へずらして重ね、奥ほど暗く
+      ctx.font = font(330, 700);
+      for (let i = 9; i >= 1; i--) { const g = 30 + (9 - i) * 9; ctx.fillStyle = `rgb(${g + 40},${g + 25},${g - 10})`; ctx.fillText('@', 256 + i * 7, 250 - i * 7); }
+      ctx.fillStyle = '#f0c652'; ctx.fillText('@', 256, 250);
+    }
+    if (v === 'F') {   // 太い青い線だけの通路と、奥に大きな @
+      ctx.strokeStyle = '#4f7bd6'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+      const L2 = 150, R2 = 362, T2 = 140, B2 = 352;
+      for (const [x0, y0, x1, y1] of [[0, 0, L2, T2], [512, 0, R2, T2], [0, 512, L2, B2], [512, 512, R2, B2]]) { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); }
+      ctx.strokeRect(L2, T2, R2 - L2, B2 - T2);
+      ctx.font = font(230, 700); ctx.fillStyle = '#f0c652'; ctx.fillText('@', 256, 252);
+    }
+    if (v === 'G') {   // 2D 版と同じ部屋を、床が奥へすぼまる遠近で（壁の線と扉、手前の床の点）。@ は大きく
+      ctx.font = font(84); ctx.fillStyle = '#9aa2ab';
+      [...'-----+--'].forEach((c, i) => { ctx.fillStyle = c === '+' ? '#d5d9de' : '#9aa2ab'; ctx.fillText(c, 128 + i * 37, 70); });
+      for (let r = 0; r < 4; r++) {   // 床の点: 手前ほど間隔が広く大きく
+        const y = 150 + r * r * 22 + r * 70, sp = 40 + r * 22, n = 6 + r * 2, sz = 40 + r * 20;
+        ctx.font = font(sz); ctx.fillStyle = `rgb(${90 + r * 20},${98 + r * 20},${106 + r * 20})`;
+        for (let i = 0; i < n; i++) { const x = 256 + (i - (n - 1) / 2) * sp; if (Math.abs(x - 256) < 120 && r < 3) continue; ctx.fillText('.', x, y); }
+      }
+      ctx.font = font(290, 700); ctx.fillStyle = '#f0c652'; ctx.fillText('@', 256, 270);
+    }
+    if (v === 'H') {   // 2D 版のアイコンに、右下に水色の 3D の札
+      ctx.drawImage(base, 0, 0, 512, 512);
+      ctx.fillStyle = '#0b0d0f'; ctx.fillRect(300, 372, 212, 140);
+      ctx.font = font(130, 700); ctx.fillStyle = '#6cc6d6'; ctx.fillText('3D', 404, 446);
+    }
+  }
+  if ('IJK'.includes(v)) {   // 字で組んだ立体（遠目にも「字でできた 3D」と分かるように、字を大きく少なく）
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, 512, 512);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // 字の升目に並べる: art（字）と col（色の記号）を同じ形で書く
+    const grid = (art, col, cw, chh, fs, ox, oy, pal) => {
+      ctx.font = font(fs, 700);
+      art.forEach((row, r) => [...row].forEach((c, i) => {
+        if (c === ' ') return;
+        ctx.fillStyle = col ? pal[(col[r] || '')[i]] || pal.d : pal[BY_CHAR[c]] || pal.d;
+        ctx.fillText(c, ox + i * cw + cw / 2, oy + r * chh + chh / 2);
+      }));
+    };
+    const BY_CHAR = { '/': 'b', '\\': 'b', '|': 'b', '_': 'b', '.': 't', ':': 'f', ';': 's', '@': 'y' };   // 字ごとの色
+    const pal = { b: '#5f8ff0', t: '#c8ccd1', f: '#8d959e', s: '#555c64', y: '#f0c652', d: '#8d959e' };
+    if (v === 'I') {   // 字で組んだ箱（上の面 . 、正面 : 、横の面 ; 、角は青い / | _）。正面に @
+      const art = [
+        '    _________  ',
+        '   /. . . . . /| ',
+        '  /. . . . . /;| ',
+        ' /__________/;;| ',
+        ' |::::::::::|;;| ',
+        ' |::::@:::::|;;/ ',
+        ' |::::::::::|;/  ',
+        ' |__________|/   ',
+      ];
+      const col = [
+        '    bbbbbbbbbbb  ',
+        '   btttttttttttbb ',
+        '  btttttttttttbsb ',
+        ' bbbbbbbbbbbbssb ',
+        ' bffffffffffbssb ',
+        ' bffffyfffffbssb ',
+        ' bffffffffffbsb  ',
+        ' bbbbbbbbbbbbb   ',
+      ];
+      grid(art, null, 30, 60, 52, 6, 16, pal);
+    }
+    if (v === 'J') {   // 大きな @ を小さな @ の字で組み、奥へずらした影を : で
+      const m = document.createElement('canvas'); m.width = m.height = 512;
+      const mc = m.getContext('2d'); mc.font = font(470, 700); mc.textAlign = 'center'; mc.textBaseline = 'middle';
+      mc.fillStyle = '#fff'; mc.fillText('@', 240, 270);
+      const px = mc.getImageData(0, 0, 512, 512).data, cw = 15, chh = 30;
+      const on = (x, y) => x >= 0 && y >= 0 && x < 512 && y < 512 && px[(Math.floor(y) * 512 + Math.floor(x)) * 4 + 3] > 120;
+      ctx.font = font(26, 700);
+      for (let y = 0; y < 512; y += chh) for (let x = 0; x < 512; x += cw) {
+        const cx = x + cw / 2, cy = y + chh / 2;
+        if (on(cx, cy)) { ctx.fillStyle = '#f0c652'; ctx.fillText('@', cx, cy); continue; }
+        for (let k = 1; k <= 4; k++) if (on(cx - k * cw, cy + k * chh * 0.5)) { ctx.fillStyle = ['#a27f2c', '#86682a', '#6a5220', '#4f3d18'][k - 1]; ctx.fillText(':', cx, cy); break; }
+      }
+    }
+    if (v === 'K') {   // 字で組んだ通路（大きな字で少なく）。壁 : 、床 . 、角は青い \ / 、奥に @
+      const art = [
+        '\\\\          //',
+        '::\\\\      //::',
+        ':::|______|:::',
+        ':::|      |:::',
+        ':::|  @   |:::',
+        ':::|______|:::',
+        '::/ . . . . \\\\::',
+        '//. . . . . . \\\\',
+      ];
+      const col = [
+        'bb          bb',
+        'ffbb      bbff',
+        'fffbbbbbbbbfff',
+        'fffb      bfff',
+        'fffb  y   bfff',
+        'fffbbbbbbbbfff',
+        'ffbtttttttttbff',
+        'bbtttttttttttbb',
+      ];
+      grid(art, col, 36, 62, 56, 4, 8, pal);
+    }
+  }
+  if (v[0] === 'L') {   // 2D 版のアイコンを立体の部屋に: 奥に壁（上の縁が - - - + - -、面は : の点描）、床は . が奥へすぼまる、@ は立って影を落とす
+    cv.style.display = 'none';
+    const room = document.getElementById('room'), stage = room.querySelector('.stage');
+    room.style.display = 'block';
+    const P = { L1: ['640px', '0%', 'none'], L2: ['640px', '0%', 'rotateY(-22deg)'], L3: ['900px', '-30%', 'rotateY(-30deg) rotateX(-8deg)'] }[v] || ['640px', '0%', 'none'];
+    room.style.setProperty('--persp', P[0]); room.style.setProperty('--po', P[1]); room.style.setProperty('--stage', P[2]);
+    const add = (parent, cls, text, x, y) => { const e = document.createElement('div'); e.className = 't ' + cls; e.textContent = text; e.style.left = x + 'px'; e.style.top = y + 'px'; parent.append(e); };
+    const wall = document.createElement('div'); wall.className = 'wall'; stage.append(wall);
+    [...'--------+----'].forEach((c, i) => add(wall, c === '+' ? 'door' : 'w', c, i * 64 - 32, -40));   // 上の縁（2D 版の壁の線）
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 12; i++) add(wall, 's', ':', i * 64 + (r % 2) * 32, 50 + r * 52);   // 壁の面
+    const floor = document.createElement('div'); floor.className = 'floor'; stage.append(floor);
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 12; i++) add(floor, '', '.', i * 64, r * 128 - 40);
+    const me = document.createElement('div'); me.className = 'me'; me.textContent = '@';
+    me.style.textShadow = Array.from({ length: 14 }, (_, k) => `${k + 1}px ${k + 1}px 0 rgb(${120 - k * 5},${92 - k * 4},${30 - k})`).join(',');
+    stage.append(me);
+  }
+  if (v[0] === 'M') {   // 2D 版のアイコンを立体の部屋に: 字を 3D の場所に置き、遠近をかけて大きさを変えて描く
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, 512, 512);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const CAM = { M1: [0, 2.7, -0.9], M2: [-1.9, 2.5, -0.6], M3: [0, 1.6, -1.2] }[v] || [0, 2.7, -0.9];
+    const LOOK = [0, 0.85, 2.6];
+    // 見る向きの基底
+    const sub = (a, b) => a.map((x, i) => x - b[i]), norm = a => { const l = Math.hypot(...a); return a.map(x => x / l); };
+    const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    const fwd = norm(sub(LOOK, CAM)), right = norm(cross([0, 1, 0], fwd)), up = cross(fwd, right);
+    const F = 520;   // 焦点距離（px）
+    const proj = (x, y, z) => {
+      const d = sub([x, y, z], CAM), cz = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2];
+      return { x: 256 + (d[0] * right[0] + d[1] * right[1] + d[2] * right[2]) * F / cz, y: 256 - (d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) * F / cz, s: F / cz, z: cz };
+    };
+    const items = [];
+    const glyph = (ch, x, y, z, size, color, w = 400) => items.push({ ch, p: proj(x, y, z), size, color, w });
+    // 床の点（2D 版と同じ . の並び。手前ほど大きい）
+    for (let z = 0.6; z <= 4.6; z += 0.8) for (let x = -4; x <= 4; x += 0.8) glyph('.', x, 0, z, 1.5, '#7a828b');
+    // 奥の壁: 上の縁は 2D 版の壁の線（- と扉の +）、面は : の点描
+    const W2 = 5;
+    [...'---------+----'].forEach((c, i) => glyph(c, -4.55 + i * 0.7, 1.9, W2, 1.4, c === '+' ? '#d5d9de' : '#9aa2ab', 700));
+    for (let y = 0.25; y < 1.7; y += 0.42) for (let x = -4.6; x <= 4.6; x += 0.7) glyph(':', x + ((y * 2.4) % 2 < 1 ? 0 : 0.35), y, W2, 0.9, '#454b53');
+    // @: 立っていて、奥へ厚みがある（同じ字を奥へずらして暗く重ねる）
+    for (let k = 10; k >= 0; k--) {
+      const g = k ? [Math.round(150 - k * 8), Math.round(112 - k * 6), Math.round(36 - k * 2)] : null;
+      glyph('@', 0, 1.1, 2.0 + k * 0.035, 2.9, k ? `rgb(${g})` : '#f0c652', 700);
+    }
+    items.sort((a, b) => b.p.z - a.p.z);
+    for (const it of items) {
+      if (it.p.z <= 0) continue;
+      ctx.font = `${it.w} ${it.size * it.p.s * 0.55}px "BIZ UDGothic", monospace`;
+      ctx.fillStyle = it.color; ctx.fillText(it.ch, it.p.x, it.p.y);
+    }
+  }
+  document.body.dataset.ready = '1';
+});
+</script>
+</body>
+</html>
