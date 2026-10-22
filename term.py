@@ -162,6 +162,23 @@ def flash() -> None:
     _out.flush()
 
 
+def napms(ms: int) -> None:
+    """ms ミリ秒待つ（投げた物が飛ぶ様子を見せる間など）。"""
+    if _WEB:
+        js.rogue_sleep(ms)
+        return
+    time.sleep(ms / 1000)
+
+
+def missile(path: list, ch: str, attr: int, step_ms: int) -> bool:
+    """ブラウザ版: 飛んでいく物の道筋を画面側に渡して動かしてもらう（滑らかに動かせるので）。
+    渡せたら True。端末では False を返し、呼び出し側が 1 マスずつ描く。"""
+    if not _WEB:
+        return False
+    js.rogue_missile(json.dumps({'path': path, 'ch': ch, 'style': _web_style(attr), 'step': step_ms}, ensure_ascii=False))
+    return True
+
+
 def flushinp() -> None:
     if _WEB:
         js.rogue_flushinp()

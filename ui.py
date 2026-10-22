@@ -526,6 +526,28 @@ class UI:
     # 描画：メイン
     # =========================================================================
 
+    MISSILE_STEP_MS = 35   # 投げた物が 1 マス進む間
+
+    def animate_missile(
+        self, path: list, ch: str,
+        dungeon: "Dungeon", player: "Player", monsters: list, objects: list,
+    ) -> None:
+        """投げた物が飛んでいく様子を見せる（5.4 の do_motion と同じく 1 マスずつ）。目が見えないときは出さない。"""
+        if self.stdscr is None or not path or player.status.blind:
+            return
+        attr = self._cp(_TILE_CP.get(ch, _CP_ITEM)) | curses.A_BOLD
+        step = self.MISSILE_STEP_MS
+        self.draw_all(dungeon, player, monsters, objects)   # 持ち物の一覧などが出たままにならないよう、先に地図に戻す
+        if curses.missile([list(p) for p in path], ch, attr, step):
+            curses.napms(step * len(path))   # 画面側が動かし終わるまで待つ（当たった知らせが先に出ないように）
+            return
+        for y, x in path:
+            self.draw_all(dungeon, player, monsters, objects)
+            self._addch(y, x, ch, attr)
+            self.stdscr.refresh()
+            curses.napms(step)
+        self.draw_all(dungeon, player, monsters, objects)
+
     def draw_all(
         self,
         dungeon:  "Dungeon",
