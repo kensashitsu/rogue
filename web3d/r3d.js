@@ -148,12 +148,37 @@ function cellAt(grid, y, x) {
   return grid[y][x] || [' ', 0];
 }
 
+// 確かに岩だと分かっているマス。原作では自分の隣の 8 マスは必ず見えるので、隣にいて何も出ていなかった所は岩。
+// まだ隣に立ったことのない所は分からないので、岩にせず闇のままにする（通路の先が行き止まりに見えないように）。
+// 階ごとに覚え、続きから遊ぶときのために端末に残す
+let rock = new Set(), rockLevel = '';
+try { const r = JSON.parse(localStorage.getItem('rogue3d-rock') || '{}'); rockLevel = r.level || ''; rock = new Set(r.cells || []); } catch {}
+export function forgetRock() {   // 新しく始めるとき（前の冒険の同じ階の岩を引き継がない）
+  rock.clear(); rockLevel = '';
+  try { localStorage.removeItem('rogue3d-rock'); } catch {}
+}
+function learnRock(grid, pos) {
+  const status = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
+  const lv = (status.match(/(?:階|Level):\s*(\d+)/) || [])[1];
+  if (!lv || !pos) return false;
+  let changed = false;
+  if (lv !== rockLevel) { rockLevel = lv; rock.clear(); changed = true; }
+  if (/盲目|Blind/.test(status)) return changed;   // 目が見えないときは隣も見えない
+  for (const [dy, dx] of DIRS) {
+    const y = pos[0] + dy, x = pos[1] + dx, k = y * W + x;
+    if (cellAt(grid, y, x)[0] === ' ' && !rock.has(k)) { rock.add(k); changed = true; }
+  }
+  if (changed) try { localStorage.setItem('rogue3d-rock', JSON.stringify({ level: rockLevel, cells: [...rock] })); } catch {}
+  return changed;
+}
+
 export function update(grid, pos) {
   if (!renderer) return;
   const sig = grid.slice(MAP_TOP, MAP_BOT + 1).map(r => r.map(c => c ? c[0] + (c[1] & 512 ? '_' : '') : '').join('')).join('\n');
   const moved = !player || !pos || player[0] !== pos[0] || player[1] !== pos[1];
   if (pos) player = pos;
-  if (sig !== lastSig) { lastSig = sig; build(grid); }
+  const learned = learnRock(grid, pos);
+  if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
   if (jumped) faceOpen(grid);
@@ -194,14 +219,11 @@ function build(grid) {
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
       if (c === '-' || c === '|') { put(walls, 'walls', x, 0.5, y, bright); continue; }
       if (c === ' ') {
-        // 何もない所: 通路のそばなら岩（通路を囲む）。暗い部屋のまだ見ていない床は闇のまま
-        let byCorr = false, byRoom = false;
-        for (const [dy, dx] of DIRS) {
-          const n = ch(y + dy, x + dx);
-          if (n === '#' || n === '+') byCorr = true;
-          if (n === '.' && (dy === 0 || dx === 0)) byRoom = true;
-        }
-        if (byCorr && !byRoom) put(rocks, 'rocks', x, 0.5, y, 0.8);
+        // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
+        if (!rock.has(y * W + x)) continue;
+        let byRoom = false;
+        for (const [dy, dx] of DIRS) if (ch(y + dy, x + dx) === '.' && (dy === 0 || dx === 0)) byRoom = true;
+        if (!byRoom) put(rocks, 'rocks', x, 0.5, y, 0.8);
         continue;
       }
       if (!walk(c) && c !== '@') continue;
