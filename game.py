@@ -546,6 +546,8 @@ class Game:
         if target:
             result = player_attacks_monster(self.player, target)
             ui.add_messages(result.messages)
+            if result.hit:
+                ui.effect('hit', y=target.y, x=target.x, dmg=result.damage, killed=result.monster_killed)
             if result.monster_killed:
                 msgs = self.player.gain_exp(calc_exp(target))
                 ui.add_messages(msgs)
@@ -1063,6 +1065,7 @@ class Game:
                 str_bonus = max(0, (self.player.str_cur - 10) // 2)
                 dmg = max(1, roll_damage(hurldmg, dplus + str_bonus))
                 hit_monster.hp -= dmg
+                ui.effect('hit', y=hit_monster.y, x=hit_monster.x, dmg=dmg, killed=not hit_monster.is_alive)
                 hit_monster.flags |= ISRUN | ISFOUND
                 vname = hit_monster.display_name(self.player.status.can_see_invisible)
                 ui.add_message(
@@ -1377,8 +1380,15 @@ class Game:
             """モンスターを1サイクル行動させる。プレイヤー死亡時 True を返す。"""
             for m in self.monsters:
                 if m.is_alive:
+                    hp = self.player.hp
                     msgs = m.do_turn(self.dungeon, self.player, self.monsters, self.floor_items)
                     ui.add_messages(msgs)
+                    if self.player.hp < hp:
+                        # くらった演出。どこから殴られたかは、そのモンスターが見えているときだけ知らせる
+                        st = self.player.status
+                        seen = (ui._is_visible(self.dungeon, self.player, m.y, m.x)
+                                and not ((m.flags & ISINVIS) and not st.can_see_invisible))
+                        ui.effect('hurt', dmg=hp - self.player.hp, **({'y': m.y, 'x': m.x} if seen else {}))
                     if not self.player.is_alive:
                         self._death_cause = f"killed by a {MONSTER_DB[m.letter].name}"
                         self._running = False

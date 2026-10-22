@@ -526,6 +526,10 @@ class UI:
     # 描画：メイン
     # =========================================================================
 
+    def effect(self, kind: str, **data) -> None:
+        """画面の演出のきっかけを知らせる（ブラウザの 3D 版が使う。端末では何もしない）。"""
+        curses.effect({'type': kind, **data})
+
     MISSILE_STEP_MS = 35   # 投げた物が 1 マス進む間
 
     def animate_missile(

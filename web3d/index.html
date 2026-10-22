@@ -101,7 +101,9 @@ canvas { display: block; flex: none; }
 #v3 { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border-radius: 6px; }
 #app:not(.text) #cv { position: absolute; top: 6px; right: 6px; background: rgba(11, 13, 15, .82); border: 1px solid var(--line); border-radius: 4px; }
 #v3t { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; pointer-events: none; }
-#app.text #v3, #app.text #v3t { display: none !important; }
+#v3fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#v3hurt { position: absolute; inset: 0; border-radius: 6px; pointer-events: none; opacity: 0; }
+#app.text #v3, #app.text #v3t, #app.text #v3fx, #app.text #v3hurt { display: none !important; }
 .bar .seg:not(#themeSeg):not(#cellSeg) { display: none; }
 .dpad .key.turn { font-size: 24px; color: var(--accent); }
 #status {
