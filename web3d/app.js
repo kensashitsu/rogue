@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -619,6 +619,7 @@ function cover(text, btnLabel, fn) {
 function start() {
   const files = loadFiles();
   readLang(files);
+  if (!files['rogue.sav']) r3d.forgetRock();
   if (!files['rogue.cfg']) {   // 初回は端末の言語で始める（名前入力画面の Tab で切り替えられる）
     const cfg = new TextEncoder().encode(JSON.stringify({ lang }));
     saveFile('rogue.cfg', cfg); files['rogue.cfg'] = loadFiles()['rogue.cfg'];
