@@ -1032,8 +1032,9 @@ function tint(hex, v) {
   return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
 }
 
-// ASCII の濃さのつまみ（見比べて決める用）: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無
-const tune = { ramp: ' .:-=+*#', wallV: 1, floorV: 0.85, passV: 0.7, ceil: true };
+// ASCII の濃さのつまみ: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無。
+// 2026-10-22 に案を並べて見比べ、壁は . : の点描（* + や - = は横じまや重さでうるさい）、床は暗めに決めた
+const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true };
 export function setTune(o) { Object.assign(tune, o); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
