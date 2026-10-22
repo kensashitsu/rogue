@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.34';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.35';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -137,7 +137,7 @@ function render() {
   ensureGlyphs();
   mode = isMap() ? 'map' : 'text';
   const land = innerWidth > innerHeight;
-  app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}`;
+  app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}${fullMap ? ' fullmap' : ''}`;
   box.classList.toggle('text', mode === 'text');
   $('zoomSeg').style.visibility = view === 'follow' ? '' : 'hidden';
 
@@ -182,12 +182,18 @@ function render() {
     cw = Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
     cw = Math.max(cw, 6); ox = 0;
   } else {
-    // 右上の小さな地図: 自分を真ん中にして周りだけ
-    cols = MINI_COLS; cw = Math.min(bw * 0.42 / cols, 190 / cols, bh * 0.45 / (MINI_ROWS * RATIO));   // 横持ちでは高さで抑える
-    rows = MINI_ROWS;
     const p = findPlayer(); if (p) [py, px] = p;
-    vx = Math.max(0, Math.min(W - cols, px - (cols >> 1)));
-    vy = Math.max(1, Math.min(H - 1 - rows, py - (rows >> 1)));
+    if (fullMap) {
+      // 全体の地図（地図をタップで切り替え）: 階全体（1〜22 行目）を 3D の画面の上に収める
+      cols = W; rows = H - 2; cw = Math.min(bw / W, bh / (rows * RATIO));
+      vx = 0; vy = 1;
+    } else {
+      // 右上の小さな地図: 自分を真ん中にして周りだけ
+      cols = MINI_COLS; cw = Math.min(bw * 0.42 / cols, 190 / cols, bh * 0.45 / (MINI_ROWS * RATIO));   // 横持ちでは高さで抑える
+      rows = MINI_ROWS;
+      vx = Math.max(0, Math.min(W - cols, px - (cols >> 1)));
+      vy = Math.max(1, Math.min(H - 1 - rows, py - (rows >> 1)));
+    }
     y0 = vy; ox = vx;
     r3d.update(grid, p);
   }
@@ -205,6 +211,7 @@ function render() {
 }
 
 const MINI_COLS = 23, MINI_ROWS = 11;
+let fullMap = false;   // 地図をタップすると、階全体の地図と小さな地図を切り替える
 // 小さな地図の @ に、向いている方向の印を付ける
 function drawFacing() {
   const p = findPlayer(); if (!p) return;
@@ -446,6 +453,11 @@ function textEntry(c, T, keep) {
   });
   c.append(f);
 }
+
+tap(cv, () => {
+  if (mode !== 'map') return;
+  fullMap = !fullMap; app.classList.toggle('fullmap', fullMap); requestDraw();
+});
 
 // 画面のタップ: 「次へ」待ちなら進める、一覧なら行の記号を選ぶ
 cv.addEventListener('click', e => {
