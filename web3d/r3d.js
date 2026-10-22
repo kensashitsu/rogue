@@ -39,6 +39,10 @@ const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見�
 //   - 眠っているモンスター: 目を閉じて（* の代わりに -）、頭の上に z
 //   - 傷ついたモンスター: 体力が半分を切ると、形の升が欠けていく
 let trapCells = new Set(), monState = new Map();
+// アミュレットを持っている間は、階段を上り階段に描く（段が北へ上っていき、天井に口が開いて上の階へ抜ける）
+let upStairs = false;
+let stairAt = { level: '', cell: -1 };
+const STEP_RISE = 0.25;   // 上り階段の 1 段の高さ（4 段で天井に届く）
 let edgeSegs = [], edgeBright = [];   // 壁の輪郭の線分（x, y, z の組を 2 つずつ）と、その明るさ
 const glyphGroup = new THREE.Group();   // モンスター・アイテムの位置（描くのは drawTerm。札そのものは見せない）
 const dummy = new THREE.Object3D();
@@ -197,9 +201,10 @@ function addGlyph(c, s, x, y, det) {
 // 移り変わりの演出: 階段を下りる（段を下りて暗転）・落とし穴（床を抜けて落ちて暗転、着いたら揺れる）・
 // テレポート（同じ階で遠くへ移った直後に、景色の字が乱れて落ち着く）。新しい階は暗転から明ける
 // ---------------------------------------------------------------------------
-const DESCEND_MS = { stairs: 900, fall: 650 }, FADEIN_MS = 400, WARP_MS = 600;
+const DESCEND_MS = { stairs: 900, fall: 650, up: 900, win: 1300 }, FADEIN_MS = 400, WARP_MS = 600;
+const BRIGHT_TRANS = new Set(['up', 'win']);   // 上るときは白く明るくなって、上の階が白から明ける
 const WARP_CHARS = '#%&*+=~:;!?';
-const trans = { how: null, t0: 0, fadeT0: -1e9, warpT0: -1e9 };
+const trans = { how: null, t0: 0, fadeT0: -1e9, warpT0: -1e9, col: '#000' };
 const transActive = now => (trans.how && now - trans.t0 < DESCEND_MS[trans.how] + 3000) || now - trans.fadeT0 < FADEIN_MS || now - trans.warpT0 < WARP_MS;
 // 階段・落とし穴の途中の視点（null なら普段どおり）
 function transCamera(now) {
@@ -209,10 +214,11 @@ function transCamera(now) {
   if (trans.how === 'fall') {   // 床を抜けて、だんだん速く落ちる
     return { x: cam.x, z: cam.z, y: EYE - 2.4 * k * k, yaw: cam.yaw, pitch: 0.25 * k };
   }
-  // 階段: 北（段の下りていく向き）へ向き直りながら、段を下りていく
+  // 階段: 北（段の下りていく・上っていく向き）へ向き直りながら、段を下りる（上る）
   const turnK = Math.min(1, k / 0.35), e = Math.max(0, (k - 0.2) / 0.8);
   const dYaw = ((0 - cam.yaw) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
-  return { x: cam.x, z: cam.z + 0.3 - e * 1.1, y: EYE - e * 1.0, yaw: cam.yaw + dYaw * turnK, pitch: -0.2 * e };
+  const up = BRIGHT_TRANS.has(trans.how) ? 1 : -1;
+  return { x: cam.x, z: cam.z + 0.3 - e * 1.1, y: EYE + up * e * 1.0, yaw: cam.yaw + dYaw * turnK, pitch: 0.2 * up * e };
 }
 // 暗さ（0〜1）: 下りる終わりに暗くなり、新しい階で明ける
 function transDark(now) {
@@ -256,7 +262,11 @@ function build(grid) {
   const aheadRocks = new Set();   // 1 マス先へ延ばした通路の脇の岩
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
-      const [c, s] = cellAt(grid, y, x);
+      let [c, s] = cellAt(grid, y, x);
+      // 階段の上に立っている間も、足もとの階段を描く（画面では @ に隠れるので、見えたときの場所を覚えておく）
+      if (c === '%') stairAt = { level: rockLevel, cell: y * W + x };
+      let onStairs = false;
+      if (c === '@' && stairAt.level === rockLevel && stairAt.cell === y * W + x) { c = '%'; s = 0; onStairs = true; }
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
       if ((c === '-' || c === '|') && secretCells.has(y * W + x)) { put(meshes.secrets, 'secrets', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
@@ -298,6 +308,19 @@ function build(grid) {
         // 下り階段: 床の代わりに穴。北（奥）へ向かって段が下りていく
         const st = (s & 15) ? PALETTE[(s & 15) - 1] : stairsColor;
         stairsColor = st;
+        if (upStairs) {
+          // 上り階段: 南の端から北へ段が上り、天井の口から上の縦穴へ抜ける。
+          // 段の上に立っている間は段を描かない（視点が段の中に埋まるので）。床と、頭の上の口だけ
+          if (onStairs) put(floors, 'floors', x, 0, y, bright);
+          else for (let i = 0; i < STEPS; i++) {
+            const top = STEP_RISE * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
+            put(meshes.steps, 'steps', x + 0.5, top / 2, z1 + 0.5 / STEPS, bright, 0, 1, top, 1 / STEPS, true);
+          }
+          for (const [px, pz, sx, sz] of [[x + 0.5, y + 0.02, 1, 0.04], [x + 0.5, y + 0.98, 1, 0.04], [x + 0.02, y + 0.5, 0.04, 1], [x + 0.98, y + 0.5, 0.04, 1]])
+            put(meshes.pits, 'pits', px, 1.6, pz, 1, 0, sx, 1.2, sz, true);   // 天井の上の縦穴（明るく）
+          stairCells.push([y, x, bright]);
+          continue;
+        }
         for (let i = 0; i < STEPS; i++) {
           const top = -STEP_DROP * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
           put(meshes.steps, 'steps', x + 0.5, (top - 1.2) / 2, z1 + 0.5 / STEPS, bright, 0, 1, top + 1.2, 1 / STEPS, true);
@@ -323,7 +346,7 @@ function build(grid) {
       }
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       if (trapCells.has(y * W + x) && c !== '^') put(meshes[corr ? 'hintC' : 'hintF'], corr ? 'hintC' : 'hintF', x, 0.004, y, bright);
-      put(ceils, 'ceils', x, 1, y, bright);
+      if (!(c === '%' && upStairs)) put(ceils, 'ceils', x, 1, y, bright);   // 上り階段の上は天井に口が開いている
       if (TERRAIN.has(c) || c === '@') continue;
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
       if (c === '%') continue;
@@ -384,8 +407,18 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
       line(ax, TOP, az, bx, TOP, bz, b);                                 // 横木の下の角
     }
   }
+  // 上り階段: 天井の口の縁と、段の角（踏み面の先と、蹴込みの下）
+  if (upStairs) for (const [y, x, b] of stairCells) {
+    line(x, 0.996, y, x + 1, 0.996, y, b); line(x, 0.996, y + 1, x + 1, 0.996, y + 1, b);
+    line(x, 0.996, y, x, 0.996, y + 1, b); line(x + 1, 0.996, y, x + 1, 0.996, y + 1, b);
+    for (let i = 0; i < STEPS; i++) {
+      const z0 = y + 1 - i / STEPS;
+      line(x, STEP_RISE * (i + 1), z0, x + 1, STEP_RISE * (i + 1), z0, b);   // この段の踏み面の先
+      line(x, STEP_RISE * i, z0, x + 1, STEP_RISE * i, z0, b);               // 蹴込みの下
+    }
+  }
   // 下り階段: 穴の縁と、段の角（踏み面の先と、蹴込みの下）
-  for (const [y, x, b] of stairCells) {
+  if (!upStairs) for (const [y, x, b] of stairCells) {
     line(x, 0.004, y, x + 1, 0.004, y, b); line(x, 0.004, y + 1, x + 1, 0.004, y + 1, b);
     line(x, 0.004, y, x, 0.004, y + 1, b); line(x + 1, 0.004, y, x + 1, 0.004, y + 1, b);
     for (let i = 0; i < STEPS; i++) {
@@ -1038,7 +1071,10 @@ function drawTerm() {
       ch = near ? ',' : kind === 10 ? '.' : '#'; v = lit * (kind === 10 ? tune.floorV : tune.passV);
     }
     else if (kind === 6) { ch = tbuf[i + 2] < 64 ? '=' : '|'; }   // 扉の木（縦の面は縦板の |、横木の下面などは =）
-    else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
+    else if (kind === 8) {   // 階段の段（踏み面 = 、蹴込み #）。上り階段は蹴込みと横を暗くして、踏み面の = を目立たせる
+      const flat = tbuf[i + 2] < 64;
+      ch = flat ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1) * (upStairs && !flat ? 0.45 : 1);
+    }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
     else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
@@ -1198,7 +1234,12 @@ export function effect(d) {
       }
     }
   } else if (d.type === 'descend') {
-    trans.how = d.how === 'fall' ? 'fall' : 'stairs'; trans.t0 = performance.now();
+    trans.how = d.how in DESCEND_MS ? d.how : 'stairs'; trans.t0 = performance.now();
+    trans.col = BRIGHT_TRANS.has(trans.how) ? '#fff' : '#000';
+  } else if (d.type === 'amulet') {
+    upStairs = !!d.has;
+    if (lastGrid) { build(lastGrid); draw(); }
+    return;
   } else if (d.type === 'mapped') {   // 魔法の地図: 分かっている所を全部、地図に載せる
     if (lastGrid) for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) if (cellAt(lastGrid, y, x)[0] !== ' ') seen.add(y * W + x);
     saveSeen();
@@ -1385,7 +1426,7 @@ function drawFx(now) {
     fxctx.shadowBlur = 0;
   }
   const dark = transDark(now);   // 階段・落とし穴の暗転
-  if (dark > 0) { fxctx.globalAlpha = dark; fxctx.fillStyle = '#000'; fxctx.fillRect(0, 0, fxcv.width, fxcv.height); }
+  if (dark > 0) { fxctx.globalAlpha = dark; fxctx.fillStyle = trans.col; fxctx.fillRect(0, 0, fxcv.width, fxcv.height); }
   fxctx.globalAlpha = 1;
 }
 

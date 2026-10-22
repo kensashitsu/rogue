@@ -382,6 +382,9 @@ class Game:
                 if mons3d != getattr(self, '_mons_sent', None):
                     self._mons_sent = mons3d
                     ui.effect('mons', mons=mons3d)
+                if self.player.has_amulet != getattr(self, '_amulet_sent', False):   # 3D 版: アミュレットを持つと階段が上り階段に見える
+                    self._amulet_sent = self.player.has_amulet
+                    ui.effect('amulet', has=self.player.has_amulet)
                 import items as _items
                 if _items.map_reveals != getattr(self, '_maps_sent', 0):   # 魔法の地図: 3D 版の地図にも階全体を載せる
                     self._maps_sent = _items.map_reveals
@@ -1257,6 +1260,7 @@ class Game:
             return False
         if self.floor <= 1:
             if self.player.has_amulet:
+                ui.effect_wait('descend', 1300, how='win')   # 3D 版: 段を上って地上の光の中へ
                 self._handle_win(ui)
                 return True
             ui.add_message(
@@ -1266,6 +1270,7 @@ class Game:
         if not self.player.has_amulet:
             ui.add_message(tr("You can't go up — you haven't found the Amulet of Yendor!"))
             return False
+        ui.effect_wait('descend', 900, how='up')   # 3D 版: 視点が段を上っていく
         self.floor -= 1
         self._load_floor()
         ui.add_message(tr('You ascend to floor {floor}.', floor=self.floor))
