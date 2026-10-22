@@ -40,7 +40,7 @@ from items import (
 from combat import player_attacks_monster, calc_exp, roll_damage
 from i18n import tr, load_lang
 from constants import (
-    CH_FLOOR, CH_TRAP,
+    CH_FLOOR, CH_TRAP, F_SECRETDOOR,
     CH_POTION, CH_SCROLL, CH_WEAPON, CH_ARMOR,
     CH_RING, CH_STICK, CH_FOOD, CH_GOLD, CH_AMULET,
     CH_STAIRS,
@@ -366,6 +366,11 @@ class Game:
                 if self._is_loaded:
                     ui.add_message(tr('Welcome back!  (Floor {floor})', floor=self.floor))
                     self._is_loaded = False
+                # 3D 版へ、この階の隠し扉の場所を知らせる（近くで見ると壁が少し違って見える。意図的な改変）
+                if getattr(self, '_secrets_sent', None) is not self.dungeon:
+                    self._secrets_sent = self.dungeon
+                    ui.effect('secrets', cells=[[y, x] for y, row in enumerate(self.dungeon.map)
+                                                for x, t in enumerate(row) if t.flags & F_SECRETDOOR])
 
                 # 行動不能チェック
                 if not self.player.status.is_mobile:

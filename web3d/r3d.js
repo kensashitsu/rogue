@@ -30,6 +30,10 @@ let stairsColor = '#6cc6d6';   // 階段の色（2D の画面の % の色に合�
 const STEPS = 4, STEP_DROP = 0.22;   // 下り階段の段の数と、1 段で下がる高さ
 const DIM_AHEAD = 0.16;   // まだ分からない 1 マス先を描く暗さ（覚えている所は 0.38、見えている所は 1）
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
+// 隠し扉の場所（ゲームが階ごとに知らせる）。近くで見ると、その壁の点描にかすかなひび（,）が混じる。
+// 原作では見つけるまで見分けがつかない。ユーザーの指定による意図的な改変（2026-10-22）
+let secretCells = new Set();
+const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見える
 let edgeSegs = [], edgeBright = [];   // 壁の輪郭の線分（x, y, z の組を 2 つずつ）と、その明るさ
 const glyphGroup = new THREE.Group();   // モンスター・アイテムの位置（描くのは drawTerm。札そのものは見せない）
 const dummy = new THREE.Object3D();
@@ -63,10 +67,10 @@ export function init(canvas) {
   meshes = {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
     floors: instanced(plane), dirts: instanced(plane), doors: instanced(box),   // doors: 戸口の枠と開いた扉の板
-    ceils: instanced(ceil), traps: instanced(plane),
+    ceils: instanced(ceil), traps: instanced(plane), secrets: instanced(box),   // secrets: 隠し扉の壁
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
   };
-  const kinds = { hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1 };
+  const kinds = { secrets: 2, hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1 };
   for (const [name, mesh] of Object.entries(meshes)) mesh.material = kindMat(kinds[name]);
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils } = meshes);
   scene.add(glyphGroup);
@@ -172,6 +176,7 @@ function build(grid) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
+      if ((c === '-' || c === '|') && secretCells.has(y * W + x)) { put(meshes.secrets, 'secrets', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === ' ') {
@@ -916,7 +921,9 @@ function drawTerm() {
     let ch = null, v = lit;
     if (ln) {
       ch = ln.ch; v = Math.min(1, ln.v * 1.2 + 0.12);
-    } else if (kind === 1) {
+    } else if (kind === 2 && tbuf[i + 3] / 255 * 16 < SECRET_NEAR) {
+      ch = (x * 7 + y * 3) % 4 === 0 ? ',' : tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
+    } else if (kind === 1 || kind === 2) {
       ch = tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
     } else if (kind === 3) {
       ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
@@ -1074,6 +1081,10 @@ export function effect(d) {
         fx.debris.push({ y: d.y, x: d.x, t0: now, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
       }
     }
+  } else if (d.type === 'secrets') {
+    secretCells = new Set(d.cells.map(([y, x]) => y * W + x));
+    if (lastGrid) { build(lastGrid); draw(); }
+    return;
   } else if (d.type === 'hurt') {
     hurt(d.y == null ? null : [d.y, d.x]);
   }
