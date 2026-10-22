@@ -443,7 +443,7 @@ function drawLines(C, R, depthOf) {
 }
 
 // ---------------------------------------------------------------------------
-// モンスターの形（ASCII の見た目で近くにいるとき）。X の升をモンスター自身の字で、e の升を目として描く。
+// モンスターの形（ASCII の見た目で近くにいるとき）。X の升をモンスター自身の字で、e の升を目として描く。. の升は黒く塗るだけ（後ろを透かさない隙間）。
 // 1 升は縦が横の 2 倍なので、横に長めに作ると釣り合う。遠くて 1 升が小さくなりすぎるときは 1 文字で出す
 // ---------------------------------------------------------------------------
 const ART = {
@@ -747,12 +747,14 @@ const ART = {
     'XXXXXX',
     ' XXXX ',
   ],
-  '?': [   // 巻物: 巻いた紙
-    'XXXXXXXX',
-    'X XXXX X',
-    ' XXXXXX ',
-    ' XXXXXX ',
-    'XXXXXXXX',
+  '?': [   // 巻物: 広げた紙と、上下に突き出た左右の軸。紙の . は文字の行の隙間（黒く塗る）
+    'XX          XX',
+    'XXXXXXXXXXXXXX',
+    'XX.X.XXX.X..XX',
+    'XX.XX.X.XXX.XX',
+    'XX.X.XX.XX..XX',
+    'XXXXXXXXXXXXXX',
+    'XX          XX',
   ],
   ')': [   // 武器: 床に置いた剣
     '       XX',
@@ -837,6 +839,7 @@ function drawArt(o, u) {
     if (m === ' ') continue;
     const x = x0 + c * w, y = y0 + r * h;
     tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h);   // 後ろの壁の字を消す
+    if (m === '.') continue;
     tctx.fillStyle = m === 'e' ? '#ffe08a' : (u.col || '#c8ccd1');
     tctx.fillText(m === 'e' ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
@@ -856,7 +859,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
     const r0 = Math.floor(r * rows / tr), r1 = Math.max(r0 + 1, Math.floor((r + 1) * rows / tr));
     const c0 = Math.floor(c * cols / tc), c1 = Math.max(c0 + 1, Math.floor((c + 1) * cols / tc));
     let n = 0, eye = false;
-    for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ') n++; if (m === 'e') eye = true; }
+    for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ' && m !== '.') n++; if (m === 'e') eye = true; }
     if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
     tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch);
@@ -1295,3 +1298,4 @@ function drawCompass() {
   cctx.globalAlpha = 1;
   cctx.fillStyle = '#f0c652'; cctx.fillRect(w / 2 - 0.5, 0, 1, 3);   // 真ん中の印
 }
+
