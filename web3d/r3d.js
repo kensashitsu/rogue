@@ -91,7 +91,8 @@ const asciiTex = {
   floor: glyphTile('.', 1, 1, '#b4bac0', 7),
   passage: glyphTile('#', 1, 1, '#a0a6ad', 96),
   door: glyphTile('+', 1, 1, '#e0c080', 96),
-  rock: glyphTile('.', 4, 4, '#3a3f46', 3),      // 通路の両脇: ごく薄い点の面（原作の地図では空白の所なので目立たせない）
+  rock: glyphTile('.', 4, 4, '#3a3f46', 3),
+  step: glyphTile('=', 2, 2, '#9fd8e0', 44),   // 下り階段の段      // 通路の両脇: ごく薄い点の面（原作の地図では空白の所なので目立たせない）
   ceil: glyphTile('.', 1, 1, '#6a7078', 6),      // 天井: 床の点を薄くしたもの
 };
 
@@ -101,9 +102,11 @@ const asciiTex = {
 let renderer, scene, camera, torch, ambient, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
 let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
-let meshes = {}, themes = {}, edges, tcv, tctx;
+let meshes = {}, themes = {}, edges, tcv, tctx, stepsMat;
 // 床に描く字: 階段（%）と罠（^）。立てた札ではなく床の模様にする。色は 2D の画面の色に合わせて材質の色で付ける
-const DECALS = { '%': { mesh: 'stairs', kind: 8, color: '#f0c652' }, '^': { mesh: 'traps', kind: 9, color: '#d58cf0' } };
+const DECALS = { '^': { mesh: 'traps', kind: 9, color: '#d58cf0' } };
+let stairsColor = '#6cc6d6';   // 階段の色（2D の画面の % の色に合わせる）
+const STEPS = 4, STEP_DROP = 0.22;   // 下り階段の段の数と、1 段で下がる高さ
 function decalTex(ch) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
@@ -154,7 +157,8 @@ export function init(canvas) {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
     floors: instanced(plane), dirts: instanced(plane), doors: instanced(plane),
     ceils: instanced(ceil), lintels: instanced(new THREE.BoxGeometry(1, 0.22, 1)),
-    stairs: instanced(plane), traps: instanced(plane),   // 床に描く字（床から少し浮かせて重ねる）
+    traps: instanced(plane),   // 床に描く字（床から少し浮かせて重ねる）
+    steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
   };
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels } = meshes);
   // 見た目ごとの材質（null は描かない）
@@ -162,25 +166,28 @@ export function init(canvas) {
   const stone = lam({ map: stoneTex }), stoneFloor = lam({ map: floorTex });
   for (const [ch, d] of Object.entries(DECALS))
     d.mat = new THREE.MeshBasicMaterial({ map: decalTex(ch), transparent: true, depthWrite: false, color: d.color });
-  const decals = { stairs: DECALS['%'].mat, traps: DECALS['^'].mat };
+  const decals = { traps: DECALS['^'].mat };
+  stepsMat = new THREE.MeshLambertMaterial({ map: stoneTex, color: '#9fd8e0' });
   themes = {
     stone: {
       bg: '#050607', fog: [1.5, 11], light: true,
       mat: { hwalls: stone, vwalls: stone, rocks: lam({ map: rockTex }), floors: stoneFloor, dirts: lam({ map: dirtTex }),
-        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals },
+        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals,
+        steps: stepsMat, pits: stone },
     },
     // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
     ascii: {
       bg: '#000000', fog: [2, 13], light: false,
       mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: basic(asciiTex.rock), floors: basic(asciiTex.floor),
-        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null, ...decals },
+        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null, ...decals,
+        steps: basic(asciiTex.step), pits: basic(asciiTex.rock) },
       edges: true,
     },
     // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
     term: {
       bg: '#000000', fog: [2, 13], light: false, term: true,
       mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
-        doors: kindMat(6), ceils: kindMat(7), lintels: null, stairs: kindMat(8), traps: kindMat(9) },
+        doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1) },
     },
   };
   // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
@@ -283,7 +290,9 @@ export function update(grid, pos) {
   const sig = grid.slice(MAP_TOP, MAP_BOT + 1).map(r => r.map(c => c ? c[0] + (c[1] & 512 ? '_' : '') : '').join('')).join('\n');
   const moved = !player || !pos || player[0] !== pos[0] || player[1] !== pos[1];
   if (pos) player = pos;
+  const lvBefore = rockLevel;
   const learned = learnRock(grid, pos);
+  findReveals(grid, lvBefore === rockLevel);
   lastGrid = grid;
   watchHp(grid);
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
@@ -314,14 +323,16 @@ function build(grid) {
   const ch = (y, x) => cellAt(grid, y, x)[0];
   const walk = c => !TERRAIN.has(c) || c === '.' || c === '#' || c === '+';
   const counts = Object.fromEntries(Object.keys(meshes).map(k => [k, 0]));
-  const put = (mesh, name, x, y, z, bright, yaw = 0) => {
-    dummy.position.set(x + 0.5, y, z + 0.5); dummy.rotation.set(0, yaw, 0); dummy.updateMatrix();
+  const put = (mesh, name, x, y, z, bright, yaw = 0, sx = 1, sy = 1, sz = 1, at = false) => {
+    dummy.position.set(at ? x : x + 0.5, y, at ? z : z + 0.5); dummy.rotation.set(0, yaw, 0);
+    dummy.scale.set(sx, sy, sz); dummy.updateMatrix();
     const i = counts[name]++;
     mesh.setMatrixAt(i, dummy.matrix);
     mesh.setColorAt(i, color.setScalar(bright));
   };
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
+  const stairCells = [];
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
@@ -343,14 +354,26 @@ function build(grid) {
         const ns = [ch(y - 1, x), ch(y + 1, x), ch(y, x - 1), ch(y, x + 1)];
         corr = ns.includes('#') && !ns.includes('.');
       }
-      if (c === '+') put(doors, 'doors', x, 0, y, bright);
+      if (c === '%') {
+        // 下り階段: 床の代わりに穴。北（奥）へ向かって段が下りていく
+        const st = (s & 15) ? PALETTE[(s & 15) - 1] : stairsColor;
+        if (st !== stairsColor) { stairsColor = st; stepsMat.color.set(st); }
+        for (let i = 0; i < STEPS; i++) {
+          const top = -STEP_DROP * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
+          put(meshes.steps, 'steps', x + 0.5, (top - 1.2) / 2, z1 + 0.5 / STEPS, bright, 0, 1, top + 1.2, 1 / STEPS, true);
+        }
+        for (const [px, pz, sx, sz] of [[x + 0.5, y + 0.02, 1, 0.04], [x + 0.5, y + 0.98, 1, 0.04], [x + 0.02, y + 0.5, 0.04, 1], [x + 0.98, y + 0.5, 0.04, 1]])
+          put(meshes.pits, 'pits', px, -0.6, pz, bright * 0.8, 0, sx, 1.2, sz, true);
+        stairCells.push([y, x, bright]);
+      } else if (c === '+') put(doors, 'doors', x, 0, y, bright);
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
       if (c === '+') put(lintels, 'lintels', x, 0.89, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
+      if (c === '%') continue;
       const dc = DECALS[c];
-      if (dc) {   // 階段・罠は床に描く
+      if (dc) {   // 罠は床に描く
         put(meshes[dc.mesh], dc.mesh, x, 0.006, y, bright, yawOf(facing));   // 字の上を向いている方へ
         if (fg !== dc.color) { dc.color = fg; dc.mat.color.set(fg); }
         continue;
@@ -366,7 +389,7 @@ function build(grid) {
       glyphGroup.add(sp);
     }
   }
-  buildEdges(solid);
+  buildEdges(solid, stairCells);
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
@@ -376,7 +399,7 @@ function build(grid) {
 
 // 壁・岩の面のうち、開いた側を向いた面の輪郭を線にする。床と天井との境目は面ごとに、
 // 縦の線は面が途切れる所（部屋の角・通路の曲がり角）にだけ引く（マスごとに引くと格子になってうるさい）
-function buildEdges(solid) {
+function buildEdges(solid, stairCells = []) {
   const pos = [], col = [];
   const isSolid = (y, x) => y >= MAP_TOP && y <= MAP_BOT && x >= 0 && x < W && solid[y * W + x] > 0;
   const line = (ax, ay, az, bx, by, bz, b) => {
@@ -398,6 +421,16 @@ function buildEdges(solid) {
         const vx = sgn < 0 ? ax : bx, vz = sgn < 0 ? az : bz;
         line(vx, 0, vz, vx, 1, vz, b);
       }
+    }
+  }
+  // 下り階段: 穴の縁と、段の角（踏み面の先と、蹴込みの下）
+  for (const [y, x, b] of stairCells) {
+    line(x, 0.004, y, x + 1, 0.004, y, b); line(x, 0.004, y + 1, x + 1, 0.004, y + 1, b);
+    line(x, 0.004, y, x, 0.004, y + 1, b); line(x + 1, 0.004, y, x + 1, 0.004, y + 1, b);
+    for (let i = 0; i < STEPS; i++) {
+      const z0 = y + 1 - i / STEPS, upper = -STEP_DROP * i, top = -STEP_DROP * (i + 1);
+      line(x, upper, z0, x + 1, upper, z0, b);   // 一段上の踏み面の先
+      line(x, top, z0, x + 1, top, z0, b);       // この段の蹴込みの下
     }
   }
   edgeSegs = pos;
@@ -945,13 +978,14 @@ function drawTerm() {
     } else if (kind === 4) { ch = '.'; v = lit * 0.85; }
     else if (kind === 5) { ch = '#'; v = lit * 0.7; }
     else if (kind === 6) { ch = '+'; }
-    else if (kind === 8 || kind === 9) { ch = kind === 8 ? '%' : '^'; v = Math.min(1, lit * 1.1 + 0.1); }
+    else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
+    else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
     else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
       : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})`
-      : kind === 8 ? tint(DECALS['%'].color, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+      : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
     tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
   }
 
@@ -1050,9 +1084,9 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], shakeT0: -1e9, lastHp: null };
+const fx = { hits: [], nums: [], debris: [], pops: [], shakeT0: -1e9, lastHp: null };
 let fxcv, fxctx, hurtEl, fxRunning = false;
-const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320;
+const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900;
 
 function initFx(canvas) {
   fxcv = document.createElement('canvas');
@@ -1111,6 +1145,34 @@ function hurt(from) {
   hurtEl.style.transition = 'opacity .7s ease-out'; hurtEl.style.opacity = '0';
 }
 
+// 壁（- |）だった所が扉（+）に、岩だと思っていた所が通路（#）に変わったら、隠し扉・隠し通路を見つけた演出。
+// 階が変わったときは比べない
+let prevRows = null;
+function findReveals(grid, sameLevel) {
+  const rows = [];
+  for (let y = MAP_TOP; y <= MAP_BOT; y++) rows.push((grid[y] || []).map(c => c ? c[0] : ' ').join(''));
+  if (prevRows && sameLevel) {
+    for (let y = MAP_TOP; y <= MAP_BOT; y++) {
+      const a = prevRows[y - MAP_TOP], b = rows[y - MAP_TOP];
+      if (a === b) continue;
+      for (let x = 0; x < Math.min(a.length, b.length); x++) {
+        if ((a[x] === '-' || a[x] === '|') && b[x] === '+') reveal(y, x, a[x]);
+        else if (a[x] === ' ' && b[x] === '#' && rock.has(y * W + x)) { rock.delete(y * W + x); reveal(y, x, ':'); }
+      }
+    }
+  }
+  prevRows = rows;
+}
+function reveal(y, x, ch) {
+  const now = performance.now();
+  for (let i = 0; i < 26; i++) {
+    const a = Math.random() * Math.PI * 2, sp = 0.4 + Math.random() * 1.1;
+    fx.debris.push({ y, x, t0: now, ch, col: '#c8ccd1', vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.3 + Math.random() * 1.2, h: Math.random() * 0.95 });
+  }
+  fx.pops.push({ y, x, t0: now, ch: ch === ':' ? '#' : '+' });
+  startFx();
+}
+
 // 状態行の HP が減ったのに知らせがなかったとき（罠・毒・空腹など）も揺らす
 function watchHp(grid) {
   const status = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
@@ -1121,7 +1183,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length;
+const fxActive = now => now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length;
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -1129,6 +1191,7 @@ function startFx() {
     fx.hits = fx.hits.filter(h => now - h.t0 < HIT_MS);
     fx.nums = fx.nums.filter(n => now - n.t0 < NUM_MS);
     fx.debris = fx.debris.filter(p => now - p.t0 < DEBRIS_MS);
+    fx.pops = fx.pops.filter(p => now - p.t0 < POP_MS);
     draw();
     if (fxActive(now)) requestAnimationFrame(tick);
     else { fxRunning = false; draw(); }
@@ -1186,6 +1249,17 @@ function drawFx(now) {
     fxctx.globalAlpha = 1 - k;
     fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
     fxctx.fillStyle = d.col; fxctx.fillText(d.ch, p.px, p.py);
+  }
+  // 見つけた扉: + が光りながら大きくなって消える
+  for (const o of fx.pops) {
+    const k = (now - o.t0) / POP_MS;
+    const p = project(o.x + 0.5, 0.5, o.y + 0.5); if (!p) continue;
+    const size = Math.max(16, Math.min(160, p.unit * (0.5 + k * 0.6)));
+    fxctx.globalAlpha = 1 - k;
+    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.shadowColor = '#f0c652'; fxctx.shadowBlur = 24;
+    fxctx.fillStyle = '#ffe08a'; fxctx.fillText(o.ch, p.px, p.py);
+    fxctx.shadowBlur = 0;
   }
   fxctx.globalAlpha = 1;
 }
