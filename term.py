@@ -162,6 +162,13 @@ def flash() -> None:
     _out.flush()
 
 
+def variant() -> str:
+    """どの画面で遊んでいるか（ブラウザの 3D 版なら '3d'。それ以外は ''）。タイトルの描き分けに使う。"""
+    if _WEB:
+        return str(getattr(js, 'rogue_variant', '') or '')
+    return ''
+
+
 def napms(ms: int) -> None:
     """ms ミリ秒待つ（投げた物が飛ぶ様子を見せる間など）。"""
     if _WEB:

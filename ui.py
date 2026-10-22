@@ -230,6 +230,17 @@ _TITLE_BANNER = [
 ]
 
 
+# 3D 版のタイトルでロゴの右に添える「3D」（ロゴと同じ書体）
+_TITLE_3D = [
+    "██████╗ ██████╗ ",
+    "╚════██╗██╔══██╗",
+    " █████╔╝██║  ██║",
+    " ╚═══██╗██║  ██║",
+    "██████╔╝██████╔╝",
+    "╚═════╝ ╚═════╝ ",
+]
+
+
 def _fit(s: str, width: int = 79) -> str:
     """見た目の幅（全角 = 2）で width に切り詰め、足りなければ空白で埋める。"""
     out, w = [], 0
@@ -1104,22 +1115,27 @@ class UI:
 
         while True:
             self.stdscr.clear()
+            # 3D 版はロゴの下に水色の「3D」を添え、ロゴを上に、入力欄を下に寄せる（右に並べるとスマホの幅に収まらない）
+            is3d = curses.variant() == '3d'
+            top, row = (1, 14) if is3d else (3, 12)
             for i, line in enumerate(_TITLE_BANNER):
                 try:
-                    self.stdscr.addstr(i + 3, 0, line, self._cp(_CP_PLAYER) | curses.A_BOLD)
+                    self.stdscr.addstr(i + top, 0, line, self._cp(_CP_PLAYER) | curses.A_BOLD)
+                    if is3d:
+                        self.stdscr.addstr(i + top + 6, 30, _TITLE_3D[i], self._cp(_CP_STAIRS) | curses.A_BOLD)
                 except curses.error:
                     pass
 
             prompt   = tr("  Enter your name: ")
             name_str = ''.join(buf)
             try:
-                self.stdscr.addstr(12, 0, prompt, curses.A_BOLD)
-                self.stdscr.addstr(12, text_width(prompt), name_str)
+                self.stdscr.addstr(row, 0, prompt, curses.A_BOLD)
+                self.stdscr.addstr(row, text_width(prompt), name_str)
                 self.stdscr.addstr(
-                    14, 0,
+                    row + 2, 0,
                     tr("  (Up to {n} characters  |  Enter to confirm)", n=_MAX_NAME),
                 )
-                self.stdscr.addstr(16, 0, tr("  Tab: 日本語で遊ぶ"))
+                self.stdscr.addstr(row + 4, 0, tr("  Tab: 日本語で遊ぶ"))
             except curses.error:
                 pass
             try:   # 原作の著作権表示（ライセンスの条件。全文は LICENSE.txt と説明書）
@@ -1129,7 +1145,7 @@ class UI:
                 pass
 
             try:
-                self.stdscr.move(12, text_width(prompt) + text_width(name_str))
+                self.stdscr.move(row, text_width(prompt) + text_width(name_str))
             except curses.error:
                 pass
 
