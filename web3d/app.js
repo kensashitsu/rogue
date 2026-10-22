@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.39';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.40';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -211,6 +211,8 @@ function render() {
 }
 
 const MINI_COLS = 23, MINI_ROWS = 11;
+// 小さな地図に出さない字: モンスター（大文字）とアイテム。3D の画面で前を見ないと分からない（全体の地図には出す）
+const HIDE_ON_MINI = /^[A-Z!?)\]=\/:*,]$/;
 let fullMap = false;   // 地図をタップすると、階全体の地図と小さな地図を切り替える
 // 小さな地図の @ に、向いている方向の印を付ける
 function drawFacing() {
@@ -256,7 +258,11 @@ function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
     const row = grid[lines[r]]; if (!row) continue;
     for (let c = 0; c < cols; c++) {
       const cell = row[ox + c]; if (!cell) continue;
-      const [g, s] = cell; const w = s & 4096 ? 2 : 1;
+      let [g, s] = cell; const w = s & 4096 ? 2 : 1;
+      if (mode === 'map' && !fullMap && HIDE_ON_MINI.test(g)) {   // 小さな地図には地形だけ。物の下は周りから床か通路かを決める
+        const ns = [lines[r] - 1, lines[r] + 1].map(y => (grid[y] && grid[y][ox + c] || [' '])[0]).concat([row[ox + c - 1], row[ox + c + 1]].map(n => (n || [' '])[0]));
+        g = ns.includes('#') && !ns.includes('.') ? '#' : '.'; s = 0;
+      }
       let fg = (s & 15) ? PALETTE[(s & 15) - 1] : null, bg = ((s >> 4) & 15) ? PALETTE[((s >> 4) & 15) - 1] : null;
       if (s & 2048) [fg, bg] = [bg || DEFAULT_BG, fg || DEFAULT_FG];
       if (bg) { ctx.fillStyle = bg; ctx.fillRect(c * cw, r * ch, cw * w + 0.5, ch + 0.5); }
