@@ -101,7 +101,7 @@ canvas { display: block; flex: none; }
 #v3 { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border-radius: 6px; }
 #app:not(.text) #cv { position: absolute; top: 6px; right: 6px; background: rgba(11, 13, 15, .82); border: 1px solid var(--line); border-radius: 4px; }
 #app.text #v3 { display: none; }
-.bar .seg { display: none; }
+.bar .seg:not(#themeSeg) { display: none; }
 .dpad .key.turn { font-size: 24px; color: var(--accent); }
 #status {
   /* 高さは字の大きさによらず固定（長い状態行で字を詰めても地図の欄が動かないように） */
@@ -204,6 +204,10 @@ canvas { display: block; flex: none; }
       <button type="button" data-cols="48" aria-pressed="false">小</button>
       <button type="button" data-cols="40" aria-pressed="true">中</button>
       <button type="button" data-cols="32" aria-pressed="false">大</button>
+    </span>
+    <span class="seg" id="themeSeg">
+      <button type="button" data-theme="ascii" aria-pressed="false">文字</button>
+      <button type="button" data-theme="stone" aria-pressed="false">石</button>
     </span>
     <span id="ver"></span>
   </div>
