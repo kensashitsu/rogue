@@ -101,8 +101,9 @@ const asciiTex = {
 let renderer, scene, camera, torch, ambient, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
 let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
-let meshes = {}, themes = {}, edges;
-let theme = 'ascii';
+let meshes = {}, themes = {}, edges, tcv, tctx;
+const flying = new Set();   // 飛んでいる最中の物（投げた物）
+let theme = 'term';
 try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
 export const getTheme = () => theme;
 const glyphGroup = new THREE.Group();
@@ -118,6 +119,11 @@ function instanced(geo) {
 
 export function init(canvas) {
   cv = canvas;
+  // ASCII の見た目を描く 2D の画面（3D の画面に重ねる）
+  tcv = document.createElement('canvas');
+  tcv.id = 'v3t'; tcv.setAttribute('aria-hidden', 'true');
+  canvas.after(tcv);
+  tctx = tcv.getContext('2d');
   renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   scene = new THREE.Scene();
@@ -154,6 +160,12 @@ export function init(canvas) {
         dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null },
       edges: true,
     },
+    // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
+    term: {
+      bg: '#000000', fog: [2, 13], light: false, term: true,
+      mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
+        doors: kindMat(6), ceils: kindMat(7), lintels: null },
+    },
   };
   // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
   edges = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
@@ -165,7 +177,8 @@ export function init(canvas) {
 }
 
 function applyTheme() {
-  const th = themes[theme] || themes.ascii;
+  if (!themes[theme]) theme = 'term';
+  const th = themes[theme];
   for (const [name, mesh] of Object.entries(meshes)) {
     const m = th.mat[name];
     mesh.visible = !!m;
@@ -175,6 +188,8 @@ function applyTheme() {
   scene.fog.color.set(th.bg); [scene.fog.near, scene.fog.far] = th.fog;
   ambient.visible = torch.visible = th.light;
   edges.visible = !!th.edges;
+  cv.style.visibility = th.term ? 'hidden' : '';
+  tcv.style.display = th.term ? '' : 'none';
 }
 
 export function setTheme(name) {
@@ -189,6 +204,7 @@ export function resize() {
   if (!w || !h) return;
   renderer.setSize(w, h, true);
   camera.aspect = w / h; camera.updateProjectionMatrix();
+  sizeTerm(w, h);
   draw();
 }
 
@@ -315,6 +331,7 @@ function build(grid) {
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
       const sp = new THREE.Sprite(glyphMat(c, fg));
       const mon = c >= 'A' && c <= 'Z';
+      sp.userData = { ch: c, col: fg, dim: !!(s & 512) };
       const size = mon ? 0.78 : 0.42;
       sp.scale.set(size, size, 1);
       sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
@@ -364,6 +381,142 @@ function buildEdges(solid) {
 }
 
 // ---------------------------------------------------------------------------
+// ASCII の見た目: 場面を升目と同じ粗さ（1 升 = 1 画素）で描き、読み出した値から文字を選ぶ。
+// 面の材質は 赤 = 明るさ（覚えているだけの所は暗く、遠いほど暗く）、緑 = 何の面か、青 = 面の向き、
+// 不透明度 = 距離 を書き出す。モンスターなどの字は、位置を升目に写して上から描く
+// ---------------------------------------------------------------------------
+function kindMat(kind) {
+  return new THREE.ShaderMaterial({
+    uniforms: { kind: { value: kind } },
+    vertexShader: `
+      varying vec3 vN; varying float vB; varying float vD;
+      void main() {
+        mat4 m = modelMatrix;
+        #ifdef USE_INSTANCING
+          m = m * instanceMatrix;
+        #endif
+        vN = normalize(mat3(m) * normal);
+        vB = 1.0;
+        #ifdef USE_INSTANCING_COLOR
+          vB = instanceColor.r;
+        #endif
+        vec4 mv = viewMatrix * m * vec4(position, 1.0);
+        vD = -mv.z;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float kind; varying vec3 vN; varying float vB; varying float vD;
+      void main() {
+        float side = abs(vN.y) > 0.5 ? 0.0 : (abs(vN.x) > 0.5 ? 1.0 : 2.0);
+        float face = side == 2.0 ? 0.78 : 1.0;   // 壁は向きで濃さを変えて角を見せる
+        float lit = vB * face * (1.0 - 0.9 * smoothstep(0.6, 10.0, vD));   // 遠いほど暗く（薄い字に）
+        gl_FragColor = vec4(lit, kind / 8.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
+      }`,
+  });
+}
+
+const CELL_W = 7.5;   // 升目 1 つの横幅（CSS の px）。縦はその 2 倍
+let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null;
+function sizeTerm(w, h) {
+  tcols = Math.max(24, Math.round(w / CELL_W)); tcw = w / tcols;
+  tch = tcw * 2; trows = Math.max(12, Math.floor(h / tch));
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  tcv.width = Math.round(w * dpr); tcv.height = Math.round(h * dpr);
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (rt) rt.dispose();
+  rt = new THREE.WebGLRenderTarget(tcols, trows, { depthBuffer: true });
+  tbuf = new Uint8Array(tcols * trows * 4);
+}
+
+const WALL_RAMP = ' .:-=+*#';    // 壁の濃さ（暗い → 明るい）。@ や % は重すぎるので使わない
+const ROCK_RAMP = ' ..::';
+function drawTerm() {
+  if (!rt) return;
+  // 1. 面の種類・明るさ・距離を升目の粗さで描いて読み出す
+  const bg = scene.background, gv = glyphGroup.visible, ev = edges.visible;
+  scene.background = null; glyphGroup.visible = false; edges.visible = false;
+  for (const sp of flying) sp.visible = false;
+  renderer.setRenderTarget(rt);
+  renderer.setClearColor(0x000000, 0); renderer.clear();
+  renderer.render(scene, camera);
+  renderer.readRenderTargetPixels(rt, 0, 0, tcols, trows, tbuf);
+  renderer.setRenderTarget(null);
+  scene.background = bg; glyphGroup.visible = gv; edges.visible = ev;
+  for (const sp of flying) sp.visible = true;
+
+  const C = tcols, R = trows;
+  const inside = (x, y) => x >= 0 && y >= 0 && x < C && y < R;
+  const at = (x, y) => ((R - 1 - y) * C + x) * 4;   // 読み出しは下の行から
+  const keyOf = (x, y) => { if (!inside(x, y)) return -1; const i = at(x, y); return tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 8) * 3 + Math.round(tbuf[i + 2] / 255 * 2) : -1; };
+  const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
+
+  tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
+  tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+  tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+  for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) {
+    const i = at(x, y);
+    if (!tbuf[i + 3]) continue;
+    const lit = tbuf[i] / 255, kind = Math.round(tbuf[i + 1] / 255 * 8), d = tbuf[i + 3] / 255 * 16;
+    if (lit < 0.03) continue;
+    // 2. 境目（面の種類・向きが変わる所、手前と奥の段差）なら、境目の向きの字（| - / \）
+    const k = keyOf(x, y);
+    const differs = (nx, ny) => {
+      const nk = keyOf(nx, ny), nd = depthOf(nx, ny);
+      if (nk === k && Math.abs(nd - d) < 0.25 + d * 0.12) return false;
+      return d <= nd + 0.05;   // 線は手前側の升だけに引く（二重にならないように）
+    };
+    const L = differs(x - 1, y), Rt = differs(x + 1, y), U = differs(x, y - 1), D = differs(x, y + 1);
+    let ch = null, v = lit;
+    if (kind !== 7 && (L || Rt || U || D)) {
+      if ((U || D) && !(L || Rt)) ch = D ? '_' : '-';
+      else if ((L || Rt) && !(U || D)) ch = '|';
+      else ch = (D && Rt) || (U && L) ? '/' : '\\';
+      v = Math.min(1, lit * 1.25 + 0.1);
+    } else if (kind === 1) {
+      ch = WALL_RAMP[Math.min(WALL_RAMP.length - 1, Math.floor(lit * WALL_RAMP.length))];
+    } else if (kind === 3) {
+      ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
+    } else if (kind === 4) { ch = '.'; v = lit * 0.85; }
+    else if (kind === 5) { ch = '#'; v = lit * 0.7; }
+    else if (kind === 6) { ch = '+'; }
+    else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
+    if (!ch || ch === ' ') continue;
+    const g = Math.round(40 + v * 215);
+    tctx.fillStyle = kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})` : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+    tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
+  }
+
+  // 3. モンスター・アイテム・飛んでいる物: 升目に写して、壁の向こうでなければ描く（近いほど大きく）
+  const list = [];
+  const v3 = new THREE.Vector3();
+  for (const sp of [...glyphGroup.children, ...flying]) {
+    v3.copy(sp.position).applyMatrix4(camera.matrixWorldInverse);
+    const dist = -v3.z;
+    if (dist < 0.15) continue;
+    v3.copy(sp.position).project(camera);
+    if (Math.abs(v3.x) > 1.1 || Math.abs(v3.y) > 1.1) continue;
+    const cx = (v3.x + 1) / 2 * C, cy = (1 - v3.y) / 2 * R;
+    const ix = Math.min(C - 1, Math.max(0, Math.floor(cx))), iy = Math.min(R - 1, Math.max(0, Math.floor(cy)));
+    if (depthOf(ix, iy) < dist - 0.45) continue;   // 壁の向こう
+    const hPx = sp.scale.y / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) * R * tch;
+    list.push({ sp, dist, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(tch * 8, hPx * 1.15)) });
+  }
+  list.sort((a, b) => b.dist - a.dist);   // 遠い物から
+  for (const o of list) {
+    const u = o.sp.userData;
+    const fade = 1 - Math.min(0.75, Math.max(0, (o.dist - 2) / 12));
+    tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade;
+    tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
+    tctx.fillStyle = '#000';
+    const w = tctx.measureText(u.ch).width;
+    tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
+    tctx.fillStyle = u.col || '#c8ccd1';
+    tctx.fillText(u.ch, o.px, o.py + o.size * 0.04);
+  }
+  tctx.globalAlpha = 1;
+}
+
+// ---------------------------------------------------------------------------
 // カメラ（歩く・向きを変えるときは少しだけ滑らかに動かす）
 // ---------------------------------------------------------------------------
 let cam = null, from = null, to = null, t0 = 0, animating = false;
@@ -407,7 +560,8 @@ export function missile(m) {
   const col = (m.style & 15) ? PALETTE[(m.style & 15) - 1] : '#c8ccd1';
   const sp = new THREE.Sprite(glyphMat(m.ch, col));
   sp.scale.set(0.4, 0.4, 1);
-  scene.add(sp);
+  sp.userData = { ch: m.ch, col };
+  scene.add(sp); flying.add(sp);
   const pts = [player, ...m.path], dur = m.step * m.path.length, t0 = performance.now();
   const frame = now => {
     const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
@@ -415,17 +569,17 @@ export function missile(m) {
     const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
     sp.position.set(x + 0.5, 0.42, y + 0.5);
     draw();
-    if (k < pts.length - 1) requestAnimationFrame(frame); else { scene.remove(sp); draw(); }
+    if (k < pts.length - 1) requestAnimationFrame(frame); else { scene.remove(sp); flying.delete(sp); draw(); }
   };
   requestAnimationFrame(frame);
 }
 
 function draw() {
-  if (!renderer || !cam) { renderer && renderer.render(scene, camera); return; }
+  if (!renderer || !cam) return;
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
   camera.position.set(cam.x + Math.sin(cam.yaw) * back, EYE, cam.z + Math.cos(cam.yaw) * back);
   camera.rotation.set(0, cam.yaw, 0, 'YXZ');
   torch.position.set(cam.x, 0.8, cam.z);
-  renderer.render(scene, camera);
+  if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
 }

@@ -100,7 +100,8 @@ canvas { display: block; flex: none; }
 #screenBox { position: relative; }
 #v3 { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border-radius: 6px; }
 #app:not(.text) #cv { position: absolute; top: 6px; right: 6px; background: rgba(11, 13, 15, .82); border: 1px solid var(--line); border-radius: 4px; }
-#app.text #v3 { display: none; }
+#v3t { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6px; pointer-events: none; }
+#app.text #v3, #app.text #v3t { display: none !important; }
 .bar .seg:not(#themeSeg) { display: none; }
 .dpad .key.turn { font-size: 24px; color: var(--accent); }
 #status {
@@ -206,6 +207,7 @@ canvas { display: block; flex: none; }
       <button type="button" data-cols="32" aria-pressed="false">大</button>
     </span>
     <span class="seg" id="themeSeg">
+      <button type="button" data-theme="term" aria-pressed="false">ASCII</button>
       <button type="button" data-theme="ascii" aria-pressed="false">文字</button>
       <button type="button" data-theme="stone" aria-pressed="false">石</button>
     </span>
