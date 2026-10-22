@@ -907,6 +907,8 @@ def use_scroll(
         msgs.append(tr('Your hands begin to glow red.'))
 
     elif which == S_MAP:
+        global map_reveals
+        map_reveals += 1
         _reveal_map(dungeon)
         msgs.append(tr('You feel a sense of presence.'))
 
@@ -1237,6 +1239,7 @@ def _ws_light(dungeon: 'Dungeon', player: 'Player') -> list[str]:
     return [tr('Your wand glows brightly for a moment.')]
 
 
+map_reveals = 0   # 魔法の地図の巻物を読んだ回数（3D 版の地図に、階全体を載せるきっかけ。game が読む）
 last_bolt: Optional[dict] = None   # 直前に放った光線の道筋と当たった所（画面の演出用。game が読む）
 
 

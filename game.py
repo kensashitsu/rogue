@@ -382,6 +382,10 @@ class Game:
                 if mons3d != getattr(self, '_mons_sent', None):
                     self._mons_sent = mons3d
                     ui.effect('mons', mons=mons3d)
+                import items as _items
+                if _items.map_reveals != getattr(self, '_maps_sent', 0):   # 魔法の地図: 3D 版の地図にも階全体を載せる
+                    self._maps_sent = _items.map_reveals
+                    ui.effect('mapped')
 
                 # 行動不能チェック
                 if not self.player.status.is_mobile:
