@@ -1,7 +1,8 @@
 // 3D 表示（試作）: ゲームが送ってくる 80×24 の画面から、プレイヤーが知っている地図を立体にして一人称で描く。
 // ゲームの中身には手を入れない。見えているもの・覚えているものは 2D 版の画面と同じ
-//   - 壁（- |）は石の壁、通路（#）は岩に囲まれた細い道、扉（+）は壁の切れ目
-//   - モンスターは文字のまま立たせ、アイテム・階段・罠も文字を床に浮かべる
+//   - 描き方は ASCII だけ: 場面を升目の粗さで描いて、升目ごとに端末の字へ置き換える（drawTerm）
+//   - 壁（- |）・岩・床・通路（#）・扉（+）・天井・下り階段の段・罠は、面の種類として書き出し、字の濃さで描く
+//   - モンスターとアイテムは、その字で編んだ形（ART）を升目に重ねる
 //   - 向きはこちらで持つ（8 方向）。前へ進むボタンは、向いている方向のキー（h j k l y u b n）に直して送る
 
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -18,139 +19,22 @@ export const getFacing = () => facing;
 export const keyFor = rel => KEYS[(facing + rel + 8) % 8];   // rel: 0 = 前、2 = 右、4 = 後ろ、6 = 左
 
 // ---------------------------------------------------------------------------
-// 手書きの質感（石壁・床）
-// ---------------------------------------------------------------------------
-function texture(draw, size = 128) {
-  const c = document.createElement('canvas'); c.width = c.height = size;
-  draw(c.getContext('2d'), size);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter; t.anisotropy = 4;
-  return t;
-}
-function noise(g, s, n, a) {
-  for (let i = 0; i < n; i++) {
-    const v = Math.random() * 255 | 0;
-    g.fillStyle = `rgba(${v},${v},${v},${a})`;
-    g.fillRect(Math.random() * s | 0, Math.random() * s | 0, 2, 2);
-  }
-}
-const stoneTex = texture((g, s) => {   // 石積み
-  g.fillStyle = '#6b6258'; g.fillRect(0, 0, s, s);
-  const rows = 4, h = s / rows;
-  for (let r = 0; r < rows; r++) {
-    const off = r % 2 ? s / 4 : 0;
-    for (let x = -s / 2; x < s; x += s / 2) {
-      const l = 88 + Math.random() * 30 | 0;
-      g.fillStyle = `rgb(${l + 8},${l},${l - 10})`;
-      g.fillRect(x + off + 2, r * h + 2, s / 2 - 4, h - 4);
-    }
-  }
-  noise(g, s, 900, 0.12);
-});
-const rockTex = texture((g, s) => {    // 通路の岩肌
-  g.fillStyle = '#3e3832'; g.fillRect(0, 0, s, s);
-  for (let i = 0; i < 40; i++) {
-    const l = 50 + Math.random() * 30 | 0;
-    g.fillStyle = `rgb(${l + 6},${l},${l - 6})`;
-    g.beginPath(); g.arc(Math.random() * s, Math.random() * s, 6 + Math.random() * 14, 0, 7); g.fill();
-  }
-  noise(g, s, 900, 0.15);
-});
-const floorTex = texture((g, s) => {   // 部屋の床（敷石）
-  g.fillStyle = '#2a2622'; g.fillRect(0, 0, s, s);
-  const n = 2, q = s / n;
-  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
-    const l = 66 + Math.random() * 18 | 0;
-    g.fillStyle = `rgb(${l},${l - 4},${l - 10})`; g.fillRect(x * q + 2, y * q + 2, q - 4, q - 4);
-  }
-  noise(g, s, 700, 0.1);
-});
-const dirtTex = texture((g, s) => {    // 通路の土
-  g.fillStyle = '#3a3128'; g.fillRect(0, 0, s, s);
-  noise(g, s, 1600, 0.18);
-});
-
-// 灯火: 大きさのばらばらな小文字を詰め込んだ壁（松明の光で照らすので、字は白っぽく、地は黒）
-function letterTex(n, lo, hi, bright) {
-  const t = texture((g, s) => {
-    g.fillStyle = '#050403'; g.fillRect(0, 0, s, s);
-    g.textAlign = 'center'; g.textBaseline = 'middle';
-    const abc = 'abcdefghijklmnopqrstuvwxyz';
-    for (let i = 0; i < n; i++) {
-      const size = lo + Math.random() ** 2 * (hi - lo), l = Math.round(bright * (0.45 + Math.random() * 0.55));
-      g.font = `400 ${size}px "BIZ UDGothic", monospace`;
-      g.fillStyle = `rgb(${l},${l},${l})`;
-      g.fillText(abc[Math.random() * 26 | 0], Math.random() * s, Math.random() * s);
-    }
-  }, 256);
-  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
-  return t;
-}
-// 灯火: 光る点の格子の床（1 マスに 4 × 4）
-function dotFloorTex(col, r) {
-  const t = texture((g, s) => {
-    g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
-    g.fillStyle = col;
-    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) { g.beginPath(); g.arc((x + 0.5) * s / 4, (y + 0.5) * s / 4, r, 0, 7); g.fill(); }
-  }, 128);
-  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
-  return t;
-}
-
-// 文字の見た目: 黒地に記号を並べた質感（壁は - と |、床は .、通路は #、扉は +）
-function glyphTile(ch, cols, rows, col, size) {
-  const t = texture((g, s) => {
-    g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
-    g.font = `700 ${size}px "BIZ UDGothic", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillStyle = col;
-    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-      const x = (c + 0.5) * s / cols, y = (r + 0.5) * s / rows;
-      if (ch === '.') { g.beginPath(); g.arc(x, y, size, 0, 7); g.fill(); }   // 床の点は字だと小さすぎるので丸で
-      else g.fillText(ch, x, y + size * 0.04);
-    }
-  }, 128);
-  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
-  return t;
-}
-const asciiTex = {
-  hwall: glyphTile('-', 3, 4, '#c8ccd1', 46),
-  vwall: glyphTile('|', 4, 2, '#c8ccd1', 50),
-  floor: glyphTile('.', 1, 1, '#b4bac0', 7),
-  passage: glyphTile('#', 1, 1, '#a0a6ad', 96),
-  door: glyphTile('+', 1, 1, '#e0c080', 96),
-  rock: glyphTile('.', 4, 4, '#3a3f46', 3),
-  step: glyphTile('=', 2, 2, '#9fd8e0', 44),   // 下り階段の段      // 通路の両脇: ごく薄い点の面（原作の地図では空白の所なので目立たせない）
-  ceil: glyphTile('.', 1, 1, '#6a7078', 6),      // 天井: 床の点を薄くしたもの
-};
-
-// ---------------------------------------------------------------------------
 // 場面
 // ---------------------------------------------------------------------------
-let renderer, scene, camera, torch, ambient, cv;
+let renderer, scene, camera, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
-let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
-let meshes = {}, themes = {}, edges, tcv, tctx, stepsMat;
-// 床に描く字: 階段（%）と罠（^）。立てた札ではなく床の模様にする。色は 2D の画面の色に合わせて材質の色で付ける
-const DECALS = { '^': { mesh: 'traps', kind: 9, color: '#d58cf0' } };
+let hwalls, vwalls, rocks, floors, dirts, doors, ceils;
+let meshes = {}, tcv, tctx;
+const DECALS = { '^': { mesh: 'traps', color: '#d58cf0' } };   // 床に描く字: 罠（色は 2D の画面の色に合わせる）
 let stairsColor = '#6cc6d6';   // 階段の色（2D の画面の % の色に合わせる）
-const STEPS = 4, STEP_DROP = 0.22;
-const DIM_AHEAD = 0.16;   // まだ分からない 1 マス先を描く暗さ（覚えている所は 0.38、見えている所は 1）   // 下り階段の段の数と、1 段で下がる高さ
-function decalTex(ch) {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.font = '700 108px "BIZ UDGothic", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = '#fff'; g.fillText(ch, 64, ch === '^' ? 82 : 68);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
-  return t;
-}
+const STEPS = 4, STEP_DROP = 0.22;   // 下り階段の段の数と、1 段で下がる高さ
+const DIM_AHEAD = 0.16;   // まだ分からない 1 マス先を描く暗さ（覚えている所は 0.38、見えている所は 1）
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
-let edgeSegs = [], edgeBright = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
-let theme = 'term';
-try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
-export const getTheme = () => theme;
-const glyphGroup = new THREE.Group();
+let edgeSegs = [], edgeBright = [];   // 壁の輪郭の線分（x, y, z の組を 2 つずつ）と、その明るさ
+const glyphGroup = new THREE.Group();   // モンスター・アイテムの位置（描くのは drawTerm。札そのものは見せない）
 const dummy = new THREE.Object3D();
 const color = new THREE.Color();
+const SPRITE_MAT = new THREE.SpriteMaterial({ visible: false });
 
 function instanced(geo) {
   const m = new THREE.InstancedMesh(geo, undefined, MAX);
@@ -161,134 +45,42 @@ function instanced(geo) {
 
 export function init(canvas) {
   cv = canvas;
-  // ASCII の見た目を描く 2D の画面（3D の画面に重ねる）
+  cv.style.visibility = 'hidden';   // 3D の画面は升目の粗さで裏に描くだけ。見せるのは字の画面
   tcv = document.createElement('canvas');
   tcv.id = 'v3t'; tcv.setAttribute('aria-hidden', 'true');
   canvas.after(tcv);
   tctx = tcv.getContext('2d');
   initFx(canvas);
-  renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: false });
+  renderer.setPixelRatio(1);
   scene = new THREE.Scene();
-  scene.background = new THREE.Color('#050607');
-  scene.fog = new THREE.Fog('#050607', 1.5, 11);
   camera = new THREE.PerspectiveCamera(72, 1, 0.05, 40);
-  ambient = new THREE.AmbientLight('#ffffff', 1.25);
-  scene.add(ambient);
-  torch = new THREE.PointLight('#ffcf8a', 1.6, 6, 1.6);   // 手元の明かり
-  scene.add(torch);
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   const ceil = new THREE.PlaneGeometry(1, 1).rotateX(Math.PI / 2);
+  // 材質は「何の面か」を書き出すだけ（kindMat の番号: 1 壁、3 岩、4 床、5 通路、6 扉、7 天井、8 階段の段、9 罠）
   meshes = {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
     floors: instanced(plane), dirts: instanced(plane), doors: instanced(plane),
-    ceils: instanced(ceil), lintels: instanced(new THREE.BoxGeometry(1, 0.22, 1)),
-    traps: instanced(plane),   // 床に描く字（床から少し浮かせて重ねる）
+    ceils: instanced(ceil), traps: instanced(plane),
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
   };
-  ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels } = meshes);
-  // 見た目ごとの材質（null は描かない）
-  const lam = o => new THREE.MeshLambertMaterial(o), basic = map => new THREE.MeshBasicMaterial({ map });
-  const stone = lam({ map: stoneTex }), stoneFloor = lam({ map: floorTex });
-  for (const [ch, d] of Object.entries(DECALS))
-    d.mat = new THREE.MeshBasicMaterial({ map: decalTex(ch), transparent: true, depthWrite: false, color: d.color });
-  const decals = { traps: DECALS['^'].mat };
-  stepsMat = new THREE.MeshLambertMaterial({ map: stoneTex, color: '#9fd8e0' });
-  themes = {
-    stone: {
-      bg: '#050607', fog: [1.5, 11], light: true,
-      mat: { hwalls: stone, vwalls: stone, rocks: lam({ map: rockTex }), floors: stoneFloor, dirts: lam({ map: dirtTex }),
-        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals,
-        steps: stepsMat, pits: stone },
-    },
-    // 灯火: 小文字を詰め込んだ壁と光る点の床を、暖色の松明だけで照らす（ROGUE-FP の見せ方に寄せたもの）
-    torch: {
-      bg: '#000000', fog: [1.2, 9], light: true, ambient: 0.1, torch: ['#ff9a48', 7, 7.5, 1.25],
-      mat: { hwalls: lam({ map: letterTex(170, 12, 46, 235) }), vwalls: lam({ map: letterTex(170, 12, 46, 235) }),
-        rocks: lam({ map: letterTex(120, 10, 34, 150) }), floors: lam({ map: dotFloorTex('#e8e0d0', 4.5) }),
-        dirts: lam({ map: dotFloorTex('#b8b0a0', 3.5) }), doors: lam({ map: decalTex('+'), color: '#ffd28a' }),
-        ceils: lam({ map: letterTex(60, 8, 22, 90) }), lintels: lam({ color: '#5a3d22' }), ...decals,
-        steps: lam({ map: letterTex(90, 10, 30, 200), color: '#9fd8e0' }), pits: lam({ map: letterTex(120, 10, 34, 150) }) },
-    },
-    // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
-    ascii: {
-      bg: '#000000', fog: [2, 13], light: false,
-      mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: basic(asciiTex.rock), floors: basic(asciiTex.floor),
-        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null, ...decals,
-        steps: basic(asciiTex.step), pits: basic(asciiTex.rock) },
-      edges: true,
-    },
-    // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
-    term: {
-      bg: '#000000', fog: [2, 13], light: false, term: true,
-      mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
-        doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1) },
-    },
-  };
-  // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
-  edges = new THREE.LineSegments(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ vertexColors: true }));
-  edges.frustumCulled = false;
-  scene.add(edges);
+  const kinds = { hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1 };
+  for (const [name, mesh] of Object.entries(meshes)) mesh.material = kindMat(kinds[name]);
+  ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils } = meshes);
   scene.add(glyphGroup);
-  applyTheme();
   resize();
-}
-
-function applyTheme() {
-  if (!themes[theme]) theme = 'term';
-  const th = themes[theme];
-  for (const [name, mesh] of Object.entries(meshes)) {
-    const m = th.mat[name];
-    mesh.visible = !!m;
-    if (m) mesh.material = m;
-  }
-  scene.background.set(th.bg);
-  scene.fog.color.set(th.bg); [scene.fog.near, scene.fog.far] = th.fog;
-  ambient.visible = torch.visible = th.light;
-  // 明かりの強さ（灯火は周りを暗くして松明を強く。ほかは石の見た目の値）
-  ambient.intensity = th.ambient ?? 1.25;
-  const [tc, ti, td, tk] = th.torch || ['#ffcf8a', 1.6, 6, 1.6];
-  torch.color.set(tc); torch.intensity = ti; torch.distance = td; torch.decay = tk;
-  edges.visible = !!th.edges;
-  cv.style.visibility = th.term ? 'hidden' : '';
-  tcv.style.display = th.term ? '' : 'none';
-  const seg = document.getElementById('cellSeg');
-  if (seg) seg.hidden = !th.term;   // 升目の大きさは ASCII のときだけ
-}
-
-export function setTheme(name) {
-  theme = name;
-  try { localStorage.setItem('rogue3d-theme', theme); } catch {}
-  if (renderer) { applyTheme(); if (lastGrid) build(lastGrid); draw(); }   // モンスターの描き方が見た目で変わるので組み直す
 }
 
 export function resize() {
   if (!renderer) return;
   const w = cv.parentElement.clientWidth, h = cv.parentElement.clientHeight;
   if (!w || !h) return;
-  renderer.setSize(w, h, true);
   camera.aspect = w / h; camera.updateProjectionMatrix();
   sizeTerm(w, h);
   sizeFx(w, h);
   draw();
-}
-
-// 文字の札（同じ字・色は使い回す）
-const glyphMats = new Map();
-function glyphMat(ch, col) {
-  const key = ch + col;
-  if (glyphMats.has(key)) return glyphMats.get(key);
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.font = '700 112px "BIZ UDGothic", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.shadowColor = col; g.shadowBlur = 18;
-  g.fillStyle = col; g.fillText(ch, 64, 70);
-  g.shadowBlur = 0; g.fillText(ch, 64, 70);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
-  const m = new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, fog: true });
-  glyphMats.set(key, m); return m;
 }
 
 // ---------------------------------------------------------------------------
@@ -415,7 +207,7 @@ function build(grid) {
       if (c === '%') {
         // 下り階段: 床の代わりに穴。北（奥）へ向かって段が下りていく
         const st = (s & 15) ? PALETTE[(s & 15) - 1] : stairsColor;
-        if (st !== stairsColor) { stairsColor = st; stepsMat.color.set(st); }
+        stairsColor = st;
         for (let i = 0; i < STEPS; i++) {
           const top = -STEP_DROP * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
           put(meshes.steps, 'steps', x + 0.5, (top - 1.2) / 2, z1 + 0.5 / STEPS, bright, 0, 1, top + 1.2, 1 / STEPS, true);
@@ -426,32 +218,22 @@ function build(grid) {
       } else if (c === '+') put(doors, 'doors', x, 0, y, bright);
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
-      if (c === '+') put(lintels, 'lintels', x, 0.89, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
       if (c === '%') continue;
       const dc = DECALS[c];
       if (dc) {   // 罠は床に描く
         put(meshes[dc.mesh], dc.mesh, x, 0.006, y, bright, yawOf(facing));   // 字の上を向いている方へ
-        if (fg !== dc.color) { dc.color = fg; dc.mat.color.set(fg); }
+        dc.color = fg;
         continue;
       }
-      // モンスター（大文字）は立たせ、それ以外（アイテム・罠）は床の近くに浮かべる
       const mon = c >= 'A' && c <= 'Z';
       const size = mon ? 0.78 : 0.42;
-      // 形の型を立て札の絵にする: 灯火はドット絵、文字は字で編んだ形（ASCII と同じ形）
-      const px = ART[c] && theme === 'torch' ? pixelMat(c, fg) : ART[c] && theme === 'ascii' ? pixelMat(c, fg, true) : null;
-      const sp = new THREE.Sprite(px ? px.mat : glyphMat(c, fg));
-      sp.userData = { ch: c, col: fg, dim: !!(s & 512), flashMat: px ? pixelMat(c, '#ffffff', theme === 'ascii').mat : null };
-      if (px) {   // 大きさは字で編んだ形と同じ決め方（縦に長い形ほど背が高い）。足元を床にそろえる
-        const h = size * 1.15 * px.rows / Math.min(px.rows, 9), w = h * px.aspect;
-        sp.scale.set(w, h, 1);
-        sp.position.set(x + 0.5, h / 2 + 0.02, y + 0.5);
-      } else {
-        sp.scale.set(size, size, 1);
-        sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
-      }
-      if (s & 512) { sp.material = sp.material.clone(); sp.material.opacity = 0.5; }
+      // モンスター（大文字）は立たせ、それ以外（アイテム）は床の近くに。描くのは drawTerm（字で編んだ形）
+      const sp = new THREE.Sprite(SPRITE_MAT);
+      sp.userData = { ch: c, col: fg, dim: !!(s & 512) };
+      sp.scale.set(size, size, 1);
+      sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
       glyphGroup.add(sp);
     }
   }
@@ -470,11 +252,10 @@ function build(grid) {
 // 壁・岩の面のうち、開いた側を向いた面の輪郭を線にする。床と天井との境目は面ごとに、
 // 縦の線は面が途切れる所（部屋の角・通路の曲がり角）にだけ引く（マスごとに引くと格子になってうるさい）
 function buildEdges(solid, stairCells = []) {
-  const pos = [], col = [], bri = [];
+  const pos = [], bri = [];
   const isSolid = (y, x) => y >= MAP_TOP && y <= MAP_BOT && x >= 0 && x < W && solid[y * W + x] > 0;
   const line = (ax, ay, az, bx, by, bz, b) => {
     pos.push(ax, ay, az, bx, by, bz);
-    const v = 0.5 * b; col.push(v, v * 1.04, v * 1.1, v, v * 1.04, v * 1.1);
     bri.push(b);
   };
   for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) {
@@ -505,11 +286,7 @@ function buildEdges(solid, stairCells = []) {
     }
   }
   edgeSegs = pos; edgeBright = bri;
-  edges.geometry.dispose();
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  edges.geometry = g;
+
 }
 
 // ---------------------------------------------------------------------------
@@ -550,19 +327,10 @@ function kindMat(kind) {
   });
 }
 
-// 升目 1 つの横幅（CSS の px。縦はその 2 倍）。小さいほど細かく描けるが字も小さくなる
-export const CELL_SIZES = { coarse: 7.5, mid: 5.5, fine: 4 };
-let cellSize = 'mid';
-try { cellSize = localStorage.getItem('rogue3d-cell') || cellSize; } catch {}
-export const getCellSize = () => cellSize;
-export function setCellSize(k) {
-  cellSize = k;
-  try { localStorage.setItem('rogue3d-cell', k); } catch {}
-  resize();
-}
+const CELL_W = 5.5;   // 升目 1 つの横幅（CSS の px。縦はその 2 倍）。粗・中・細を見比べて中に決めた
 let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null;
 function sizeTerm(w, h) {
-  tcols = Math.max(24, Math.round(w / (CELL_SIZES[cellSize] || CELL_SIZES.mid))); tcw = w / tcols;
+  tcols = Math.max(24, Math.round(w / CELL_W)); tcw = w / tcols;
   tch = tcw * 2; trows = Math.max(12, Math.floor(h / tch));
   const dpr = Math.min(devicePixelRatio || 1, 2);
   tcv.width = Math.round(w * dpr); tcv.height = Math.round(h * dpr);
@@ -1074,42 +842,6 @@ function drawArtSmall(art, u, h, bottom, cx) {
   return drawn > 0;
 }
 
-// 灯火: 形の型（X = 体、e = 目）をドット絵にした立て札。1 升を横 1 : 縦 2 のドットにして、
-// 上を明るく下を暗く、ドットごとに色を少し揺らす。輪郭は暗い色で縁取り、目は光る黄色
-const pixelMats = new Map();
-function pixelMat(ch, col, letters = false) {
-  const key = ch + col + (letters ? 'L' : '');
-  if (pixelMats.has(key)) return pixelMats.get(key);
-  const art = ART[ch], rows = art.length, cols = art[0].length;
-  const PW = letters ? 16 : 8, PH = letters ? 32 : 16, pad = 2;
-  const c = document.createElement('canvas'); c.width = cols * PW + pad * 2; c.height = rows * PH + pad * 2;
-  const g = c.getContext('2d');
-  const base = new THREE.Color(col), hsl = {};
-  base.getHSL(hsl);
-  const filled = (r, k) => r >= 0 && r < rows && k >= 0 && k < cols && art[r][k] !== ' ';
-  for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
-    const m = art[r][k]; if (m === ' ') continue;
-    const x = pad + k * PW, y = pad + r * PH;
-    if (letters) {   // 字で編んだ形: その升にモンスター自身の字（目は黄色い *）
-      g.font = `700 ${PH * 0.95}px "BIZ UDGothic", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
-      g.shadowColor = m === 'e' ? '#ffe08a' : col; g.shadowBlur = 6;
-      g.fillStyle = m === 'e' ? '#ffe08a' : col;
-      g.fillText(m === 'e' ? '*' : ch, x + PW / 2, y + PH / 2 + 1);
-      g.shadowBlur = 0;
-      continue;
-    }
-    if (m === 'e') { g.fillStyle = '#fff2a0'; g.fillRect(x, y, PW, PH); continue; }
-    const edge = !filled(r - 1, k) || !filled(r + 1, k) || !filled(r, k - 1) || !filled(r, k + 1);
-    const l = Math.min(0.85, Math.max(0.08, hsl.l * (1.25 - 0.6 * r / rows) + (Math.random() - 0.5) * 0.12 - (edge ? 0.12 : 0)));
-    g.fillStyle = new THREE.Color().setHSL(hsl.h, Math.min(1, hsl.s * 1.05), l).getStyle();
-    g.fillRect(x, y, PW, PH);
-    g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(x, y + PH - 2, PW, 2); g.fillRect(x + PW - 1, y, 1, PH);   // ドットの継ぎ目
-  }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = letters ? THREE.LinearFilter : THREE.NearestFilter;
-  const v = { mat: new THREE.SpriteMaterial({ map: t, transparent: true, fog: true }), rows, aspect: c.width / c.height };
-  pixelMats.set(key, v); return v;
-}
-
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
@@ -1124,15 +856,15 @@ const ROCK_RAMP = ' ..::';
 function drawTerm() {
   if (!rt) return;
   // 1. 面の種類・明るさ・距離を升目の粗さで描いて読み出す
-  const bg = scene.background, gv = glyphGroup.visible, ev = edges.visible;
-  scene.background = null; glyphGroup.visible = false; edges.visible = false;
+  const gv = glyphGroup.visible;
+  glyphGroup.visible = false;
   for (const sp of flying) sp.visible = false;
   renderer.setRenderTarget(rt);
   renderer.setClearColor(0x000000, 0); renderer.clear();
   renderer.render(scene, camera);
   renderer.readRenderTargetPixels(rt, 0, 0, tcols, trows, tbuf);
   renderer.setRenderTarget(null);
-  scene.background = bg; glyphGroup.visible = gv; edges.visible = ev;
+  glyphGroup.visible = gv;
   for (const sp of flying) sp.visible = true;
 
   const C = tcols, R = trows;
@@ -1253,13 +985,13 @@ export function turn(d) {
 export function missile(m) {
   if (!renderer || !player || !m.path.length) return;
   const col = (m.style & 15) ? PALETTE[(m.style & 15) - 1] : '#c8ccd1';
-  const sp = new THREE.Sprite(glyphMat(m.ch, col));
+  const sp = new THREE.Sprite(SPRITE_MAT);
   sp.scale.set(0.4, 0.4, 1);
   sp.userData = { ch: m.ch, col };
   scene.add(sp); flying.add(sp);
   const pts = [player, ...m.path], dur = m.step * m.path.length, t0 = performance.now();
   const bolt = '|-/\\'.includes(m.ch);   // 杖の光線は、通った所に光が尾を引く
-  if (bolt) { sp.material = glyphMat('*', col); sp.userData.ch = '*'; }
+  if (bolt) sp.userData.ch = '*';
   let passed = 0;
   const frame = now => {
     const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
@@ -1421,10 +1153,8 @@ function jitterSprites(now, on) {
       sp.userData.base = sp.position.clone();
       sp.position.x += (Math.random() - 0.5) * 0.12 * k; sp.position.y += (Math.random() - 0.5) * 0.06 * k;
       sp.userData.flash = ((now - h.t0) / 65 | 0) % 2 === 0;
-      if (theme !== 'term' && sp.userData.flash) { sp.userData.mat = sp.material; sp.material = sp.userData.flashMat || glyphMat(sp.userData.ch, '#ffffff'); }
     } else if (sp.userData.base) {
       sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false;
-      if (sp.userData.mat) { sp.material = sp.userData.mat; sp.userData.mat = null; }
     }
   }
 }
@@ -1505,11 +1235,8 @@ function draw() {
     camera.rotation.z = (Math.random() - 0.5) * 0.06 * sk;
   }
   camera.updateMatrixWorld();
-  torch.position.set(cam.x, 0.8, cam.z);
   jitterSprites(now, true);
-  const hue = mood.halu && theme !== 'term' ? `hue-rotate(${Math.round(now / 8) % 360}deg) saturate(2.5)` : '';
-  if (cv.style.filter !== hue) cv.style.filter = hue;   // 文字・石の見た目の幻覚は、画面の色相を回す
-  if (theme === 'term') drawTerm(); else renderer.render(scene, camera);
+  drawTerm();
   jitterSprites(now, false);
   drawFx(now);
   drawCompass();

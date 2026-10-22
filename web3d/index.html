@@ -111,7 +111,7 @@ canvas { display: block; flex: none; }
   background: radial-gradient(ellipse 60% 45% at 50% 92%, rgba(0, 0, 0, .55), rgba(0, 0, 0, .97) 70%); }
 #v3blind.on { opacity: 1; }
 #app.text #v3, #app.text #v3t, #app.text #v3fx, #app.text #v3hurt, #app.text #v3blind { display: none !important; }
-.bar .seg:not(#themeSeg):not(#cellSeg) { display: none; }
+.bar .seg { display: none; }
 .dpad .key.turn { font-size: 24px; color: var(--accent); }
 #status {
   /* 高さは字の大きさによらず固定（長い状態行で字を詰めても地図の欄が動かないように） */
@@ -214,17 +214,6 @@ canvas { display: block; flex: none; }
       <button type="button" data-cols="48" aria-pressed="false">小</button>
       <button type="button" data-cols="40" aria-pressed="true">中</button>
       <button type="button" data-cols="32" aria-pressed="false">大</button>
-    </span>
-    <span class="seg" id="themeSeg">
-      <button type="button" data-theme="term" aria-pressed="false">ASCII</button>
-      <button type="button" data-theme="torch" aria-pressed="false">灯火</button>
-      <button type="button" data-theme="ascii" aria-pressed="false">文字</button>
-      <button type="button" data-theme="stone" aria-pressed="false">石</button>
-    </span>
-    <span class="seg" id="cellSeg">
-      <button type="button" data-cell="coarse" aria-pressed="false">粗</button>
-      <button type="button" data-cell="mid" aria-pressed="false">中</button>
-      <button type="button" data-cell="fine" aria-pressed="false">細</button>
     </span>
     <span id="ver"></span>
   </div>
