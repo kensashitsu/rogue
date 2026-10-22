@@ -535,6 +535,91 @@ function drawLines(C, R, depthOf) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// モンスターの形（ASCII の見た目で近くにいるとき）。X の升をモンスター自身の字で、e の升を目として描く。
+// 1 升は縦が横の 2 倍なので、横に長めに作ると釣り合う。遠くて 1 升が小さくなりすぎるときは 1 文字で出す
+// ---------------------------------------------------------------------------
+const ART = {
+  B: [   // バット: 翼を広げた蝙蝠
+    'X               X',
+    'XX     X X     XX',
+    'XXXX   XXX   XXXX',
+    'XXXXXXXeXeXXXXXXX',
+    ' XXXXXXXXXXXXXXX ',
+    '  XXX  XXX  XXX  ',
+    '   X    X    X   ',
+  ],
+  K: [   // ケストレル: 翼を張って向かってくる鳥
+    'XXX           XXX',
+    ' XXXX   X   XXXX ',
+    '   XXXXeXeXXXX   ',
+    '     XXXXXXX     ',
+    '      XXXXX      ',
+    '       XXX       ',
+    '      X X X      ',
+  ],
+  E: [   // エミュー: 長い首の大きな鳥
+    '     XX   ',
+    '    XeXX  ',
+    '     XX   ',
+    '     X    ',
+    '     X    ',
+    '    XX    ',
+    '  XXXXXX  ',
+    ' XXXXXXXX ',
+    ' XXXXXXXX ',
+    '  XXXXXX  ',
+    '   X  X   ',
+    '   X  X   ',
+    '  XX XX   ',
+  ],
+  S: [   // スネーク: 鎌首をもたげた蛇
+    '    XXXX    ',
+    '   XeXXeX   ',
+    '   XXXXXX   ',
+    '    XXXX    ',
+    '     XX     ',
+    '     XX     ',
+    '  XXXXX     ',
+    ' XX         ',
+    ' XXXXXXXXX  ',
+    '         XX ',
+    '  XXXXXXXXX ',
+  ],
+  H: [   // ホブゴブリン: 棍棒を持った小鬼
+    '    XXX     ',
+    '   XeXeX    ',
+    '    XXX     ',
+    '  XXXXXXX  X',
+    ' X XXXXX X X',
+    ' X XXXXX  XX',
+    '   XX XX    ',
+    '   X   X    ',
+    '  XX   XX   ',
+  ],
+};
+// 形で描けたら true（近くて、1 升が画面の升の 0.75 倍以上になるとき）
+function drawArt(o, u) {
+  const art = ART[u.ch];
+  if (!art) return false;
+  const rows = art.length, cols = art[0].length;
+  // 形の 1 升の高さ（縦に長い形ほど背が高くなる。ただし画面の 9 割まで）
+  const h = Math.min(o.size * 1.15 / Math.min(rows, 9), trows * tch * 0.9 / rows);
+  if (h < tch * 0.75) return false;
+  // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
+  const w = h / 2, x0 = o.px - cols * w / 2, y0 = o.py + o.size / 2.3 - rows * h;
+  tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const m = art[r][c];
+    if (m === ' ') continue;
+    const x = x0 + c * w, y = y0 + r * h;
+    tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h);   // 後ろの壁の字を消す
+    tctx.fillStyle = m === 'e' ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillText(m === 'e' ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
+  }
+  return true;
+}
+
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
@@ -613,6 +698,7 @@ function drawTerm() {
     const u = o.sp.userData;
     const fade = 1 - Math.min(0.75, Math.max(0, (o.dist - 2) / 12));
     tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade;
+    if (drawArt(o, u)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
