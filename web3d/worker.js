@@ -45,6 +45,7 @@ function syncSaves() {
   }
 }
 
+self.rogue_variant = '3d';   // ゲーム本体に 3D 版だと知らせる（タイトルの「3D」）
 self.rogue_draw = rows => postMessage({ type: 'draw', rows });
 self.rogue_flash = () => postMessage({ type: 'flash' });
 self.rogue_missile = json => postMessage({ type: 'missile', data: JSON.parse(json) });
