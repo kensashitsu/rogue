@@ -548,7 +548,8 @@ function drawTerm() {
     else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
-    tctx.fillStyle = kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})` : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+    tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
+      : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})` : `rgb(${g},${g},${Math.min(255, g + 8)})`;
     tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
   }
 
