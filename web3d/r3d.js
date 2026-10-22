@@ -34,6 +34,11 @@ const flying = new Set();   // 飛んでいる最中の物（投げた物）
 // 原作では見つけるまで見分けがつかない。ユーザーの指定による意図的な改変（2026-10-22）
 let secretCells = new Set();
 const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見える
+// まだ見つけていない罠の場所と、モンスターの様子（ゲームが知らせる）。これも 3D 版だけの意図的な改変（2026-10-22）
+//   - 罠: 近くで見ると、その床の . が , に見える（遠くでは普通の床）
+//   - 眠っているモンスター: 目を閉じて（* の代わりに -）、頭の上に z
+//   - 傷ついたモンスター: 体力が半分を切ると、形の升が欠けていく
+let trapCells = new Set(), monState = new Map();
 let edgeSegs = [], edgeBright = [];   // 壁の輪郭の線分（x, y, z の組を 2 つずつ）と、その明るさ
 const glyphGroup = new THREE.Group();   // モンスター・アイテムの位置（描くのは drawTerm。札そのものは見せない）
 const dummy = new THREE.Object3D();
@@ -68,9 +73,10 @@ export function init(canvas) {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
     floors: instanced(plane), dirts: instanced(plane), doors: instanced(box),   // doors: 戸口の枠と開いた扉の板
     ceils: instanced(ceil), traps: instanced(plane), secrets: instanced(box),   // secrets: 隠し扉の壁
+    hintF: instanced(plane), hintC: instanced(plane),   // 見つけていない罠の床（部屋 / 通路）
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
   };
-  const kinds = { secrets: 2, hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1 };
+  const kinds = { secrets: 2, hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1, hintF: 10, hintC: 11 };
   for (const [name, mesh] of Object.entries(meshes)) mesh.material = kindMat(kinds[name]);
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils } = meshes);
   scene.add(glyphGroup);
@@ -237,6 +243,7 @@ function build(grid) {
         put(doors, 'doors', fx, (TOP + 1) / 2, fz, bright, 0, wallEW ? 1 : D, 1 - TOP, wallEW ? D : 1, true);   // 上の横木
       }
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
+      if (trapCells.has(y * W + x) && c !== '^') put(meshes[corr ? 'hintC' : 'hintF'], corr ? 'hintC' : 'hintF', x, 0.004, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
@@ -251,7 +258,7 @@ function build(grid) {
       const size = mon ? 0.78 : 0.42;
       // モンスター（大文字）は立たせ、それ以外（アイテム）は床の近くに。描くのは drawTerm（字で編んだ形）
       const sp = new THREE.Sprite(SPRITE_MAT);
-      sp.userData = { ch: c, col: fg, dim: !!(s & 512) };
+      sp.userData = { ch: c, col: fg, dim: !!(s & 512), cell: y * W + x };
       sp.scale.set(size, size, 1);
       sp.position.set(x + 0.5, mon ? 0.42 : 0.24, y + 0.5);
       glyphGroup.add(sp);
@@ -840,17 +847,36 @@ function drawArt(o, u) {
   const bottom = o.py + o.size / 2.3;   // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
   if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px);
   const w = h / 2, x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
+  const st = u.st;
   tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const m = art[r][c];
     if (m === ' ') continue;
+    if (st && m !== 'e' && wounded(st.hp, r, c)) continue;   // 傷: 欠けた升は描かない（後ろが透ける）
     const x = x0 + c * w, y = y0 + r * h;
     tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h);   // 後ろの壁の字を消す
     if (m === '.') continue;
-    tctx.fillStyle = m === 'e' ? '#ffe08a' : (u.col || '#c8ccd1');
-    tctx.fillText(m === 'e' ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
+    const eye = m === 'e', shut = eye && st && st.sleep;
+    tctx.fillStyle = eye && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
+  if (st && st.sleep) drawZzz(x0 + cols * w * 0.75, y0, h);
   return true;
+}
+
+// 傷ついたモンスターの欠ける升: 体力が半分を切ると、残りが少ないほど多く欠ける（升ごとに決まった順で）
+function wounded(hp, r, c) {
+  if (hp >= 0.5) return false;
+  const k = ((r * 73 + c * 151) % 97) / 97;
+  return k < (0.5 - hp) * 0.9;
+}
+// 眠っている印: 頭の右上に小さな z と大きな Z
+function drawZzz(x, y, h) {
+  const font = tctx.font;
+  tctx.fillStyle = '#6cc6d6';
+  tctx.font = `700 ${h * 0.8}px "BIZ UDGothic", monospace`; tctx.fillText('z', x, y - h * 0.3);
+  tctx.font = `700 ${h * 1.1}px "BIZ UDGothic", monospace`; tctx.fillText('Z', x + h * 0.7, y - h * 1.2);
+  tctx.font = font;
 }
 
 // 遠くて形の 1 升が画面の升より小さいとき: 形を画面の升目の粗さに縮めて、升目にそろえて描く。
@@ -868,11 +894,16 @@ function drawArtSmall(art, u, h, bottom, cx) {
     let n = 0, eye = false;
     for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ' && m !== '.') n++; if (m === 'e') eye = true; }
     if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
+    if (u.st && !(eye && tr >= 3) && wounded(u.st.hp, r, c)) continue;
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
     tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch);
-    tctx.fillStyle = eye && tr >= 3 ? '#ffe08a' : (u.col || '#c8ccd1');
-    tctx.fillText(eye && tr >= 3 ? '*' : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
+    const shut = u.st && u.st.sleep;
+    tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
     drawn++;
+  }
+  if (drawn && u.st && u.st.sleep) {   // 小さいときの z は 1 升だけ
+    tctx.fillStyle = '#6cc6d6'; tctx.fillText('z', (gx0 + tc) * tcw + tcw / 2, (gy0 - 1) * tch + tch / 2);
   }
   return drawn > 0;
 }
@@ -929,6 +960,10 @@ function drawTerm() {
       ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
     } else if (kind === 4) { ch = '.'; v = lit * tune.floorV; }
     else if (kind === 5) { ch = '#'; v = lit * tune.passV; }
+    else if (kind === 10 || kind === 11) {   // 見つけていない罠の床: 近くでは , に、遠くでは普通の床
+      const near = tbuf[i + 3] / 255 * 16 < SECRET_NEAR;
+      ch = near ? ',' : kind === 10 ? '.' : '#'; v = lit * (kind === 10 ? tune.floorV : tune.passV);
+    }
     else if (kind === 6) { ch = tbuf[i + 2] < 64 ? '=' : '|'; }   // 扉の木（縦の面は縦板の |、横木の下面などは =）
     else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
@@ -966,7 +1001,8 @@ function drawTerm() {
     const u = o.sp.userData;
     const fade = 1 - Math.min(0.75, Math.max(0, (o.dist - 2) / 12));
     tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade;
-    const uu = u.flash ? { ...u, col: '#ffffff' } : u;
+    const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
+    const uu = { ...u, st, ...(u.flash ? { col: '#ffffff' } : {}) };
     if (drawArt(o, uu)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
@@ -1081,6 +1117,14 @@ export function effect(d) {
         fx.debris.push({ y: d.y, x: d.x, t0: now, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
       }
     }
+  } else if (d.type === 'traps') {
+    trapCells = new Set(d.cells.map(([y, x]) => y * W + x));
+    if (lastGrid) { build(lastGrid); draw(); }
+    return;
+  } else if (d.type === 'mons') {
+    monState = new Map(d.mons.map(([y, x, sleep, hp]) => [y * W + x, { sleep: !!sleep, hp }]));
+    if (lastGrid) draw();
+    return;
   } else if (d.type === 'secrets') {
     secretCells = new Set(d.cells.map(([y, x]) => y * W + x));
     if (lastGrid) { build(lastGrid); draw(); }
