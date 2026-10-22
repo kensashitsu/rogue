@@ -216,7 +216,8 @@ function build(grid) {
           put(meshes.pits, 'pits', px, -0.6, pz, bright * 0.8, 0, sx, 1.2, sz, true);
         stairCells.push([y, x, bright]);
       } else if (c === '+') {
-        // 扉: 床は普通の床。壁の向きに合わせて戸口の枠（左右の柱と上の横木）を立て、部屋の側へ開いた扉の板を 1 枚
+        // 扉: 床は普通の床。壁の向きに合わせて、部屋側の縁に細い戸口の枠（左右の柱と上の横木）を付ける。
+        // 開いた扉の板も立てていたが、斜めから見ると戸口の向こうを隠すのでやめた
         put(floors, 'floors', x, 0, y, bright);
         const wallEW = '-|'.includes(ch(y, x - 1)) || '-|'.includes(ch(y, x + 1));   // 壁が東西に続く（通り抜けは南北）
         const out = (c2) => c2 === '#' || c2 === ' ';   // 部屋の外（通路・闇）
@@ -224,14 +225,11 @@ function build(grid) {
         doorCells.push([y, x, bright, wallEW, side]);
         const [ux, uz] = wallEW ? [1, 0] : [0, 1];   // 戸口の幅の向き
         const [nx, nz] = wallEW ? [0, side] : [side, 0];   // 部屋へ向かう向き
-        const cx = x + 0.5, cz = y + 0.5, J = 0.1, TOP = 0.82, D = 0.18;   // 柱の幅、戸口の高さ、枠の奥行き
+        const cx = x + 0.5, cz = y + 0.5, J = 0.06, TOP = 0.86, D = 0.12;   // 柱の幅、戸口の高さ、枠の奥行き
         const fx = cx + nx * (0.5 - D / 2), fz = cz + nz * (0.5 - D / 2);   // 枠は部屋側の縁に、額縁のように薄く付ける
         for (const k of [-1, 1])   // 左右の柱
           put(doors, 'doors', fx + ux * k * (0.5 - J / 2), 0.5, fz + uz * k * (0.5 - J / 2), bright, 0, wallEW ? J : D, 1, wallEW ? D : J, true);
         put(doors, 'doors', fx, (TOP + 1) / 2, fz, bright, 0, wallEW ? 1 : D, 1 - TOP, wallEW ? D : 1, true);   // 上の横木
-        // 開いた扉の板: 片側の柱を軸に、部屋の側へ直角に開いている
-        const hx = cx - ux * (0.5 - J - 0.03), hz = cz - uz * (0.5 - J - 0.03);
-        put(doors, 'doors', hx + nx * 0.9, TOP / 2, hz + nz * 0.9, bright, 0, wallEW ? 0.05 : 0.8, TOP, wallEW ? 0.8 : 0.05, true);
       }
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
@@ -292,17 +290,15 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
       }
     }
   }
-  // 扉: 戸口の内側の角（柱と横木）と、開いた扉の板の縁
+  // 扉: 戸口の内側の角（柱と横木）
   for (const [y, x, b, wallEW, side] of doorCells) {
     const [ux, uz] = wallEW ? [1, 0] : [0, 1], [nx, nz] = wallEW ? [0, side] : [side, 0];
-    const cx = x + 0.5, cz = y + 0.5, J = 0.1, TOP = 0.82, at = (u, n) => [cx + ux * u + nx * n, cz + uz * u + nz * n];
-    for (const n of [0.5 - 0.18, 0.5]) {   // 枠は部屋側の縁だけ（奥行き 0.18）
+    const cx = x + 0.5, cz = y + 0.5, J = 0.06, TOP = 0.86, at = (u, n) => [cx + ux * u + nx * n, cz + uz * u + nz * n];
+    for (const n of [0.5 - 0.12, 0.5]) {   // 枠は部屋側の縁だけ（奥行き 0.12）
       const [ax, az] = at(-0.5 + J, n), [bx, bz] = at(0.5 - J, n);
       line(ax, 0, az, ax, TOP, az, b); line(bx, 0, bz, bx, TOP, bz, b);   // 柱の内側の角
       line(ax, TOP, az, bx, TOP, bz, b);                                 // 横木の下の角
     }
-    const h = -0.5 + J + 0.03, [px, pz] = at(h, 0.5), [qx, qz] = at(h, 1.3);   // 扉の板（戸口の部屋側の縁から 0.8 開く）
-    line(px, 0, pz, qx, 0, qz, b); line(px, TOP, pz, qx, TOP, qz, b); line(qx, 0, qz, qx, TOP, qz, b);
   }
   // 下り階段: 穴の縁と、段の角（踏み面の先と、蹴込みの下）
   for (const [y, x, b] of stairCells) {
