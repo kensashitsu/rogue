@@ -102,6 +102,16 @@ let renderer, scene, camera, torch, ambient, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
 let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
 let meshes = {}, themes = {}, edges, tcv, tctx;
+// 床に描く字: 階段（%）と罠（^）。立てた札ではなく床の模様にする。色は 2D の画面の色に合わせて材質の色で付ける
+const DECALS = { '%': { mesh: 'stairs', kind: 8, color: '#f0c652' }, '^': { mesh: 'traps', kind: 9, color: '#d58cf0' } };
+function decalTex(ch) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.font = '700 108px "BIZ UDGothic", monospace'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#fff'; g.fillText(ch, 64, ch === '^' ? 82 : 68);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
 let edgeSegs = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
 let theme = 'term';
@@ -143,29 +153,33 @@ export function init(canvas) {
     hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
     floors: instanced(plane), dirts: instanced(plane), doors: instanced(plane),
     ceils: instanced(ceil), lintels: instanced(new THREE.BoxGeometry(1, 0.22, 1)),
+    stairs: instanced(plane), traps: instanced(plane),   // 床に描く字（床から少し浮かせて重ねる）
   };
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels } = meshes);
   // 見た目ごとの材質（null は描かない）
   const lam = o => new THREE.MeshLambertMaterial(o), basic = map => new THREE.MeshBasicMaterial({ map });
   const stone = lam({ map: stoneTex }), stoneFloor = lam({ map: floorTex });
+  for (const [ch, d] of Object.entries(DECALS))
+    d.mat = new THREE.MeshBasicMaterial({ map: decalTex(ch), transparent: true, depthWrite: false, color: d.color });
+  const decals = { stairs: DECALS['%'].mat, traps: DECALS['^'].mat };
   themes = {
     stone: {
       bg: '#050607', fog: [1.5, 11], light: true,
       mat: { hwalls: stone, vwalls: stone, rocks: lam({ map: rockTex }), floors: stoneFloor, dirts: lam({ map: dirtTex }),
-        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }) },
+        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals },
     },
     // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
     ascii: {
       bg: '#000000', fog: [2, 13], light: false,
       mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: basic(asciiTex.rock), floors: basic(asciiTex.floor),
-        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null },
+        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null, ...decals },
       edges: true,
     },
     // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
     term: {
       bg: '#000000', fog: [2, 13], light: false, term: true,
       mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
-        doors: kindMat(6), ceils: kindMat(7), lintels: null },
+        doors: kindMat(6), ceils: kindMat(7), lintels: null, stairs: kindMat(8), traps: kindMat(9) },
     },
   };
   // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
@@ -231,7 +245,7 @@ function glyphMat(ch, col) {
 // 画面（grid[y][x] = [字, スタイル] / null）から地図を組み直す
 // ---------------------------------------------------------------------------
 const TERRAIN = new Set(['-', '|', '.', '#', '+', ' ']);
-let player = null, lastSig = '';
+let player = null, lastSig = '', lastGrid = null;
 
 function cellAt(grid, y, x) {
   if (y < MAP_TOP || y > MAP_BOT || x < 0 || x >= W) return [' ', 0];
@@ -268,6 +282,7 @@ export function update(grid, pos) {
   const moved = !player || !pos || player[0] !== pos[0] || player[1] !== pos[1];
   if (pos) player = pos;
   const learned = learnRock(grid, pos);
+  lastGrid = grid;
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
   const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
@@ -296,8 +311,8 @@ function build(grid) {
   const ch = (y, x) => cellAt(grid, y, x)[0];
   const walk = c => !TERRAIN.has(c) || c === '.' || c === '#' || c === '+';
   const counts = Object.fromEntries(Object.keys(meshes).map(k => [k, 0]));
-  const put = (mesh, name, x, y, z, bright) => {
-    dummy.position.set(x + 0.5, y, z + 0.5); dummy.updateMatrix();
+  const put = (mesh, name, x, y, z, bright, yaw = 0) => {
+    dummy.position.set(x + 0.5, y, z + 0.5); dummy.rotation.set(0, yaw, 0); dummy.updateMatrix();
     const i = counts[name]++;
     mesh.setMatrixAt(i, dummy.matrix);
     mesh.setColorAt(i, color.setScalar(bright));
@@ -330,8 +345,14 @@ function build(grid) {
       put(ceils, 'ceils', x, 1, y, bright);
       if (c === '+') put(lintels, 'lintels', x, 0.89, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
-      // モンスター（大文字）は立たせ、それ以外（アイテム・階段・罠）は床の近くに浮かべる
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
+      const dc = DECALS[c];
+      if (dc) {   // 階段・罠は床に描く
+        put(meshes[dc.mesh], dc.mesh, x, 0.006, y, bright, yawOf(facing));   // 字の上を向いている方へ
+        if (fg !== dc.color) { dc.color = fg; dc.mat.color.set(fg); }
+        continue;
+      }
+      // モンスター（大文字）は立たせ、それ以外（アイテム・罠）は床の近くに浮かべる
       const sp = new THREE.Sprite(glyphMat(c, fg));
       const mon = c >= 'A' && c <= 'Z';
       sp.userData = { ch: c, col: fg, dim: !!(s & 512) };
@@ -414,7 +435,7 @@ function kindMat(kind) {
         float side = abs(vN.y) > 0.5 ? 0.0 : (abs(vN.x) > 0.5 ? 1.0 : 2.0);
         float face = side == 2.0 ? 0.78 : 1.0;   // 壁は向きで濃さを変えて角を見せる
         float lit = vB * face * (1.0 - 0.9 * smoothstep(0.6, 10.0, vD));   // 遠いほど暗く（薄い字に）
-        gl_FragColor = vec4(lit, kind / 8.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
+        gl_FragColor = vec4(lit, kind / 15.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
       }`,
   });
 }
@@ -514,6 +535,12 @@ function drawLines(C, R, depthOf) {
   return out;
 }
 
+// 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
+function tint(hex, v) {
+  const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
+  return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
+}
+
 const WALL_RAMP = ' .:-=+*#';    // 壁の濃さ（暗い → 明るい）。@ や % は重すぎるので使わない
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -544,7 +571,7 @@ function drawTerm() {
     // 2. 壁の輪郭の線が通る升は、線の傾きに合った字（drawLines で決めたもの）。面がない所（闇との境）にも引く
     const ln = lines[y * C + x];
     if (!tbuf[i + 3] && !ln) continue;
-    const lit = tbuf[i] / 255, kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 8) : 0;
+    const lit = tbuf[i] / 255, kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0;
     if (lit < 0.03 && !ln) continue;
     let ch = null, v = lit;
     if (ln) {
@@ -556,11 +583,13 @@ function drawTerm() {
     } else if (kind === 4) { ch = '.'; v = lit * 0.85; }
     else if (kind === 5) { ch = '#'; v = lit * 0.7; }
     else if (kind === 6) { ch = '+'; }
+    else if (kind === 8 || kind === 9) { ch = kind === 8 ? '%' : '^'; v = Math.min(1, lit * 1.1 + 0.1); }
     else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
-      : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})` : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+      : kind === 6 ? `rgb(${g},${Math.round(g * 0.82)},${Math.round(g * 0.5)})`
+      : kind === 8 ? tint(DECALS['%'].color, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
     tctx.fillText(ch, (x + 0.5) * tcw, (y + 0.5) * tch + tch * 0.04);
   }
 
@@ -629,6 +658,7 @@ function tick(now) {
 export function turn(d) {
   facing = (facing + d + 8) % 8;
   try { localStorage.setItem('rogue3d-facing', facing); } catch {}
+  if (lastGrid) build(lastGrid);   // 床に描いた字（階段・罠）の向きを合わせ直す
   if (player && cam) animateTo(target());
 }
 
