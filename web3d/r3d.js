@@ -70,18 +70,45 @@ const dirtTex = texture((g, s) => {    // 通路の土
   noise(g, s, 1600, 0.18);
 });
 
+// 文字の見た目: 黒地に記号を並べた質感（壁は - と |、床は .、通路は #、扉は +）
+function glyphTile(ch, cols, rows, col, size) {
+  const t = texture((g, s) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, s, s);
+    g.font = `700 ${size}px "BIZ UDGothic", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = col;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const x = (c + 0.5) * s / cols, y = (r + 0.5) * s / rows;
+      if (ch === '.') { g.beginPath(); g.arc(x, y, size, 0, 7); g.fill(); }   // 床の点は字だと小さすぎるので丸で
+      else g.fillText(ch, x, y + size * 0.04);
+    }
+  }, 128);
+  t.magFilter = THREE.LinearFilter; t.anisotropy = 8;
+  return t;
+}
+const asciiTex = {
+  hwall: glyphTile('-', 3, 4, '#c8ccd1', 46),
+  vwall: glyphTile('|', 4, 2, '#c8ccd1', 50),
+  floor: glyphTile('.', 1, 1, '#b4bac0', 7),
+  passage: glyphTile('#', 1, 1, '#a0a6ad', 96),
+  door: glyphTile('+', 1, 1, '#e0c080', 96),
+};
+
 // ---------------------------------------------------------------------------
 // 場面
 // ---------------------------------------------------------------------------
-let renderer, scene, camera, torch, cv;
+let renderer, scene, camera, torch, ambient, cv;
 const MAX = W * (MAP_BOT - MAP_TOP + 1);
-let walls, rocks, floors, dirts, ceils, lintels;
+let hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels;
+let meshes = {}, themes = {};
+let theme = 'ascii';
+try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
+export const getTheme = () => theme;
 const glyphGroup = new THREE.Group();
 const dummy = new THREE.Object3D();
 const color = new THREE.Color();
 
-function instanced(geo, mat) {
-  const m = new THREE.InstancedMesh(geo, mat, MAX);
+function instanced(geo) {
+  const m = new THREE.InstancedMesh(geo, undefined, MAX);
   m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   m.count = 0; m.frustumCulled = false;   // 置く場所を毎回変えるので、まとめての見切り判定はしない
   scene.add(m); return m;
@@ -95,21 +122,57 @@ export function init(canvas) {
   scene.background = new THREE.Color('#050607');
   scene.fog = new THREE.Fog('#050607', 1.5, 11);
   camera = new THREE.PerspectiveCamera(72, 1, 0.05, 40);
-  scene.add(new THREE.AmbientLight('#ffffff', 1.25));
+  ambient = new THREE.AmbientLight('#ffffff', 1.25);
+  scene.add(ambient);
   torch = new THREE.PointLight('#ffcf8a', 1.6, 6, 1.6);   // 手元の明かり
   scene.add(torch);
 
   const box = new THREE.BoxGeometry(1, 1, 1);
   const plane = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
   const ceil = new THREE.PlaneGeometry(1, 1).rotateX(Math.PI / 2);
-  walls = instanced(box, new THREE.MeshLambertMaterial({ map: stoneTex }));
-  rocks = instanced(box, new THREE.MeshLambertMaterial({ map: rockTex }));
-  floors = instanced(plane, new THREE.MeshLambertMaterial({ map: floorTex }));
-  dirts = instanced(plane, new THREE.MeshLambertMaterial({ map: dirtTex }));
-  ceils = instanced(ceil, new THREE.MeshLambertMaterial({ color: '#1c1916' }));
-  lintels = instanced(new THREE.BoxGeometry(1, 0.22, 1), new THREE.MeshLambertMaterial({ color: '#5a3d22' }));
+  meshes = {
+    hwalls: instanced(box), vwalls: instanced(box), rocks: instanced(box),
+    floors: instanced(plane), dirts: instanced(plane), doors: instanced(plane),
+    ceils: instanced(ceil), lintels: instanced(new THREE.BoxGeometry(1, 0.22, 1)),
+  };
+  ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels } = meshes);
+  // 見た目ごとの材質（null は描かない）
+  const lam = o => new THREE.MeshLambertMaterial(o), basic = map => new THREE.MeshBasicMaterial({ map });
+  const stone = lam({ map: stoneTex }), stoneFloor = lam({ map: floorTex });
+  themes = {
+    stone: {
+      bg: '#050607', fog: [1.5, 11], light: true,
+      mat: { hwalls: stone, vwalls: stone, rocks: lam({ map: rockTex }), floors: stoneFloor, dirts: lam({ map: dirtTex }),
+        doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }) },
+    },
+    // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
+    ascii: {
+      bg: '#000000', fog: [2, 13], light: false,
+      mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: null, floors: basic(asciiTex.floor),
+        dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: null, lintels: basic(asciiTex.door) },
+    },
+  };
   scene.add(glyphGroup);
+  applyTheme();
   resize();
+}
+
+function applyTheme() {
+  const th = themes[theme] || themes.ascii;
+  for (const [name, mesh] of Object.entries(meshes)) {
+    const m = th.mat[name];
+    mesh.visible = !!m;
+    if (m) mesh.material = m;
+  }
+  scene.background.set(th.bg);
+  scene.fog.color.set(th.bg); [scene.fog.near, scene.fog.far] = th.fog;
+  ambient.visible = torch.visible = th.light;
+}
+
+export function setTheme(name) {
+  theme = name;
+  try { localStorage.setItem('rogue3d-theme', theme); } catch {}
+  if (renderer) { applyTheme(); draw(); }
 }
 
 export function resize() {
@@ -205,7 +268,7 @@ function faceOpen(grid) {
 function build(grid) {
   const ch = (y, x) => cellAt(grid, y, x)[0];
   const walk = c => !TERRAIN.has(c) || c === '.' || c === '#' || c === '+';
-  const counts = { walls: 0, rocks: 0, floors: 0, dirts: 0, ceils: 0, lintels: 0 };
+  const counts = Object.fromEntries(Object.keys(meshes).map(k => [k, 0]));
   const put = (mesh, name, x, y, z, bright) => {
     dummy.position.set(x + 0.5, y, z + 0.5); dummy.updateMatrix();
     const i = counts[name]++;
@@ -217,7 +280,8 @@ function build(grid) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
       const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
-      if (c === '-' || c === '|') { put(walls, 'walls', x, 0.5, y, bright); continue; }
+      if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); continue; }
+      if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); continue; }
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
         if (!rock.has(y * W + x)) continue;
@@ -233,7 +297,8 @@ function build(grid) {
         const ns = [ch(y - 1, x), ch(y + 1, x), ch(y, x - 1), ch(y, x + 1)];
         corr = ns.includes('#') && !ns.includes('.');
       }
-      if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
+      if (c === '+') put(doors, 'doors', x, 0, y, bright);
+      else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       put(ceils, 'ceils', x, 1, y, bright);
       if (c === '+') put(lintels, 'lintels', x, 0.89, y, bright);
       if (TERRAIN.has(c) || c === '@') continue;
@@ -248,7 +313,7 @@ function build(grid) {
       glyphGroup.add(sp);
     }
   }
-  for (const [name, mesh] of Object.entries({ walls, rocks, floors, dirts, ceils, lintels })) {
+  for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
