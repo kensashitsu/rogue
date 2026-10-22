@@ -1048,7 +1048,7 @@ class Game:
             if w is not None and getattr(w, 'o_which', -1) == item_launch:
                 launcher = w
 
-        name = item.display_name(self.knowledge)
+        name = dc_replace(item, o_count=1).display_name(self.knowledge)   # 束から投げても 1 つ分の名前
         if hit_monster:
             # 命中判定: d20 + level + item.o_hplus [+ launcher.o_hplus] >= 21 - monster.ac
             hplus = getattr(item, 'o_hplus', 0)
@@ -1057,7 +1057,7 @@ class Game:
             need = max(2, 21 - hit_monster.ac - self.player.level - hplus)
             if random.randint(1, 20) >= need:
                 item.o_flags |= ISKNOW
-                name = item.display_name(self.knowledge)
+                name = dc_replace(item, o_count=1).display_name(self.knowledge)
                 hurldmg = getattr(item, 'o_hurldmg', '1x1')
                 dplus = getattr(item, 'o_dplus', 0)
                 if launcher is not None:
@@ -1116,10 +1116,14 @@ class Game:
         if item is None:
             return
         direction = ui.prompt_direction(tr('Zap in which direction? '))
+        import items as _items
+        _items.last_bolt = None
         msgs = use_stick(
             item, self.player, self.dungeon,
             self.knowledge, self.monsters, direction,
         )
+        if _items.last_bolt and _items.last_bolt['path']:   # 光線を放つ杖なら、飛ぶ様子を見せてから知らせる
+            ui.animate_bolt(_items.last_bolt, direction, self.dungeon, self.player, self.monsters, self.floor_items)
         ui.add_messages(msgs)
         self._end_turn(ui)
 
