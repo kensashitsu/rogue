@@ -1031,6 +1031,12 @@ class Game:
                 break
             y += dy
             x += dx
+        # 飛んでいく様子（落ちる所・当たった所まで）
+        path, cy, cx = [], self.player.y, self.player.x
+        while (cy, cx) != (land_y, land_x):
+            cy += dy; cx += dx
+            path.append((cy, cx))
+        ui.animate_missile(path, item.o_type, self.dungeon, self.player, self.monsters, self.floor_items)
 
         # ランチャー確認: item.o_launch が装備武器の o_which と一致すれば弓ボーナス適用
         launcher = None

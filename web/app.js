@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-21.4';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-22.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -584,6 +584,22 @@ function cover(text, btnLabel, fn) {
   if (btnLabel) { b.textContent = btnLabel; coverFn = fn; }
 }
 
+// 投げた物が飛んでいく様子: 道筋のマスに 1 つずつ字を置いて描く（ゲームはその間待っている）。
+// 途中でゲームが行を描き直したら、その行は戻さない
+function animateMissile(m) {
+  let i = 0, placed = null;
+  const step = () => {
+    if (placed && grid[placed.y][placed.x] === placed.cell) grid[placed.y][placed.x] = placed.prev;
+    if (i >= m.path.length) { requestDraw(); return; }
+    const [y, x] = m.path[i++];
+    placed = { y, x, prev: grid[y][x], cell: [m.ch, m.style] };
+    grid[y][x] = placed.cell;
+    requestDraw();
+    setTimeout(step, m.step);
+  };
+  step();
+}
+
 function start() {
   const files = loadFiles();
   readLang(files);
@@ -615,6 +631,7 @@ function start() {
       requestDraw();
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
+    else if (d.type === 'missile') animateMissile(d.data);
     else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
     else if (d.type === 'exit') {
       const saved = 'rogue.sav' in loadFiles();

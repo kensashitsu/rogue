@@ -293,6 +293,25 @@ export function turn(d) {
   if (player && cam) animateTo(target());
 }
 
+// 投げた物が飛んでいく様子: 自分のマスから道筋に沿って滑らかに動かす（ゲームは step × マス数 だけ待っている）
+export function missile(m) {
+  if (!renderer || !player || !m.path.length) return;
+  const col = (m.style & 15) ? PALETTE[(m.style & 15) - 1] : '#c8ccd1';
+  const sp = new THREE.Sprite(glyphMat(m.ch, col));
+  sp.scale.set(0.4, 0.4, 1);
+  scene.add(sp);
+  const pts = [player, ...m.path], dur = m.step * m.path.length, t0 = performance.now();
+  const frame = now => {
+    const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
+    const i = Math.min(pts.length - 2, Math.floor(k)), f = k - i;
+    const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
+    sp.position.set(x + 0.5, 0.42, y + 0.5);
+    draw();
+    if (k < pts.length - 1) requestAnimationFrame(frame); else { scene.remove(sp); draw(); }
+  };
+  requestAnimationFrame(frame);
+}
+
 function draw() {
   if (!renderer || !cam) { renderer && renderer.render(scene, camera); return; }
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
