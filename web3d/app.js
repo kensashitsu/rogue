@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.41';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.42';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -259,8 +259,8 @@ function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
     for (let c = 0; c < cols; c++) {
       const cell = row[ox + c]; if (!cell) continue;
       let [g, s] = cell; const w = s & 4096 ? 2 : 1;
-      if (mode === 'map' && g !== '@' && lines[r] >= 1 && lines[r] <= 22 && !r3d.isSeen(lines[r], ox + c)) continue;   // 3D の画面に映った所だけ
-      if (mode === 'map' && !fullMap && HIDE_ON_MINI.test(g)) {   // 小さな地図には地形だけ。物の下は周りから床か通路かを決める
+      if (mode === 'map' && g !== '@' && !(s & 2048) && lines[r] >= 1 && lines[r] <= 22 && !r3d.isSeen(lines[r], ox + c)) continue;   // 3D の画面に映った所だけ
+      if (mode === 'map' && !fullMap && !(s & 2048) && HIDE_ON_MINI.test(g)) {   // 探知で出た字（反転）は小さな地図にも出す   // 小さな地図には地形だけ。物の下は周りから床か通路かを決める
         const ns = [lines[r] - 1, lines[r] + 1].map(y => (grid[y] && grid[y][ox + c] || [' '])[0]).concat([row[ox + c - 1], row[ox + c + 1]].map(n => (n || [' '])[0]));
         g = ns.includes('#') && !ns.includes('.') ? '#' : '.'; s = 0;
       }

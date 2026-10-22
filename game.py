@@ -674,6 +674,7 @@ class Game:
             return False
         tile = self.dungeon.get_tile(self.player.y, self.player.x)
         if tile.ch == CH_STAIRS or self.player.godmode:   # デバッグ（Ctrl-G）中はどこからでも降りられる（深い階の確認用）
+            ui.effect_wait('descend', 900, how='stairs')   # 3D 版: 視点が段を下りていく
             self.floor += 1
             self._load_floor()
             ui.add_message(tr('You descend to floor {floor}.', floor=self.floor))
@@ -1164,6 +1165,9 @@ class Game:
         if not trap.known:
             trap.known = True
         self.dungeon.map[trap.y][trap.x].ch = CH_TRAP
+        if trap.which == T_DOOR:   # 3D 版: 罠の上に立ったところを見せてから、床を抜けて落ちる
+            ui.draw_all(self.dungeon, self.player, self.monsters, self.floor_items)
+            ui.effect_wait('descend', 650, how='fall')
         ui.add_messages(self._apply_trap(trap))
 
     def _apply_trap(self, trap) -> list[str]:
