@@ -439,9 +439,10 @@ function build(grid) {
       // モンスター（大文字）は立たせ、それ以外（アイテム・罠）は床の近くに浮かべる
       const mon = c >= 'A' && c <= 'Z';
       const size = mon ? 0.78 : 0.42;
-      const px = theme === 'torch' && ART[c] ? pixelMat(c, fg) : null;   // 灯火: 形の型をドット絵の立て札にする
+      // 形の型を立て札の絵にする: 灯火はドット絵、文字は字で編んだ形（ASCII と同じ形）
+      const px = ART[c] && theme === 'torch' ? pixelMat(c, fg) : ART[c] && theme === 'ascii' ? pixelMat(c, fg, true) : null;
       const sp = new THREE.Sprite(px ? px.mat : glyphMat(c, fg));
-      sp.userData = { ch: c, col: fg, dim: !!(s & 512), flashMat: px ? pixelMat(c, '#ffffff').mat : null };
+      sp.userData = { ch: c, col: fg, dim: !!(s & 512), flashMat: px ? pixelMat(c, '#ffffff', theme === 'ascii').mat : null };
       if (px) {   // 大きさは字で編んだ形と同じ決め方（縦に長い形ほど背が高い）。足元を床にそろえる
         const h = size * 1.15 * px.rows / Math.min(px.rows, 9), w = h * px.aspect;
         sp.scale.set(w, h, 1);
@@ -1076,11 +1077,11 @@ function drawArtSmall(art, u, h, bottom, cx) {
 // 灯火: 形の型（X = 体、e = 目）をドット絵にした立て札。1 升を横 1 : 縦 2 のドットにして、
 // 上を明るく下を暗く、ドットごとに色を少し揺らす。輪郭は暗い色で縁取り、目は光る黄色
 const pixelMats = new Map();
-function pixelMat(ch, col) {
-  const key = ch + col;
+function pixelMat(ch, col, letters = false) {
+  const key = ch + col + (letters ? 'L' : '');
   if (pixelMats.has(key)) return pixelMats.get(key);
   const art = ART[ch], rows = art.length, cols = art[0].length;
-  const PW = 8, PH = 16, pad = 2;
+  const PW = letters ? 16 : 8, PH = letters ? 32 : 16, pad = 2;
   const c = document.createElement('canvas'); c.width = cols * PW + pad * 2; c.height = rows * PH + pad * 2;
   const g = c.getContext('2d');
   const base = new THREE.Color(col), hsl = {};
@@ -1089,6 +1090,14 @@ function pixelMat(ch, col) {
   for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
     const m = art[r][k]; if (m === ' ') continue;
     const x = pad + k * PW, y = pad + r * PH;
+    if (letters) {   // 字で編んだ形: その升にモンスター自身の字（目は黄色い *）
+      g.font = `700 ${PH * 0.95}px "BIZ UDGothic", monospace`; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.shadowColor = m === 'e' ? '#ffe08a' : col; g.shadowBlur = 6;
+      g.fillStyle = m === 'e' ? '#ffe08a' : col;
+      g.fillText(m === 'e' ? '*' : ch, x + PW / 2, y + PH / 2 + 1);
+      g.shadowBlur = 0;
+      continue;
+    }
     if (m === 'e') { g.fillStyle = '#fff2a0'; g.fillRect(x, y, PW, PH); continue; }
     const edge = !filled(r - 1, k) || !filled(r + 1, k) || !filled(r, k - 1) || !filled(r, k + 1);
     const l = Math.min(0.85, Math.max(0.08, hsl.l * (1.25 - 0.6 * r / rows) + (Math.random() - 0.5) * 0.12 - (edge ? 0.12 : 0)));
@@ -1096,7 +1105,7 @@ function pixelMat(ch, col) {
     g.fillRect(x, y, PW, PH);
     g.fillStyle = 'rgba(0,0,0,.28)'; g.fillRect(x, y + PH - 2, PW, 2); g.fillRect(x + PW - 1, y, 1, PH);   // ドットの継ぎ目
   }
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = THREE.NearestFilter;
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.magFilter = letters ? THREE.LinearFilter : THREE.NearestFilter;
   const v = { mat: new THREE.SpriteMaterial({ map: t, transparent: true, fog: true }), rows, aspect: c.width / c.height };
   pixelMats.set(key, v); return v;
 }
