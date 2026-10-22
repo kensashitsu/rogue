@@ -106,7 +106,8 @@ let meshes = {}, themes = {}, edges, tcv, tctx, stepsMat;
 // 床に描く字: 階段（%）と罠（^）。立てた札ではなく床の模様にする。色は 2D の画面の色に合わせて材質の色で付ける
 const DECALS = { '^': { mesh: 'traps', kind: 9, color: '#d58cf0' } };
 let stairsColor = '#6cc6d6';   // 階段の色（2D の画面の % の色に合わせる）
-const STEPS = 4, STEP_DROP = 0.22;   // 下り階段の段の数と、1 段で下がる高さ
+const STEPS = 4, STEP_DROP = 0.22;
+const DIM_AHEAD = 0.16;   // まだ分からない 1 マス先を描く暗さ（覚えている所は 0.38、見えている所は 1）   // 下り階段の段の数と、1 段で下がる高さ
 function decalTex(ch) {
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const g = c.getContext('2d');
@@ -116,7 +117,7 @@ function decalTex(ch) {
   return t;
 }
 const flying = new Set();   // 飛んでいる最中の物（投げた物）
-let edgeSegs = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
+let edgeSegs = [], edgeBright = [];          // 壁の輪郭の線分（x, y, z の組を 2 つずつ）
 let theme = 'term';
 try { theme = localStorage.getItem('rogue3d-theme') || theme; } catch {}
 export const getTheme = () => theme;
@@ -159,7 +160,6 @@ export function init(canvas) {
     ceils: instanced(ceil), lintels: instanced(new THREE.BoxGeometry(1, 0.22, 1)),
     traps: instanced(plane),   // 床に描く字（床から少し浮かせて重ねる）
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
-    fogFloor: instanced(plane), fogCeil: instanced(ceil),   // 闇のもや（まだ分からないマスの床と天井をうっすら）
   };
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils, lintels } = meshes);
   // 見た目ごとの材質（null は描かない）
@@ -174,22 +174,21 @@ export function init(canvas) {
       bg: '#050607', fog: [1.5, 11], light: true,
       mat: { hwalls: stone, vwalls: stone, rocks: lam({ map: rockTex }), floors: stoneFloor, dirts: lam({ map: dirtTex }),
         doors: stoneFloor, ceils: lam({ color: '#1c1916' }), lintels: lam({ color: '#5a3d22' }), ...decals,
-        steps: stepsMat, pits: stone, ...fogMats(lam({ map: floorTex, transparent: true, opacity: 0.35 }), lam({ color: '#1c1916', transparent: true, opacity: 0.5 })) },
+        steps: stepsMat, pits: stone },
     },
     // 文字: 天井も岩もない真っ暗な中に、地図の記号だけが並ぶ
     ascii: {
       bg: '#000000', fog: [2, 13], light: false,
       mat: { hwalls: basic(asciiTex.hwall), vwalls: basic(asciiTex.vwall), rocks: basic(asciiTex.rock), floors: basic(asciiTex.floor),
         dirts: basic(asciiTex.passage), doors: basic(asciiTex.door), ceils: basic(asciiTex.ceil), lintels: null, ...decals,
-        steps: basic(asciiTex.step), pits: basic(asciiTex.rock),
-        ...fogMats(new THREE.MeshBasicMaterial({ map: asciiTex.floor, transparent: true, opacity: 0.3 }), new THREE.MeshBasicMaterial({ map: asciiTex.ceil, transparent: true, opacity: 0.3 })) },
+        steps: basic(asciiTex.step), pits: basic(asciiTex.rock) },
       edges: true,
     },
     // ASCII: 場面を升目の粗さで描いて、升目ごとに文字へ置き換える（drawTerm）。ここでの材質は「何の面か」を書き出すだけ
     term: {
       bg: '#000000', fog: [2, 13], light: false, term: true,
       mat: { hwalls: kindMat(1), vwalls: kindMat(1), rocks: kindMat(3), floors: kindMat(4), dirts: kindMat(5),
-        doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1), fogFloor: kindMat(10), fogCeil: kindMat(10) },
+        doors: kindMat(6), ceils: kindMat(7), lintels: null, traps: kindMat(9), steps: kindMat(8), pits: kindMat(1) },
     },
   };
   // 壁の輪郭線（床・天井との境目と角）。形が分かるように、文字の見た目のときだけ引く
@@ -200,8 +199,6 @@ export function init(canvas) {
   applyTheme();
   resize();
 }
-
-function fogMats(floor, ceil) { return { fogFloor: floor, fogCeil: ceil }; }
 
 function applyTheme() {
   if (!themes[theme]) theme = 'term';
@@ -337,6 +334,7 @@ function build(grid) {
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   const stairCells = [];
+  const aheadRocks = new Set();   // 1 マス先へ延ばした通路の脇の岩
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
       const [c, s] = cellAt(grid, y, x);
@@ -346,10 +344,19 @@ function build(grid) {
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
         if (!rock.has(y * W + x)) {
-          // まだ分からないマスでも、知っている床に接していれば、床と天井をうっすら描いて闇へ溶かす（どの方向にも同じに出すので地形は分からない）
-          let byFloor = false;
-          for (const [dy, dx] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) { const n = ch(y + dy, x + dx); if (walk(n) || n === '@') byFloor = true; }
-          if (byFloor) { put(meshes.fogFloor, 'fogFloor', x, 0, y, 0.38); put(meshes.fogCeil, 'fogCeil', x, 1, y, 0.38); }
+          // まだ分からない 1 マス先: 隣の歩いた床と同じ床・天井を暗く描き、通路なら両脇の岩も暗く延ばす。
+          // 闇へうっすら続いて見せるだけで、本当の地形は使わない（行き止まりでも同じに見える）
+          for (const [dy, dx] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
+            const n = ch(y - dy, x - dx);   // 来た側の隣
+            if (!(walk(n) || n === '@')) continue;
+            if (n === '#') put(dirts, 'dirts', x, 0, y, DIM_AHEAD); else put(floors, 'floors', x, 0, y, DIM_AHEAD);
+            put(ceils, 'ceils', x, 1, y, DIM_AHEAD);
+            for (const [py, px] of [[dx, dy], [-dx, -dy]]) {   // 進む向きの左右
+              if (rock.has((y - dy + py) * W + (x - dx + px)) && ch(y + py, x + px) === ' ' && !rock.has((y + py) * W + (x + px)))
+                aheadRocks.add((y + py) * W + (x + px));
+            }
+            break;
+          }
           continue;
         }
         let byRoom = false;
@@ -399,6 +406,10 @@ function build(grid) {
       glyphGroup.add(sp);
     }
   }
+  for (const k of aheadRocks) {
+    const y = Math.floor(k / W), x = k % W;
+    put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
+  }
   buildEdges(solid, stairCells);
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
@@ -410,11 +421,12 @@ function build(grid) {
 // 壁・岩の面のうち、開いた側を向いた面の輪郭を線にする。床と天井との境目は面ごとに、
 // 縦の線は面が途切れる所（部屋の角・通路の曲がり角）にだけ引く（マスごとに引くと格子になってうるさい）
 function buildEdges(solid, stairCells = []) {
-  const pos = [], col = [];
+  const pos = [], col = [], bri = [];
   const isSolid = (y, x) => y >= MAP_TOP && y <= MAP_BOT && x >= 0 && x < W && solid[y * W + x] > 0;
   const line = (ax, ay, az, bx, by, bz, b) => {
     pos.push(ax, ay, az, bx, by, bz);
     const v = 0.5 * b; col.push(v, v * 1.04, v * 1.1, v, v * 1.04, v * 1.1);
+    bri.push(b);
   };
   for (let y = MAP_TOP; y <= MAP_BOT; y++) for (let x = 0; x < W; x++) {
     const b = solid[y * W + x]; if (!b) continue;
@@ -443,7 +455,7 @@ function buildEdges(solid, stairCells = []) {
       line(x, top, z0, x + 1, top, z0, b);       // この段の蹴込みの下
     }
   }
-  edgeSegs = pos;
+  edgeSegs = pos; edgeBright = bri;
   edges.geometry.dispose();
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -520,14 +532,18 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3
 function drawLines(C, R, depthOf) {
   const out = new Array(C * R);
   const near = 0.12;
+  let segB = 1;
   const put = (x, y, ch, dist) => {
     if (x < 0 || y < 0 || x >= C || y >= R) return;
     if (depthOf(x, y) < dist - 0.35) return;   // 手前の壁に隠れる
     const o = out[y * C + x];
     if (o && o.d <= dist) return;
-    out[y * C + x] = { ch, d: dist, v: 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4)) };
+    // 明るさ: 遠いほど暗く。覚えているだけ・まだ分からない所の線は、その暗さに合わせる
+    const far = 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4));
+    out[y * C + x] = { ch, d: dist, v: segB >= 0.9 ? far : Math.min(1, segB * 2.3 / (1 + 0.11 * dist * dist)) };
   };
   for (let i = 0; i < edgeSegs.length; i += 6) {
+    segB = edgeBright[i / 6] ?? 1;
     _a.set(edgeSegs[i], edgeSegs[i + 1], edgeSegs[i + 2]).applyMatrix4(camera.matrixWorldInverse);
     _b.set(edgeSegs[i + 3], edgeSegs[i + 4], edgeSegs[i + 5]).applyMatrix4(camera.matrixWorldInverse);
     // カメラの後ろに出る分は切る（視点の空間で z < -near が前）
@@ -993,7 +1009,6 @@ function drawTerm() {
     else if (kind === 6) { ch = '+'; }
     else if (kind === 8) { ch = tbuf[i + 2] < 64 ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1); }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
-    else if (kind === 10) { ch = y > R * 0.5 ? (x % 2 ? ',' : '.') : (x % 3 === 0 && y % 2 === 0 ? '`' : ' '); v = lit * 0.55; }   // 闇のもや
     else if (kind === 7) { ch = x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
     const g = Math.round(40 + v * 215);
