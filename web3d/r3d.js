@@ -1243,6 +1243,38 @@ const ART_SIDE = {
     '  XXX XXX  ',
     ' XXXX XXXX ',
   ],
+  F: [   // フライトラップ: 横から。左へ口を開けた顎と、後ろから下りる茎
+    '  X X X       ',
+    ' XXXXXXXX     ',
+    'XXXeXXXXXX    ',
+    '      XXXXX   ',
+    'XXXXXXXXXX    ',
+    ' XXXXXXXX     ',
+    '  X X X  X    ',
+    '         X    ',
+    '     XX  X XX ',
+    '      XXXXXX  ',
+    '        XX    ',
+  ],
+  I: [   // アイスモンスター: 横から。氷の柱が後ろへ並ぶ塊（目は 1 つ）
+    '    X     X   ',
+    '   XXX   XXX  ',
+    '   XXX  XXXXX ',
+    '  XXXXX XXXXX ',
+    ' XXXXXXXXXXXXX',
+    'XXeXXXXXXXXXXX',
+    'XXXXXXXXXXXXXX',
+  ],
+  A: [   // アクエイター: 横から。左へ進む傘と、後ろへ流れる足
+    '   XXXXXX       ',
+    ' XXXXXXXXXX     ',
+    'XXeXXXXXXXXX    ',
+    'XXXXXXXXXXXX    ',
+    '  X  X  X  XX X ',
+    '   X  X  X  X  X',
+    '    X  X  X  X  ',
+    '     X  X  X  X ',
+  ],
 };
 ART_SIDE.Z = [   // ゾンビ: 横から（ART のゾンビは右向きで目が 2 つなので、左向きを描き直す）
   '    XXX     ',
@@ -1352,7 +1384,7 @@ for (const art of [...Object.values(ART), ...Object.values(ART_SIDE), ...Object.
   const n = Math.max(...art.map(r => r.length));
   art.forEach((r, i) => { art[i] = r.padEnd(n); });
 }
-// 向きごとの形。横の絵がないもの（アクエイター・フライトラップ・アイスモンスターは左右対称で、横から見ても形が変わらない）は横も正面の形
+// 向きごとの形
 const mirror = art => art.map(r => [...r].reverse().join(''));
 const noEyes = art => art.map(r => r.replace(/e/g, 'X'));
 const ART_VIEW = {};
