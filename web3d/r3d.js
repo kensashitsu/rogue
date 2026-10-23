@@ -502,6 +502,7 @@ const TORCH_U = { value: 3 };
 const MAX_LIGHTS = 128, LIGHT_R = 2.6;
 const LIGHTS_U = { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0, 0, 0, 0)) };
 const BEAM_U = { value: 3 };
+const WALL_U = { value: 3 };   // 部屋の壁の模様（0 なし・1 レンガ積み・2 ざらつき・3 不揃いな石）
 const LT2_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 燭台の光の色・壁の石組み・床の敷石・燭台の上のすす   // 天井の梁の間隔（マス。0 でなし）
 const TIME_U = { value: 0 }, LTUNE_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 部屋の光・手元の明かり・揺らぎ・隅の陰
 let lamps = [];   // 明るい部屋の扉の口から漏れる光
@@ -525,7 +526,7 @@ function lightAt(x, y, z) {
 // 材質の色（インスタンスごと）: 赤 = 明るさ、緑 = 明るい部屋の中か、青 = 床の隣の壁（北 1・南 2・西 4・東 8 の和 / 16。隅の陰に使う）
 function kindMat(kind) {
   return new THREE.ShaderMaterial({
-    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U, beam: BEAM_U, lt2: LT2_U },
+    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U, beam: BEAM_U, lt2: LT2_U, wall: WALL_U },
     vertexShader: `
       varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       void main() {
@@ -545,13 +546,22 @@ function kindMat(kind) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float kind; uniform float beam; uniform vec4 lt2; uniform float torch; uniform vec4 lights[${MAX_LIGHTS}]; uniform float time; uniform vec4 lt;
+      uniform float kind; uniform float beam; uniform vec4 lt2; uniform float wall; uniform float torch; uniform vec4 lights[${MAX_LIGHTS}]; uniform float time; uniform vec4 lt;
       varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
       float vnoise(vec3 p) {   // 値ノイズ（岩のざらつき）
         vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
                    mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+      }
+      vec2 stones(vec2 p) {   // 不揃いな石: いちばん近い石の中心までと 2 番目までの距離（目地は 2 つが近い所）
+        vec2 i = floor(p), f = fract(p); float d1 = 8.0, d2 = 8.0, id = 0.0;
+        for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+          vec2 g = vec2(float(x), float(y)), o = vec2(hash(vec3(i + g, 1.0)), hash(vec3(i + g, 2.0))) * 0.8 + 0.1;
+          float d = length(g + o - f);
+          if (d < d1) { d2 = d1; d1 = d; id = hash(vec3(i + g, 3.0)); } else if (d < d2) d2 = d;
+        }
+        return vec2(d2 - d1, id);
       }
       void main() {
         float vB = vC.r;
@@ -598,9 +608,11 @@ function kindMat(kind) {
         lit *= mix(1.0, ao, lt.w);
         // 壁の石組み（lt2.y）: 4 段の石積み。段ごとに縦の継ぎ目をずらす。遠くでは升目より細かくなるので消していく
         float near = 1.0 - smoothstep(2.5, 5.5, dd);
-        if ((kind == 1.0 || kind == 2.0) && side != 0.0) {
+        if ((kind == 1.0 || kind == 2.0) && side != 0.0 && wall > 0.0) {
           float u = side == 1.0 ? vW.z : vW.x, row = floor(vW.y * 4.0);
-          if (fract(vW.y * 4.0) < 0.2 || fract(u * 2.0 + 0.5 * mod(row, 2.0)) < 0.12) lit *= 1.0 - 0.75 * lt2.y * near;
+          if (wall == 1.0) { if (fract(vW.y * 4.0) < 0.2 || fract(u * 2.0 + 0.5 * mod(row, 2.0)) < 0.12) lit *= 1.0 - 0.75 * lt2.y * near; }
+          else if (wall == 2.0) lit *= mix(1.0, 0.6 + 0.6 * vnoise(vec3(u, vW.y, 0.0) * 7.0), near);
+          else { vec2 st = stones(vec2(u * 3.2, vW.y * 4.2)); lit *= mix(1.0, (st.x < 0.12 ? 0.3 : 0.8 + 0.35 * st.y), near); }   // 石ごとに少し明るさを変える
         }
         if (kind == 3.0) lit *= mix(1.0, 0.55 + 0.7 * vnoise(vW * 3.1), lt2.y);   // 通路の岩はごつごつ
         // 床の敷石（lt2.z）: 半マスの石を、列ごとにずらして敷く（見つけていない罠の床も同じに）
@@ -1703,9 +1715,9 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1 };   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3 };   // wall: 部屋の壁の模様（レンガ積みはありがちでダサいので、不揃いな石。2026-10-23 に 4 案から選んだ）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
-export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; if (lastGrid) build(lastGrid); draw(); }
+export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; WALL_U.value = tune.wall; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
   if (!rt) return;
