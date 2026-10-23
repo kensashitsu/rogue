@@ -1502,8 +1502,12 @@ function sconceLights(C, R) {
     if (dist < 0.2) continue;
     v3.set(s.x, 0.62, s.z).project(camera);
     if (Math.abs(v3.x) > 1.6 || Math.abs(v3.y) > 1.6) continue;
-    const fl = 1 + tune.flicker * 0.6 * Math.sin(performance.now() / 90 + s.x * 3 + s.z * 7);   // 炎と同じ揺らぎ
-    out.push({ cx: (v3.x + 1) / 2 * C, cy: (1 - v3.y) / 2 * R, dist, rad: unitK / dist * tune.glow * fl / tch });   // rad は升（縦）の数
+    let fl = 1 + tune.flicker * 0.6 * Math.sin(performance.now() / 90 + s.x * 3 + s.z * 7), fi = 1;   // 炎と同じ揺らぎ
+    if (tune.halo) {   // 部屋を照らす光（シェーダの L.w）と同じ式で、光の輪の広さと明るさを揺らす
+      const t = TIME_U.value, ff = Math.min(1, tune.flicker / 0.15) * (0.6 * Math.sin(t * 11.1 + s.x * 3 + s.z * 7) + 0.4 * Math.sin(t * 27 + s.x * 5));
+      fl = 1 + tune.halo * ff; fi = 1 + tune.halo * 1.5 * ff;
+    }
+    out.push({ cx: (v3.x + 1) / 2 * C, cy: (1 - v3.y) / 2 * R, dist, fi, rad: unitK / dist * tune.glow * fl / tch });   // rad は升（縦）の数
   }
   return out;
 }
@@ -1513,7 +1517,7 @@ function glowAt(lights, x, y, depth) {
     if (Math.abs(depth - l.dist) > 1.6) continue;   // 燭台から離れた奥や手前の面は照らさない
     const dx = (x + 0.5 - l.cx) * tcw / tch, dy = y + 0.5 - l.cy;
     const d = Math.hypot(dx, dy) / l.rad;
-    if (d < 1) k = Math.max(k, (1 - d) * (1 - d));
+    if (d < 1) k = Math.max(k, Math.min(1, (1 - d) * (1 - d) * l.fi));
   }
   return k;
 }
@@ -1728,7 +1732,7 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5, flame: 3 };   // flame: 燭台の炎を部屋の光と同じ揺らぎで動かす（1 明るさ・2 先の伸び縮みと横揺れ・3 芯の膨らみ）   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5, flame: 3, halo: 0.3 };   // halo: 燭台の周りの光の輪の揺らぎ（広さ ±halo・明るさ ±1.5halo）   // flame: 燭台の炎を部屋の光と同じ揺らぎで動かす（1 明るさ・2 先の伸び縮みと横揺れ・3 芯の膨らみ）   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; WALL_U.value = tune.wall; TEXR_U.value = tune.texr; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
