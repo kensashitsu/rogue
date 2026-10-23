@@ -38,7 +38,7 @@ const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見�
 //   - 罠: 近くで見ると、その床の . が , に見える（遠くでは普通の床）
 //   - 眠っているモンスター: 目を閉じて（* の代わりに -）、頭の上に z
 //   - 傷ついたモンスター: 体力が半分を切ると、形の升が欠けていく
-let trapCells = new Set(), monState = new Map();
+let trapCells = new Set(), monState = new Map(), monList = [];
 // 部屋（壁の上下左右と、暗い部屋か）。明るい部屋の壁には燭台を灯す。暗い部屋には燭台を置かない（火の消えた燭台があると、灯せそうに見える。2026-10-23 ユーザー指定）
 let rooms = [], sconces = [];
 const SCONCE_GAP = 4;   // 燭台を置く間隔（マス）
@@ -1056,13 +1056,330 @@ const ART = {
     ' XX   XX    ',
   ],
 };
-for (const art of Object.values(ART)) {   // 行の長さをそろえる（短い行は右を空白で埋める）
+// 横から見た形（左を向いた形）。ART が横向きのモンスター（SIDE_NATIVE）は、ここに正面の形を置く
+const ART_SIDE = {
+  B: [   // バット: 横から。翼を上げた蝙蝠
+    '        XXX      ',
+    '      XXXXX      ',
+    '     XXXXX       ',
+    ' XXXXXXXX        ',
+    'XeXXXXXXXXXX     ',
+    ' XXXXXXXXXXXXX   ',
+    '   X    XX   XX  ',
+  ],
+  K: [   // ケストレル: 横から。翼を上げて飛ぶ鳥
+    '        XXX         ',
+    '       XXXX         ',
+    '      XXXXX         ',
+    ' XX  XXXXX          ',
+    'XeXXXXXXXXXXXXX     ',
+    ' XXXXXXXXXXXXXXXXX  ',
+    '     XXXXXXX    XXX ',
+    '      X  X          ',
+  ],
+  H: [   // ホブゴブリン: 横から。棍棒を振り上げた小鬼
+    '    XXX    X ',
+    '   XeXX   XX ',
+    '    XXX  XX  ',
+    '   XXXXXXX   ',
+    '  XXXXXX     ',
+    '   XXXX      ',
+    '   XX XX     ',
+    '  XX   XX    ',
+  ],
+  O: [   // オーク: 横から。突き出た牙と前かがみの大きな体
+    '    XXXX   ',
+    '   XeXXXX  ',
+    ' X XXXXX   ',
+    '  XXXXX    ',
+    '   XXXXXX  ',
+    '  XXXXXXXX ',
+    ' XXXXXXXXX ',
+    'X  XXXXXX  ',
+    '   XXXXXX  ',
+    '   XX  XX  ',
+    '  XXX XXX  ',
+  ],
+  G: [   // グリフィン: 横から。鷲の頭と立てた翼、獅子の胴
+    '      XX  XX     ',
+    '     XXXXXXX     ',
+    ' XX XXXXXXX      ',
+    'XeXXXXXX         ',
+    ' X XXXXXXXXXXX  X',
+    '   XXXXXXXXXXXXX ',
+    '   XXXXXXXXXXX   ',
+    '   X X     X X   ',
+    '  XX XX   XX XX  ',
+  ],
+  L: [   // レプラコーン: 横から。帽子をかぶった小人
+    '    XXX   ',
+    '    XXX   ',
+    '  XXXXXX  ',
+    '   XeXX   ',
+    '    XXX   ',
+    '   XXXX   ',
+    '  XXXXX   ',
+    '   XXX    ',
+    '   X X    ',
+    '  XX XX   ',
+  ],
+  M: [   // メデューサ: 横から。後ろへうねる蛇の髪
+    '   XXXX X X',
+    '  XXXXXXX X',
+    ' XXXXXXX X ',
+    ' XeXXXX X X',
+    '  XXXX     ',
+    '   XXX     ',
+    '  XXXXX    ',
+    ' XXXXXX    ',
+    '  XXXXX    ',
+    '  XXXXXX   ',
+    ' XXXXXXXX  ',
+  ],
+  N: [   // ニンフ: 横から。後ろへ流れる長い髪
+    '    XXXX   ',
+    '   XeXXXX  ',
+    '    XXXXXX ',
+    '    XX  XX ',
+    '   XXXX  X ',
+    '  XXXXX    ',
+    '   XXXX    ',
+    '  XXXXXX   ',
+    ' XXXXXXXX  ',
+    '   X  X    ',
+  ],
+  P: [   // ファントム: 横から。裾を後ろへなびかせて漂う布
+    '    XXXXXX     ',
+    '   XXXXXXXX    ',
+    '  XeXXXXXXXX   ',
+    '  XXXXXXXXXX   ',
+    '  XXXXXXXXXXX  ',
+    '  XXXXXXXXXXXX ',
+    '   XXXXXXXXXXXX',
+    '    XXXXXXXXX X',
+    '     X XX XX  X',
+  ],
+  R: [   // ラトルスネーク: 横から。鎌首と、後ろに立てた尾の鳴子
+    '  XXXX       ',
+    ' XeXXXX      ',
+    '  XXX        ',
+    '   XX     X  ',
+    '   XX    XXX ',
+    '  XXXXXXXXX  ',
+    ' XXXXXXXXXXX ',
+    'XXX      XXX ',
+    ' XXXXXXXXXX  ',
+    '  XXXXXXXX   ',
+  ],
+  S: [   // スネーク: 横から。鎌首をもたげた蛇
+    '  XXXX      ',
+    ' XeXXXX     ',
+    '  XXXXX     ',
+    '    XXX     ',
+    '     XX     ',
+    '     XX     ',
+    '    XXXXX   ',
+    '         XX ',
+    '  XXXXXXXXX ',
+    ' XX         ',
+    '  XXXXXXXXX ',
+  ],
+  T: [   // トロール: 横から。前に垂らした長い腕
+    '    XXXX    ',
+    '   XeXXXX   ',
+    '    XXXX    ',
+    '   XXXXXX   ',
+    '  XXXXXXXX  ',
+    ' XXXXXXXXX  ',
+    ' X XXXXXX   ',
+    'X  XXXXXX   ',
+    'X   XX XX   ',
+    '    XX  XX  ',
+    '   XXX  XXX ',
+  ],
+  V: [   // ヴァンパイア: 横から。後ろに広がるマント
+    '    XXX    ',
+    '   XeXX    ',
+    '    XXX XX ',
+    '   XXXXXXX ',
+    '   XXXXXXXX',
+    '   XXXXXXXX',
+    '   XXXXXXX ',
+    '   XXXXXXX ',
+    '   XX XX   ',
+    '  XX  XX   ',
+  ],
+  W: [   // レイス: 横から。裾を引いて漂う死霊
+    '    XXXX    ',
+    '   XXXXXX   ',
+    '   XeXXXX   ',
+    '  XXXXXXXX  ',
+    ' XXXXXXXXX  ',
+    '    XXXXXXX ',
+    '    XXXXXXXX',
+    '     XXXXX X',
+    '      X X  X',
+    '       X    ',
+  ],
+  X: [   // ゼロック: 横から。口を開けた箱（. は口の中）
+    ' XXXXXXXXX ',
+    'XeXXXXXXXXX',
+    'XXXXXXXXXXX',
+    'X.X.XXXXXXX',
+    '....XXXXXXX',
+    'X.X.XXXXXXX',
+    'XXXXXXXXXXX',
+    'XXXXXXXXXXX',
+  ],
+  Y: [   // イエティ: 横から。前かがみの雪男
+    '   XXXXX   ',
+    '  XeXXXXX  ',
+    '  XXXXXXX  ',
+    '  XXXXXXXX ',
+    ' XXXXXXXXXX',
+    ' XXXXXXXXX ',
+    'XX XXXXXX  ',
+    '   XXXXX   ',
+    '  XXX XXX  ',
+    ' XXXX XXXX ',
+  ],
+};
+ART_SIDE.Z = [   // ゾンビ: 横から（ART のゾンビは右向きで目が 2 つなので、左向きを描き直す）
+  '    XXX     ',
+  '   XeXX     ',
+  '    XXX     ',
+  'XXXXXXXX    ',
+  '     XXXX   ',
+  'XXXXXXXXX   ',
+  '     XXXX   ',
+  '    XX XX   ',
+  '    X   X   ',
+  '   XX   XX  ',
+];
+const ART_FRONT = {
+  E: [   // エミュー: 正面から。長い首の大きな鳥
+    '   XXX   ',
+    '  XeXeX  ',
+    '   XXX   ',
+    '    X    ',
+    '    X    ',
+    '   XXX   ',
+    ' XXXXXXX ',
+    'XXXXXXXXX',
+    'XXXXXXXXX',
+    ' XXXXXXX ',
+    '  X   X  ',
+    '  X   X  ',
+    ' XX   XX ',
+  ],
+  C: [   // ケンタウロス: 正面から。人の上半身と馬の前脚
+    '    XXX    ',
+    '   XeXeX   ',
+    '    XXX    ',
+    '  XXXXXXX  ',
+    ' X XXXXX X ',
+    '   XXXXX   ',
+    '  XXXXXXX  ',
+    '  XXXXXXX  ',
+    '  X X X X  ',
+    '  X X X X  ',
+    ' XX XX XX XX',
+  ],
+  D: [   // ドラゴン: 正面から。角のある頭と長い首、広げた翼
+    'X          XXX          X',
+    'XX        XeXeX        XX',
+    'XXXX       XXX       XXXX',
+    'XXXXXX     XXX     XXXXXX',
+    ' XXXXXXX XXXXXXX XXXXXXX ',
+    '  XXXXXXXXXXXXXXXXXXXXX  ',
+    '    XXXX XXXXXXX XXXX    ',
+    '         XXXXXXX         ',
+    '        XX XXX XX        ',
+    '       XXX     XXX       ',
+  ],
+  J: [   // ジャバウォック: 正面から。長い首と翼
+    '      XXX      ',
+    '     XeXeX     ',
+    '  X   XXX   X  ',
+    ' XXX  XXX  XXX ',
+    ' XXXXXXXXXXXXX ',
+    '  XXXXXXXXXXX  ',
+    '    XXXXXXX    ',
+    '    XX X XX    ',
+    '   XX  X  XX   ',
+    '  XX       XX  ',
+  ],
+  Q: [   // クアッガ: 正面から。縞のある馬
+    '    XXX    ',
+    '   XeXeX   ',
+    '    XXX    ',
+    '    XXX    ',
+    '  XX.X.XX  ',
+    '  XX.X.XX  ',
+    '  XX.X.XX  ',
+    '   X   X   ',
+    '   X   X   ',
+    '  XX   XX  ',
+  ],
+  U: [   // ブラックユニコーン: 正面から。額の角
+    '     X     ',
+    '     X     ',
+    '    XXX    ',
+    '   XeXeX   ',
+    '    XXX    ',
+    '    XXX    ',
+    '  XXXXXXX  ',
+    '  XXXXXXX  ',
+    '   X   X   ',
+    '   X   X   ',
+    '  XX   XX  ',
+  ],
+  Z: [   // ゾンビ: 正面から。腕をこちらへ突き出した死体
+    '   XXX   ',
+    '  XeXeX  ',
+    '   XXX   ',
+    ' XXXXXXX ',
+    'XX XXX XX',
+    'X  XXX  X',
+    '   XXX   ',
+    '  XX XX  ',
+    '  X   X  ',
+    ' XX   XX ',
+  ],
+};
+const SIDE_NATIVE = new Set(['E', 'C', 'D', 'J', 'Q', 'U', 'Z']);   // ART が横向きのモンスター
+for (const art of [...Object.values(ART), ...Object.values(ART_SIDE), ...Object.values(ART_FRONT)]) {   // 行の長さをそろえる（短い行は右を空白で埋める）
   const n = Math.max(...art.map(r => r.length));
   art.forEach((r, i) => { art[i] = r.padEnd(n); });
 }
+// 向きごとの形。横の絵がないもの（アクエイター・フライトラップ・アイスモンスターは左右対称で、横から見ても形が変わらない）は横も正面の形
+const mirror = art => art.map(r => [...r].reverse().join(''));
+const noEyes = art => art.map(r => r.replace(/e/g, 'X'));
+const ART_VIEW = {};
+for (const ch of Object.keys(ART).filter(c => c >= 'A' && c <= 'Z')) {
+  const native = SIDE_NATIVE.has(ch);
+  const front = native ? ART_FRONT[ch] : ART[ch], side = ART_SIDE[ch] || (native ? ART[ch] : null);
+  if (!front) continue;
+  ART_VIEW[ch] = { front, back: mirror(noEyes(front)), side, sideR: side && mirror(side) };   // 後ろからは左右が逆（持っている物が反対の手に来る）
+}
+// 見る向きでの形: 正面・横・後ろ。横の絵は左を向いた形で持ち、右を向くときは左右を返す。
+// 後ろは正面の形を左右返して目を消す（多くのモンスターは前と後ろで輪郭がほぼ同じ）。横の絵がないモンスターは横も正面のまま
+const _mv = new THREE.Vector3();
+function artFor(o, u) {
+  const v = ART_VIEW[u.ch], st = u.st;
+  if (!v || !st || !st.face || !tune.monView) return ART[u.ch];
+  const [fy, fx] = st.face, fl = Math.hypot(fx, fy);
+  _mv.copy(camera.position).sub(o.sp.position); _mv.y = 0; _mv.normalize();
+  const c = (fx * _mv.x + fy * _mv.z) / fl;   // こちらを向いているほど 1
+  if (c > 0.4) return v.front;
+  if (c < -0.4) return v.back;
+  if (!v.side) return v.front;
+  const right = (fx * Math.cos(camera.rotation.y) - fy * Math.sin(camera.rotation.y)) > 0;   // 画面の右を向いている
+  return right ? v.sideR : v.side;
+}
 // 形で描けたら true（近くて、1 升が画面の升の 0.75 倍以上になるとき）
 function drawArt(o, u) {
-  const art = ART[u.ch];
+  const art = artFor(o, u);
   if (!art) return false;
   const rows = art.length, cols = art[0].length;
   // 形の 1 升の高さ（縦に長い形ほど背が高くなる。ただし画面の 9 割まで）
@@ -1217,7 +1534,7 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1 };
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1 };   // monView: モンスターを見る向きで描き分ける
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -1452,7 +1769,19 @@ export function effect(d) {
     if (lastGrid) { build(lastGrid); draw(); }
     return;
   } else if (d.type === 'mons') {
-    monState = new Map(d.mons.map(([y, x, sleep, hp]) => [y * W + x, { sleep: !!sleep, hp }]));
+    const prev = monList;
+    monList = d.mons.map(([y, x, sleep, hp], i) => {
+      // 向き: 動いたらその向き。動かず起きていれば（隣で殴り合うなど）こちらを向く。眠っていれば場所で決まった向き
+      // 並びはゲームのモンスターの並びと同じなので、同じ番目が近くにいれば同じモンスターとみなす
+      const o = prev.length === d.mons.length ? prev[i] : prev.find(q => Math.max(Math.abs(q.y - y), Math.abs(q.x - x)) <= 2 && !d.mons.some(([y2, x2]) => y2 === q.y && x2 === q.x));
+      let face = o && Math.max(Math.abs(o.y - y), Math.abs(o.x - x)) <= 2 ? o.face : null;
+      if (o && face && (o.y !== y || o.x !== x)) face = [Math.sign(y - o.y), Math.sign(x - o.x)];
+      if (!sleep && player && Math.max(Math.abs(player[0] - y), Math.abs(player[1] - x)) <= 1) face = [Math.sign(player[0] - y), Math.sign(player[1] - x)];
+      if (!face) face = sleep ? DIRS[(y * 7 + x * 13) % 8] : player ? [Math.sign(player[0] - y), Math.sign(player[1] - x)] : [1, 0];
+      if (!face[0] && !face[1]) face = [1, 0];
+      return { y, x, face };
+    });
+    monState = new Map(d.mons.map(([y, x, sleep, hp], i) => [y * W + x, { sleep: !!sleep, hp, face: monList[i].face }]));
     if (lastGrid) draw();
     return;
   } else if (d.type === 'rooms') {
