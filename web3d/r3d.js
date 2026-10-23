@@ -39,7 +39,7 @@ const SECRET_NEAR = 2.6;   // この距離より近いときだけ違って見�
 //   - 眠っているモンスター: 目を閉じて（* の代わりに -）、頭の上に z
 //   - 傷ついたモンスター: 体力が半分を切ると、形の升が欠けていく
 let trapCells = new Set(), monState = new Map();
-// 部屋（壁の上下左右と、暗い部屋か）。明るい部屋の壁には燭台を灯す。暗い部屋の燭台は火が消えている
+// 部屋（壁の上下左右と、暗い部屋か）。明るい部屋の壁には燭台を灯す。暗い部屋には燭台を置かない（火の消えた燭台があると、灯せそうに見える。2026-10-23 ユーザー指定）
 let rooms = [], sconces = [];
 const SCONCE_GAP = 4;   // 燭台を置く間隔（マス）
 // アミュレットを持っている間は、階段を上り階段に描く（段が北へ上っていき、天井に口が開いて上の階へ抜ける）
@@ -243,6 +243,7 @@ function buildSconces(grid) {
   sconces = [];
   const wall = (y, x) => '-|'.includes(cellAt(grid, y, x)[0]);
   for (const r of rooms) {
+    if (r.dark) continue;
     const add = (y, x, px, pz) => { if (wall(y, x)) sconces.push({ x: px, z: pz, dark: r.dark }); };
     for (let x = r.left + 2; x <= r.right - 2; x += SCONCE_GAP) {
       add(r.top, x, x + 0.5, r.top + 1.03); add(r.bottom, x, x + 0.5, r.bottom - 0.03);
