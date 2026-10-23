@@ -1933,7 +1933,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null };
+const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -1971,7 +1971,9 @@ function sizeFx(w, h) {
 
 export function effect(d) {
   const now = performance.now();
-  if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
+  if (d.type === 'hurtsoon') {   // くらった知らせはメッセージを読み進めてから来る。それまで状態行の HP が減っても揺らさない
+    fx.hurtSoon = now;
+  } else if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
     // 順番に見せる: こちらの振りが届いて止まるまで、ほかの敵が殴っていればその踏み込みが終わるまで待つ（待ちすぎない）
     const start = Math.min(now + 700, Math.max(now, fx.busyUntil));
     fx.busyUntil = start + 260;
@@ -2036,6 +2038,7 @@ export function effect(d) {
     if (lastGrid) { build(lastGrid); draw(); }
     return;
   } else if (d.type === 'hurt') {
+    fx.hurtSoon = 0;
     const from = d.y == null ? null : [d.y, d.x];
     if (fx.hurtAt && now - fx.hurtAt.made < 60) setTimeout(() => { hurt(from); startFx(); }, fx.hurtAt.at - now);   // 踏み込みきってから揺らす
     else hurt(from);
@@ -2114,7 +2117,7 @@ function watchHp(grid) {
   const m = status.match(/HP:\s*(\d+)/i);
   if (!m) return;
   const hp = +m[1];
-  if (fx.lastHp !== null && hp < fx.lastHp && performance.now() - fx.shakeT0 > 400 && !(fx.hurtAt && performance.now() < fx.hurtAt.at + 400)) { hurt(null); startFx(); }
+  if (fx.lastHp !== null && hp < fx.lastHp && performance.now() - fx.shakeT0 > 400 && !(fx.hurtAt && performance.now() < fx.hurtAt.at + 400) && !(fx.hurtSoon && performance.now() - fx.hurtSoon < 60000)) { hurt(null); startFx(); }
   fx.lastHp = hp;
 }
 

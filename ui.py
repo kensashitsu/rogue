@@ -276,7 +276,7 @@ class UI:
 
     def __init__(self) -> None:
         self.stdscr: Optional[curses.window] = None
-        self._msgs:        list[str] = []    # 表示待ちメッセージキュー
+        self._msgs:        list = []         # 表示待ちメッセージキュー（文字列と、間に挟んだ演出 ('effect', 種類, data)）
         self._last_msg:    str       = ""    # 直前に表示したメッセージ
         self._has_color:   bool      = False
         self._cleaned_up:  bool      = False
@@ -369,15 +369,23 @@ class UI:
         for m in msgs:
             self.add_message(m)
 
+    def queue_effect(self, kind: str, **data) -> None:
+        """演出をメッセージの列に挟む。それより前のメッセージを読み進めてから出る（3D 版の敵の攻撃など）。"""
+        self._msgs.append(('effect', kind, data))
+
     def flush_messages(self) -> None:
         """
         キューのメッセージを全件表示する。
         複数ある場合は '--More--' をメッセージ末尾に付加してキー待ちする。
+        間に挟んだ演出は、その順番が来たときに知らせる。
         """
         while self._msgs:
             msg = self._msgs.pop(0)
+            if isinstance(msg, tuple):
+                self.effect(msg[1], **msg[2])
+                continue
             self._last_msg = msg
-            if self._msgs:
+            if any(isinstance(m, str) for m in self._msgs):
                 self._raw_message(self._with_more(msg))
                 if self.stdscr:
                     self._wait_advance()
