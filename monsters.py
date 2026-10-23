@@ -378,6 +378,7 @@ class Monster:
         can_target = (not player.status.invisible) or bool(self.flags & CANSEE)
         if adjacent and can_target:
             result = monster_attacks_player(self, player, dungeon)
+            self.last_attack = result.hit   # 3D 版の演出用（game.py が読む）
             msgs.extend(result.messages)
             # テレポート（Leprechaun / Nymph）
             if result.monster_teleports:
