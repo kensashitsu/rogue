@@ -1436,7 +1436,7 @@ class Game:
                         seen = (ui._is_visible(self.dungeon, self.player, m.y, m.x)
                                 and not ((m.flags & ISINVIS) and not st.can_see_invisible))
                         if attacked is not None and seen:
-                            ui.effect('mattack', y=m.y, x=m.x, hit=attacked)
+                            ui.effect('mattack', y=m.y, x=m.x, hit=attacked, ch=m.letter)
                     if self.player.hp < hp:
                         ui.effect('hurt', dmg=hp - self.player.hp, **({'y': m.y, 'x': m.x} if seen else {}))
                     if not self.player.is_alive:

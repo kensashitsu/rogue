@@ -1973,7 +1973,7 @@ export function effect(d) {
   const now = performance.now();
   if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
     fx.lunges.push({ y: d.y, x: d.x, t0: now, hit: !!d.hit });
-    if (d.hit) fx.claws.push({ t0: now + LUNGE_HIT, seed: Math.random() });
+    if (d.hit && ATTACK_KIND[d.ch] !== 'none') fx.claws.push({ t0: now + LUNGE_HIT, seed: Math.random(), kind: ATTACK_KIND[d.ch] || 'claw', ch: d.ch });
   } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
@@ -2170,8 +2170,94 @@ function project(x, y, z) {
 }
 // 敵の攻撃: 踏み込み（LUNGE_HIT で当たる）と、当たったときに画面に走る 3 本の爪あと（/ の字を斜めに並べる）
 const LUNGE_MS = 380, LUNGE_HIT = 110, CLAW_MS = 360;
+// 敵ごとの攻撃の仕方（当たったときに画面に出る跡）。E（浮遊する目）は見つめるだけで殴らない
+const ATTACK_KIND = {
+  G: 'claw', K: 'claw', J: 'claw', Y: 'claw', D: 'claw', T: 'claw',
+  A: 'bite', B: 'bite', S: 'bite', R: 'bite', V: 'bite', X: 'bite', Z: 'bite', Q: 'bite',
+  H: 'blunt', O: 'blunt', C: 'blunt', M: 'blunt',
+  U: 'horn',
+  I: 'touch', P: 'touch', W: 'touch', L: 'touch', N: 'touch', F: 'touch',
+  E: 'none',
+};
+const TOUCH_COL = { I: '#9fd8ff', P: '#b0b8c8', W: '#8a6fb0', L: '#f0c652', N: '#f0a0c8', F: '#7fd17a' };   // 触れたものの色（冷気・霊気・金・魅了・つる）
+function markCtx(size) {
+  const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
+  fxctx.save(); fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
+  fxctx.font = `700 ${Math.round(Math.min(W2, H2) * size)}px "BIZ UDGothic", monospace`;
+  return { W2, H2, u: Math.min(W2, H2) };
+}
+function markChar(ch, x, y, col, a = 1, rot = 0) {
+  fxctx.globalAlpha = Math.max(0, Math.min(1, a));
+  if (rot) { fxctx.save(); fxctx.translate(x, y); fxctx.rotate(rot); x = 0; y = 0; }
+  fxctx.lineWidth = 6; fxctx.strokeStyle = '#000'; fxctx.strokeText(ch, x, y);
+  fxctx.fillStyle = col; fxctx.fillText(ch, x, y);
+  if (rot) fxctx.restore();
+}
+// 噛みつき: 上から V、下から ^ の牙の列が閉じる
+function drawBite(c, ms) {
+  const { W2, H2, u } = markCtx(0.13), close = Math.min(1, ms / 70), fade = ms < 140 ? 1 : 1 - (ms - 140) / (CLAW_MS - 140);
+  const gap = (1 - close) * H2 * 0.32 + u * 0.06, cy = H2 * 0.47, n = 6;
+  for (let i = 0; i < n; i++) {
+    const q = i / (n - 1) - 0.5, x = W2 * 0.5 + q * u * 0.8, arc = q * q * u * 0.35;   // 顎の形に両端を上げ下げ
+    const col = ms < 110 ? '#fff' : '#ff6a5c';
+    markChar('V', x, cy - gap + arc, col, fade);
+    markChar('^', x + u * 0.07, cy + gap - arc, col, fade);
+  }
+  fxctx.restore();
+}
+// 殴る: 真ん中で * がはじけ、8 方向へ衝撃の字が飛ぶ
+function drawBlunt(c, ms) {
+  const { W2, H2, u } = markCtx(0.11), k = Math.min(1, ms / CLAW_MS), fade = ms < 100 ? 1 : 1 - (ms - 100) / (CLAW_MS - 100);
+  const cx = W2 * (0.45 + 0.1 * c.seed), cy = H2 * 0.47;
+  fxctx.font = `700 ${Math.round(u * (0.22 + 0.25 * Math.min(1, ms / 60)))}px "BIZ UDGothic", monospace`;
+  markChar('*', cx, cy, ms < 90 ? '#fff' : '#ffb054', fade);
+  fxctx.font = `700 ${Math.round(u * 0.1)}px "BIZ UDGothic", monospace`;
+  const RAY = ['-', '\\', '|', '/', '-', '\\', '|', '/'];
+  for (let j = 0; j < 8; j++) {
+    const a = j * Math.PI / 4 + c.seed * 0.4, r = u * (0.16 + 0.32 * Math.sqrt(k));
+    for (let m = 0; m < 2; m++) markChar(RAY[j], cx + Math.cos(a) * (r + m * u * 0.07), cy + Math.sin(a) * (r + m * u * 0.07), m ? '#ff6a5c' : '#ffe08a', fade * (1 - m * 0.4));
+  }
+  fxctx.restore();
+}
+// 角で突く: 真ん中から、ひびが折れ曲がりながら放射状に走る
+function drawHorn(c, ms) {
+  const { W2, H2, u } = markCtx(0.09), reveal = Math.min(1, ms / 80), fade = ms < 150 ? 1 : 1 - (ms - 150) / (CLAW_MS - 150);
+  const cx = W2 * 0.5, cy = H2 * 0.47;
+  markChar('X', cx, cy, ms < 100 ? '#fff' : '#ff6a5c', fade);
+  let r = c.seed * 1000;
+  const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  for (let j = 0; j < 7; j++) {
+    let a = j * Math.PI * 2 / 7 + rnd() * 0.5, x = cx, y = cy;
+    const n = Math.ceil(6 * reveal);
+    for (let i = 0; i < n; i++) {
+      a += (rnd() - 0.5) * 0.9;   // 折れ曲がる
+      x += Math.cos(a) * u * 0.07; y += Math.sin(a) * u * 0.07;
+      const d = ((a % Math.PI) + Math.PI) % Math.PI, ch = d < Math.PI / 8 || d > Math.PI * 7 / 8 ? '-' : d < Math.PI * 3 / 8 ? '\\' : d < Math.PI * 5 / 8 ? '|' : '/';
+      markChar(ch, x, y, i < 2 && ms < 100 ? '#fff' : '#ff6a5c', fade * (1 - i / 8));
+    }
+  }
+  fxctx.restore();
+}
+// 触れる・つかむ: 画面のふちから、その敵の色の ~ がにじんで消える
+function drawTouch(c, ms) {
+  const { W2, H2, u } = markCtx(0.12), k = Math.min(1, ms / 120), fade = ms < 140 ? 1 : 1 - (ms - 140) / (CLAW_MS - 140);
+  const col = TOUCH_COL[c.ch] || '#b0b8c8';
+  let r = c.seed * 1000;
+  const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 70; i++) {
+    const side = i % 4, t = rnd(), depth = rnd() * 0.32 * k;   // ふちからの深さ
+    const x = side === 0 ? t * W2 : side === 1 ? W2 * (1 - depth) : side === 2 ? t * W2 : W2 * depth;
+    const y = side === 0 ? H2 * depth : side === 1 ? t * H2 : side === 2 ? H2 * (1 - depth) : t * H2;
+    markChar('~', x + Math.sin(ms / 40 + i) * u * 0.015, y, col, fade * (0.7 + 0.3 * rnd()));
+  }
+  fxctx.restore();
+}
 function drawClaw(c, now) {
   const ms = now - c.t0; if (ms < 0) return;
+  if (c.kind === 'bite') return drawBite(c, ms);
+  if (c.kind === 'blunt') return drawBlunt(c, ms);
+  if (c.kind === 'horn') return drawHorn(c, ms);
+  if (c.kind === 'touch') return drawTouch(c, ms);
   const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
   const size = Math.round(Math.min(W2, H2) * 0.12), reveal = Math.min(1, ms / 70), fade = ms < 140 ? 1 : 1 - (ms - 140) / (CLAW_MS - 140);
   const cx = W2 * (0.45 + 0.1 * c.seed), cy = H2 * 0.45, len = Math.min(W2, H2) * 0.5, a = -Math.PI / 3 + (c.seed - 0.5) * 0.4;
