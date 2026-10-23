@@ -1069,6 +1069,11 @@ class Game:
         while (cy, cx) != (land_y, land_x):
             cy += dy; cx += dx
             path.append((cy, cx))
+        # 手元の動き（弓で射る・手で投げる）を知らせ、3D 版では放すまで待ってから飛ばす
+        wielded = self.player.weapon
+        fired = getattr(item, 'o_launch', -1) >= 0 and wielded is not None and getattr(wielded, 'o_which', -1) == item.o_launch
+        if not self.player.status.blind:
+            ui.effect_wait('throw', 170 if fired else 120, w=item.o_which if item.o_type == CH_WEAPON else -1, ch=item.o_type, fired=fired)
         ui.animate_missile(path, item.o_type, self.dungeon, self.player, self.monsters, self.floor_items)
 
         # ランチャー確認: item.o_launch が装備武器の o_which と一致すれば弓ボーナス適用
