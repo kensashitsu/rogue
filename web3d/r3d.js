@@ -391,7 +391,12 @@ function build(grid) {
       }
       else if (corr) put(dirts, 'dirts', x, 0, y, bright); else put(floors, 'floors', x, 0, y, bright);
       if (trapCells.has(y * W + x) && c !== '^') put(meshes[corr ? 'hintC' : 'hintF'], corr ? 'hintC' : 'hintF', x, 0.004, y, bright);
-      if (!(c === '%' && upStairs)) put(ceils, 'ceils', x, 1, y, bright);   // 上り階段の上は天井に口が開いている
+      if (!(c === '%' && upStairs)) {   // 上り階段の上は天井に口が開いている
+        const rm = rooms.find(r => y > r.top && y < r.bottom && x > r.left && x < r.right);
+        const m0 = cellMask; cellMask = rm ? (rm.right - rm.left > rm.bottom - rm.top ? 1 : 2) : 0;   // 天井の梁は部屋の短い向きに渡す（通路にはない）
+        put(ceils, 'ceils', x, 1, y, bright);
+        cellMask = m0;
+      }
       if (TERRAIN.has(c) || c === '@') continue;
       const fg = (s & 15) ? PALETTE[(s & 15) - 1] : '#c8ccd1';
       if (c === '%') continue;
@@ -496,6 +501,7 @@ const TORCH_U = { value: 3 };
 // 光源（灯った燭台と、明るい部屋の扉の口）。xyz が場所、w が強さ。近い順に MAX_LIGHTS 個まで
 const MAX_LIGHTS = 128, LIGHT_R = 2.6;
 const LIGHTS_U = { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0, 0, 0, 0)) };
+const BEAM_U = { value: 3 };   // 天井の梁の間隔（マス。0 でなし）
 const TIME_U = { value: 0 }, LTUNE_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 部屋の光・手元の明かり・揺らぎ・隅の陰
 let lamps = [];   // 明るい部屋の扉の口から漏れる光
 // 燭台の光の強さ（d は燭台からの距離）。シェーダーと drawLines で同じ式
@@ -517,7 +523,7 @@ function lightAt(x, y, z) {
 // 材質の色（インスタンスごと）: 赤 = 明るさ、緑 = 明るい部屋の中か、青 = 床の隣の壁（北 1・南 2・西 4・東 8 の和 / 16。隅の陰に使う）
 function kindMat(kind) {
   return new THREE.ShaderMaterial({
-    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U },
+    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U, beam: BEAM_U },
     vertexShader: `
       varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       void main() {
@@ -537,7 +543,7 @@ function kindMat(kind) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float kind; uniform float torch; uniform vec4 lights[${MAX_LIGHTS}]; uniform float time; uniform vec4 lt;
+      uniform float kind; uniform float beam; uniform float torch; uniform vec4 lights[${MAX_LIGHTS}]; uniform float time; uniform vec4 lt;
       varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       void main() {
         float vB = vC.r;
@@ -581,7 +587,12 @@ function kindMat(kind) {
         }
         lit *= mix(1.0, ao, lt.w);
         lit *= face;
-        gl_FragColor = vec4(lit, kind / 15.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
+        float k = kind;
+        if (kind == 7.0 && beam > 0.0) {   // 天井の梁（部屋の短い向きに渡す。向きは色の青）
+          float bm = floor(vC.b * 16.0 + 0.5);
+          if ((bm == 1.0 && fract(vW.x / beam + 0.5) < 0.14) || (bm == 2.0 && fract(vW.z / beam + 0.5) < 0.14)) k = 12.0;
+        }
+        gl_FragColor = vec4(lit, k / 15.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
       }`,
   });
 }
@@ -1651,6 +1662,7 @@ function shadowMask(C, R, depthOf) {
   }
   return mask;
 }
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];   // 点の密度を明るさで変えるときの順番（4×4）
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
   return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
@@ -1661,9 +1673,9 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1 };   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3 };   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
-export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
+export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
   if (!rt) return;
@@ -1721,7 +1733,11 @@ function drawTerm() {
       ch = flat ? '=' : '#'; v = Math.min(1, lit * 1.1 + 0.1) * (upStairs && !flat ? 0.45 : 1);
     }   // 下り階段の段（踏み面 = 、蹴込み #）
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
-    else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
+    else if (kind === 7) {   // 天井はまばらに。ceilDither では明るい所ほど点が密になる（燭台の上が明るく溜まる）
+      if (tune.ceilDither) { ch = tune.ceil && Math.min(0.75, Math.max(0, (lit - 0.42) * 1.5)) > (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16 ? '`' : ' '; v = lit * 0.6; }
+      else { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }
+    }
+    else if (kind === 12) { ch = '='; v = Math.min(1, lit * 1.3); }   // 天井の梁
     if (!ch || ch === ' ') continue;
     const g = Math.round((tune.fadeDark ? 40 * Math.min(1, lit / 0.3) : 40) + v * 215);   // 字の明るさの下限も、光が弱いほど下げる（暗がりでは床・天井の字も闇に消える）
     let tx = (x + 0.5) * tcw;
@@ -1736,8 +1752,8 @@ function drawTerm() {
     }
     tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
       : kind === 6 ? tint('#d39a5c', v)
-      : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
-    if (lights.length && !ln && kind !== 7) {   // 燭台の光: 近くの字を橙に明るく
+      : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : kind === 12 ? tint('#9a7a58', v) : `rgb(${g},${g},${Math.min(255, g + 8)})`;
+    if (lights.length && !ln && (kind !== 7 || tune.ceilDither)) {   // 燭台の光: 近くの字を橙に明るく
       const k = glowAt(lights, x, y, tbuf[i + 3] / 255 * 16);
       if (k > 0.02) tctx.fillStyle = `rgb(${Math.min(255, Math.round(g + 150 * k))},${Math.min(255, Math.round(g + 70 * k))},${Math.round(g * (1 - 0.4 * k))})`;
     }
