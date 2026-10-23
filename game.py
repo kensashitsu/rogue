@@ -517,6 +517,8 @@ class Game:
             self.player.godmode = not self.player.godmode
             state = "ON" if self.player.godmode else "OFF"
             ui.add_message(tr('[DEBUG] God mode {state}.', state=state))
+            if self.player.godmode:   # 無敵モードは能力も最大に（深い階の確認用）
+                ui.add_messages(self.player.debug_max_stats())
 
     def _rest_until_well(self, ui: UI) -> None:
         """Z: 状態異常が治って HP が満タンになるまで休み続ける。
@@ -1258,7 +1260,7 @@ class Game:
 
     def _ascend(self, ui: UI) -> bool:
         tile = self.dungeon.get_tile(self.player.y, self.player.x)
-        if tile.ch != CH_STAIRS:
+        if tile.ch != CH_STAIRS and not self.player.godmode:   # デバッグ（Ctrl-G）中はどこからでも上れる（勝利までの確認用）
             ui.add_message(tr('You see no stairs here.'))
             return False
         if self.floor <= 1:

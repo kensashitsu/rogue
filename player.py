@@ -458,6 +458,14 @@ class Player:
                 break
         return msgs
 
+    def debug_max_stats(self) -> list[str]:
+        """デバッグ（Ctrl-G 無敵モード）: 力・レベル・HP・満腹を最大にする。"""
+        self.str_cur = self.str_max = len(_STR_PLUS)
+        msgs = self.gain_exp(max(0, _EXP_TABLE[-1] - self.exp))
+        self.hp = self.max_hp
+        self.food = STOMACHSIZE
+        return msgs[-1:]
+
     def exp_to_next(self) -> Optional[int]:
         """次のレベルに必要な残り経験値。最大レベルの場合 None。"""
         if self.level >= _MAX_LEVEL:
