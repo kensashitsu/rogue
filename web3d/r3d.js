@@ -116,10 +116,14 @@ function cellAt(grid, y, x) {
 // 階ごとに覚え、続きから遊ぶときのために端末に残す
 let rock = new Set(), rockLevel = '';
 try { const r = JSON.parse(localStorage.getItem('rogue3d-rock') || '{}'); rockLevel = r.level || ''; rock = new Set(r.cells || []); } catch {}
+// 歩いたマス（通路の燭台は、歩いた所にだけ灯っている）。階ごとに覚え、端末に残す
+let walked = new Set();
+try { const r = JSON.parse(localStorage.getItem('rogue3d-walked') || '{}'); if (r.level === rockLevel) walked = new Set(r.cells || []); } catch {}
+const saveWalked = () => { try { localStorage.setItem('rogue3d-walked', JSON.stringify({ level: rockLevel, cells: [...walked] })); } catch {} };
 export function forgetRock() {   // 新しく始めるとき（前の冒険の同じ階の岩を引き継がない）
   rock.clear(); rockLevel = '';
-  seen.clear();
-  try { localStorage.removeItem('rogue3d-rock'); localStorage.removeItem('rogue3d-seen'); } catch {}
+  seen.clear(); walked.clear();
+  try { localStorage.removeItem('rogue3d-rock'); localStorage.removeItem('rogue3d-seen'); localStorage.removeItem('rogue3d-walked'); } catch {}
 }
 
 // 地図に載せるマス: 3D の画面に映った所だけ（前を向いて見た所と、自分の隣）。振り向いて見回すと地図が埋まる。
@@ -153,7 +157,9 @@ function learnRock(grid, pos) {
   const lv = (status.match(/(?:階|Level):\s*(\d+)/) || [])[1];
   if (!lv || !pos) return false;
   let changed = false;
-  if (lv !== rockLevel) { rockLevel = lv; rock.clear(); seen.clear(); saveSeen(); changed = true; }
+  if (lv !== rockLevel) { rockLevel = lv; rock.clear(); seen.clear(); saveSeen(); walked.clear(); changed = true; }
+  const pk = pos[0] * W + pos[1];
+  if (!walked.has(pk)) { walked.add(pk); saveWalked(); if (tune.corrGap) changed = true; }
   if (/盲目|Blind/.test(status)) return changed;   // 目が見えないときは隣も見えない
   for (const [dy, dx] of DIRS) {
     const y = pos[0] + dy, x = pos[1] + dx, k = y * W + x;
@@ -243,6 +249,18 @@ function buildSconces(grid) {
     }
     for (let y = r.top + 2; y <= r.bottom - 2; y += SCONCE_GAP) {
       add(y, r.left, r.left + 1.03, y + 0.5); add(y, r.right, r.right - 0.03, y + 0.5);
+    }
+  }
+  // 通路: 歩いた所の岩の壁に、tune.corrGap マスおきに燭台（歩いて灯してきた明かり。まだ歩いていない通路は闇のまま）
+  const gap = tune.corrGap;
+  if (!gap) return;
+  for (const k of walked) {
+    const y = Math.floor(k / W), x = k % W;
+    if (cellAt(grid, y, x)[0] !== '#' || (x + y) % gap) continue;
+    for (const [dy, dx, px, pz] of [[-1, 0, x + 0.5, y + 0.03], [1, 0, x + 0.5, y + 0.97], [0, -1, x + 0.03, y + 0.5], [0, 1, x + 0.97, y + 0.5]]) {
+      if (!rock.has((y + dy) * W + x + dx)) continue;
+      sconces.push({ x: px, z: pz, dark: false, corr: true });
+      break;
     }
   }
 }
@@ -383,6 +401,7 @@ function build(grid) {
   }
   buildEdges(solid, stairCells, doorCells);
   buildSconces(grid);
+  setLights();
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
     mesh.instanceMatrix.needsUpdate = true;
@@ -455,11 +474,30 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
 // 面の材質は 赤 = 明るさ（覚えているだけの所は暗く、遠いほど暗く）、緑 = 何の面か、青 = 面の向き、
 // 不透明度 = 距離 を書き出す。モンスターなどの字は、位置を升目に写して上から描く
 // ---------------------------------------------------------------------------
+// 覚えているだけの所を照らす手元の明かりの落ち方（大きいほど近くしか見えない）
+const TORCH_U = { value: 3 };
+// 灯った燭台の光（tune.torch が大きく、覚えているだけの所が闇に沈むときに、燭台の周りの床・壁を照らす）。近い順に MAX_LIGHTS 個まで
+const MAX_LIGHTS = 48, LIGHT_R = 2.6;
+const LIGHTS_U = { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -99, 0)) };
+// 燭台の光の強さ（d は燭台からの距離）。シェーダーと drawLines で同じ式
+const sconceLit = d => d < LIGHT_R ? 0.9 * (1 - d / LIGHT_R) ** 2 : 0;
+function setLights() {
+  const [py, px] = player || [0, 0];
+  const ls = sconces.filter(s => !s.dark).map(s => ({ s, d: Math.hypot(s.x - px - 0.5, s.z - py - 0.5) }));
+  ls.sort((a, b) => a.d - b.d);
+  LIGHTS_U.value.forEach((v, i) => { const l = ls[i]; if (l) v.set(l.s.x, 0.62, l.s.z); else v.set(0, -99, 0); });
+}
+function lightAt(x, y, z) {
+  if (tune.torch < 0.2) return 0;
+  let k = 0;
+  for (const v of LIGHTS_U.value) { if (v.y < 0) break; k += sconceLit(Math.hypot(v.x - x, v.y - y, v.z - z)); }
+  return Math.min(1, k);
+}
 function kindMat(kind) {
   return new THREE.ShaderMaterial({
-    uniforms: { kind: { value: kind } },
+    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U },
     vertexShader: `
-      varying vec3 vN; varying float vB; varying float vD;
+      varying vec3 vN; varying float vB; varying float vD; varying vec3 vW;
       void main() {
         mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
@@ -470,19 +508,28 @@ function kindMat(kind) {
         #ifdef USE_INSTANCING_COLOR
           vB = instanceColor.r;
         #endif
-        vec4 mv = viewMatrix * m * vec4(position, 1.0);
+        vec4 wp = m * vec4(position, 1.0);
+        vW = wp.xyz;
+        vec4 mv = viewMatrix * wp;
         vD = -mv.z;
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float kind; varying vec3 vN; varying float vB; varying float vD;
+      uniform float kind; uniform float torch; uniform vec3 lights[${MAX_LIGHTS}];
+      varying vec3 vN; varying float vB; varying float vD; varying vec3 vW;
       void main() {
         float side = abs(vN.y) > 0.5 ? 0.0 : (abs(vN.x) > 0.5 ? 1.0 : 2.0);
         float face = side == 2.0 ? 0.78 : 1.0;   // 壁は向きで濃さを変えて角を見せる
         // 遠いほど暗く（薄い字に）。いま見えている所（明るい部屋）はゆっくり、覚えているだけの所は手元の明かりが届く範囲で
         float far = 1.0 - 0.9 * smoothstep(0.6, 10.0, vD);
-        float torch = 1.0 / (1.0 + 0.11 * vD * vD);
-        float lit = face * (vB > 0.9 ? far : min(1.0, vB * 2.3 * torch + 0.04 * far));
+        float tl = 1.0 / (1.0 + torch * vD * vD);
+        float sl = 0.0;   // 灯った燭台の光（覚えているだけの所が闇に沈むときだけ）
+        if (torch >= 0.2) for (int i = 0; i < ${MAX_LIGHTS}; i++) {
+          if (lights[i].y < 0.0) break;
+          float d = length(lights[i] - vW);
+          if (d < ${LIGHT_R.toFixed(2)}) { float q = 1.0 - d / ${LIGHT_R.toFixed(2)}; sl += 0.9 * q * q; }
+        }
+        float lit = face * (vB > 0.9 ? far : min(1.0, vB * 2.3 * tl + 0.04 * far * (torch < 0.2 ? 1.0 : 0.0) + sl));
         gl_FragColor = vec4(lit, kind / 15.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
       }`,
   });
@@ -510,7 +557,7 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3
 function drawLines(C, R, depthOf) {
   const out = new Array(C * R);
   const near = 0.12;
-  let segB = 1;
+  let segB = 1, segL = 0;
   const put = (x, y, ch, dist) => {
     if (x < 0 || y < 0 || x >= C || y >= R) return;
     if (depthOf(x, y) < dist - 0.35) return;   // 手前の壁に隠れる
@@ -518,10 +565,13 @@ function drawLines(C, R, depthOf) {
     if (o && o.d <= dist) return;
     // 明るさ: 遠いほど暗く。覚えているだけ・まだ分からない所の線は、その暗さに合わせる
     const far = 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4));
-    out[y * C + x] = { ch, d: dist, v: segB >= 0.9 ? far : Math.min(1, segB * 2.3 / (1 + 0.11 * dist * dist)) };
+    const v = segB >= 0.9 ? far : Math.min(1, segB * 2.3 / (1 + tune.torch * dist * dist) + segL);
+    if (segB < 0.9 && tune.torch >= 0.2 && v < 0.06) return;   // 手元の明かりが届かない、覚えているだけの所の線は引かない
+    out[y * C + x] = { ch, d: dist, v };
   };
   for (let i = 0; i < edgeSegs.length; i += 6) {
     segB = edgeBright[i / 6] ?? 1;
+    segL = segB < 0.9 ? lightAt((edgeSegs[i] + edgeSegs[i + 3]) / 2, (edgeSegs[i + 1] + edgeSegs[i + 4]) / 2, (edgeSegs[i + 2] + edgeSegs[i + 5]) / 2) : 0;
     _a.set(edgeSegs[i], edgeSegs[i + 1], edgeSegs[i + 2]).applyMatrix4(camera.matrixWorldInverse);
     _b.set(edgeSegs[i + 3], edgeSegs[i + 4], edgeSegs[i + 5]).applyMatrix4(camera.matrixWorldInverse);
     // カメラの後ろに出る分は切る（視点の空間で z < -near が前）
@@ -1114,8 +1164,8 @@ function tint(hex, v) {
 
 // ASCII の濃さのつまみ: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無。
 // 2026-10-22 に案を並べて見比べ、壁は . : の点描（* + や - = は横じまや重さでうるさい）、床は暗めに決めた
-const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0 };   // sconce: 燭台の形、glow: 光の広さ（0 で光なし）
-export function setTune(o) { Object.assign(tune, o); draw(); }
+const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3 };   // corrGap: 通路の燭台の間隔（0 でなし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）   // sconce: 燭台の形、glow: 光の広さ（0 で光なし）
+export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
   if (!rt) return;
