@@ -1573,7 +1573,7 @@ function objLight(o, u) {
     _ol.set(L.x - P.x, L.y - P.y, L.z - P.z);
     const d = _ol.length();
     if (d > 7) continue;
-    const f = L.w * (1 + 5 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 5 倍（形は小さく、色の差も出にくいので、同じ揺れでは見えない）
+    const f = L.w * (1 + 7 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 7 倍（形は小さく、色の差も出にくいので、同じ揺れでは見えない）
     const hx = _ol.x / d, hz = _ol.z / d;
     ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
   }
@@ -1584,11 +1584,11 @@ function objLight(o, u) {
 function litCol(hex, L, cx) {
   const n = Math.sqrt(Math.max(0, 1 - cx * cx));
   let e = L.amb, w = 0;   // e: 当たる光の強さ、w: そのうち燭台の分（橙に寄せる）
-  for (const l of L.ls) { const k = Math.max(0, cx * l.s + n * l.fr), q = k * k * l.c * (l.warm ? 2.6 : 1); e += q; if (l.warm) w += q; }
+  for (const l of L.ls) { const k = Math.max(0, cx * l.s + n * l.fr), q = k * k * l.c * (l.warm ? 3.4 : 1); e += q; if (l.warm) w += q; }
   // 頭打ちにしない（明るい所でも、炎の揺らぎがいつも色に出る）。光の当たらない側は暗く沈む
-  const v = e / (e + 0.5), wv = w / (e + 0.5), sc = 0.22 + 0.85 * v;   // 光の正面でも元の色の 8 割ほど（元の色が明るい赤などでも、揺れが頭打ちにならない）
+  const v = e / (e + 0.5), wv = w / (e + 0.5), sc = 0.14 + 0.95 * v;   // 光の正面でも元の色の 8〜9 割ほど（元の色が明るい赤などでも、揺れが頭打ちにならない）
   const c = parseInt(hex.slice(1), 16), r = c >> 16 & 255, g = c >> 8 & 255, bl = c & 255;
-  return `rgb(${Math.min(255, Math.round(r * sc + 90 * wv * v))},${Math.min(255, Math.round(g * sc + 40 * wv * v))},${Math.round(bl * sc * (1 - 0.3 * wv))})`;
+  return `rgb(${Math.min(255, Math.round(r * sc + 130 * wv * v))},${Math.min(255, Math.round(g * sc + 60 * wv * v))},${Math.round(bl * sc * (1 - 0.3 * wv))})`;
 }
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
