@@ -1547,15 +1547,27 @@ function drawSconces(C, R, depthOf) {
     const w = h / 2, x0 = cx * tcw - cols * w / 2, y0 = cy * tch - rows * h / 2;
     tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
     tctx.globalAlpha = fade;
-    const flick = 0.85 + 0.15 * Math.sin(now / 90 + s.x * 3 + s.z * 7);
+    let flick = 0.85 + 0.15 * Math.sin(now / 90 + s.x * 3 + s.z * 7);
+    // 炎の揺らぎ（tune.flame）: 部屋を照らす光（シェーダの L.w の揺らぎ）と同じ式で、明るさ・先の形・横の揺れ・大きさを動かす
+    const t = TIME_U.value, ff = Math.min(1, tune.flicker / 0.15) * (0.6 * Math.sin(t * 11.1 + s.x * 3 + s.z * 7) + 0.4 * Math.sin(t * 27 + s.x * 5));
+    const sway = Math.min(1, tune.flicker / 0.15) * (0.6 * Math.sin(t * 5.3 + s.z * 4) + 0.4 * Math.sin(t * 13.7 + s.x * 2));
+    if (tune.flame >= 1) flick = 0.75 + 0.25 * ff;
     for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
-      const ch = art.rows[r][c];
+      let ch = art.rows[r][c];
       if (ch === ' ') continue;
       const isFlame = art.flame.some(([fr, fc]) => fr === r && fc === c);
       if (isFlame && !lit) continue;   // 暗い部屋: 火の消えた金具だけ
       tctx.fillStyle = '#000'; tctx.fillRect(x0 + c * w - 0.5, y0 + r * h, w + 1, h);
-      tctx.fillStyle = isFlame ? `rgb(255,${Math.round(150 + 60 * flick)},${Math.round(70 * flick)})` : lit ? '#9a8f80' : '#5a5650';
-      tctx.fillText(ch, x0 + c * w + w / 2, y0 + r * h + h / 2 + h * 0.04);
+      tctx.fillStyle = isFlame ? `rgb(255,${Math.round(Math.min(255, 150 + 60 * flick))},${Math.round(Math.max(0, 70 * flick))})` : lit ? '#9a8f80' : '#5a5650';
+      let dx = 0, dy = 0, sc = 1;
+      if (isFlame && tune.flame >= 2) {
+        if (r === 0) { sc = 0.8 + 0.3 * ff; dx = sway * w * 0.3; dy = (1 - sc) * h * 0.5; }   // 先: 伸び縮みして、左右に揺れる
+        else dx = sway * w * 0.06;
+      }
+      if (isFlame && tune.flame >= 3 && r > 0) sc = 1 + 0.14 * ff;   // 炎の芯が膨らんだり縮んだり
+      if (sc !== 1) tctx.font = `700 ${h * sc}px "BIZ UDGothic", monospace`;
+      tctx.fillText(ch, x0 + c * w + w / 2 + dx, y0 + r * h + h / 2 + h * 0.04 + dy);
+      if (sc !== 1) tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
     }
     tctx.globalAlpha = 1;
   }
@@ -1716,7 +1728,7 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5 };   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5, flame: 3 };   // flame: 燭台の炎を部屋の光と同じ揺らぎで動かす（1 明るさ・2 先の伸び縮みと横揺れ・3 芯の膨らみ）   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; WALL_U.value = tune.wall; TEXR_U.value = tune.texr; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
