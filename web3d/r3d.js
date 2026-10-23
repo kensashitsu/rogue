@@ -1933,7 +1933,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [] };
+const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -1972,12 +1972,17 @@ function sizeFx(w, h) {
 export function effect(d) {
   const now = performance.now();
   if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
-    fx.lunges.push({ y: d.y, x: d.x, t0: now, hit: !!d.hit });
-    if (d.hit && ATTACK_KIND[d.ch] !== 'none') fx.claws.push({ t0: now + LUNGE_HIT, seed: Math.random(), kind: ATTACK_KIND[d.ch] || 'claw', ch: d.ch });
+    // 順番に見せる: こちらの振りが届いて止まるまで、ほかの敵が殴っていればその踏み込みが終わるまで待つ（待ちすぎない）
+    const start = Math.min(now + 700, Math.max(now, fx.busyUntil));
+    fx.busyUntil = start + 260;
+    fx.hurtAt = { made: now, at: start + LUNGE_HIT };
+    fx.lunges.push({ y: d.y, x: d.x, t0: start, hit: !!d.hit });
+    if (d.hit && ATTACK_KIND[d.ch] !== 'none') fx.claws.push({ t0: start + LUNGE_HIT, seed: Math.random(), kind: ATTACK_KIND[d.ch] || 'claw', ch: d.ch });
   } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
     fx.swing = { t0: now, w: d.w in SWING_ART ? d.w : -1, hit: !!d.hit };
+    fx.busyUntil = Math.max(fx.busyUntil, now + 320);   // 敵の反撃は、こちらの刃が届いて止まってから
   } else if (d.type === 'hit') {
     const delay = fx.swing && now - fx.swing.t0 < 60 ? SWING_HIT : 0;   // 振った刃が届いてから当たりを見せる
     const t0 = now + delay;
@@ -2032,7 +2037,7 @@ export function effect(d) {
     return;
   } else if (d.type === 'hurt') {
     const from = d.y == null ? null : [d.y, d.x];
-    if (fx.lunges.some(l => now - l.t0 < 60)) setTimeout(() => { hurt(from); startFx(); }, LUNGE_HIT);   // 踏み込みきってから揺らす
+    if (fx.hurtAt && now - fx.hurtAt.made < 60) setTimeout(() => { hurt(from); startFx(); }, fx.hurtAt.at - now);   // 踏み込みきってから揺らす
     else hurt(from);
   }
   startFx();
@@ -2109,7 +2114,7 @@ function watchHp(grid) {
   const m = status.match(/HP:\s*(\d+)/i);
   if (!m) return;
   const hp = +m[1];
-  if (fx.lastHp !== null && hp < fx.lastHp && performance.now() - fx.shakeT0 > 400) { hurt(null); startFx(); }
+  if (fx.lastHp !== null && hp < fx.lastHp && performance.now() - fx.shakeT0 > 400 && !(fx.hurtAt && performance.now() < fx.hurtAt.at + 400)) { hurt(null); startFx(); }
   fx.lastHp = hp;
 }
 
@@ -2141,7 +2146,7 @@ function jitterSprites(now, on) {
     const y = Math.round(sp.position.z - 0.5), x = Math.round(sp.position.x - 0.5);
     if (on) {
       const l = player && fx.lunges.find(l => l.y === y && l.x === x);
-      if (l) {   // 踏み込み: 速く前へ出て、ゆっくり戻る
+      if (l && now >= l.t0) {   // 踏み込み: 速く前へ出て、ゆっくり戻る
         const ms = now - l.t0, q = ms < LUNGE_HIT ? Math.sin(ms / LUNGE_HIT * Math.PI / 2) : Math.max(0, 1 - (ms - LUNGE_HIT) / (LUNGE_MS - LUNGE_HIT)) ** 2;
         sp.userData.base = sp.position.clone();
         sp.position.x += (player[1] - x) * 0.42 * q; sp.position.z += (player[0] - y) * 0.42 * q; sp.position.y -= 0.04 * q;
