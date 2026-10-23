@@ -1429,7 +1429,7 @@ function drawArt(o, u) {
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
     if (m === '.') continue;
     const eye = m === 'e', shut = eye && st && st.sleep;
-    tctx.fillStyle = eye && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillStyle = eye && !shut ? '#ffe08a' : u.L ? litCol(u.col || '#c8ccd1', u.L, (c + 0.5) / cols * 2 - 1) : (u.col || '#c8ccd1');
     tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
   if (st && st.sleep) drawZzz(x0 + cols * w * 0.75, y0, h);
@@ -1545,7 +1545,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch); }
     const shut = u.st && u.st.sleep;
-    tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : (u.col || '#c8ccd1');
+    tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : u.L ? litCol(u.col || '#c8ccd1', u.L, (c + 0.5) / tc * 2 - 1) : (u.col || '#c8ccd1');
     tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
     drawn++;
   }
@@ -1556,6 +1556,39 @@ function drawArtSmall(art, u, h, bottom, cx) {
 }
 
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
+// モンスター・アイテムの陰影（tune.objLight）: 燭台の光が当たる側だけを明るくする（形を縦の筒とみなし、列ごとに面の向きを変えて光との角度を取る）。
+// 燭台の光は炎と一緒に揺らぐ
+const _ol = new THREE.Vector3();
+function objLight(o, u) {
+  if (!tune.objLight || u.ghost || u.flash || u.cell == null) return null;
+  const P = o.sp.position, t = TIME_U.value, yaw = camera.rotation.y;
+  const rx = Math.cos(yaw), rz = -Math.sin(yaw);   // 画面の右
+  let cx = camera.position.x - P.x, cz = camera.position.z - P.z;
+  const cl = Math.hypot(cx, cz) || 1; cx /= cl; cz /= cl;   // こちら向き
+  const y = Math.floor(u.cell / W), x = u.cell % W;
+  const amb = tune.roomLight && rooms.some(r => !r.dark && y > r.top && y < r.bottom && x > r.left && x < r.right) ? 0.08 : 0;
+  const ls = [];
+  for (const L of LIGHTS_U.value) {
+    if (!L.w) break;
+    _ol.set(L.x - P.x, L.y - P.y, L.z - P.z);
+    const d = _ol.length();
+    if (d > 7) continue;
+    const f = L.w * (1 + 2 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 2 倍（形は小さいので、同じ揺れでは見えない）
+    const hx = _ol.x / d, hz = _ol.z / d;
+    ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
+  }
+  ls.push({ c: 2.3 / (1 + tune.torch * o.dist * o.dist), s: 0, fr: 1, warm: 0 });   // 手元の明かり（正面から）
+  return { amb, ls };
+}
+// 形の横の位置 cx（-1 = 左の端、1 = 右の端）での色。いつもの色のまま、燭台の光が当たる側だけを橙がかった明るい色へ寄せる
+function litCol(hex, L, cx) {
+  const n = Math.sqrt(Math.max(0, 1 - cx * cx));
+  let h = 0;
+  for (const l of L.ls) if (l.warm) { const k = Math.max(0, cx * l.s + n * l.fr); h += k * k * k * l.c * 2.6; }   // 3 乗: 光に正対する所だけが明るく、端へ急に落ちる
+  h = Math.min(1, h) * 0.9;
+  const v = parseInt(hex.slice(1), 16), r = v >> 16 & 255, g = v >> 8 & 255, bl = v & 255;
+  return `rgb(${Math.round(r + (255 - r) * h)},${Math.round(g + (215 - g) * h)},${Math.round(bl + (150 - bl) * h)})`;
+}
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
   return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
@@ -1566,7 +1599,8 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1 };   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1 };   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -1670,12 +1704,13 @@ function drawTerm() {
     tctx.globalAlpha = (u.dim ? 0.5 : 1) * fade * (o.ghost ? 0.5 : 1);
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
     const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
+    uu.L = objLight(o, uu);
     if (drawArt(o, uu)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
     if (!o.ghost) tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
-    tctx.fillStyle = uu.col || '#c8ccd1';
+    tctx.fillStyle = uu.L ? litCol(uu.col || '#c8ccd1', uu.L, 0) : (uu.col || '#c8ccd1');
     tctx.fillText(u.ch, o.px, o.py + o.size * 0.04);
   }
   tctx.globalAlpha = 1;
