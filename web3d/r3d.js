@@ -1845,7 +1845,8 @@ function drawTerm() {
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
     const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
     uu.L = objLight(o, uu);
-    if (drawArt(o, uu)) continue;
+    if (u.flying) o.size = Math.min(o.size, R * tch * 0.14);   // 飛んでいる物は字 1 つで、手元でも大きくなりすぎないように
+    else if (drawArt(o, uu)) continue;
     tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
@@ -1904,11 +1905,15 @@ export function missile(m) {
   const col = (m.style & 15) ? PALETTE[(m.style & 15) - 1] : '#c8ccd1';
   const sp = new THREE.Sprite(SPRITE_MAT);
   sp.scale.set(0.4, 0.4, 1);
-  sp.userData = { ch: m.ch, col };
+  sp.userData = { ch: m.ch, col, flying: true };
   scene.add(sp); flying.add(sp);
   const pts = [player, ...m.path], dur = m.step * m.path.length, t0 = performance.now();
   const bolt = '|-/\\'.includes(m.ch);   // 杖の光線は、通った所に光が尾を引く
   if (bolt) sp.userData.ch = '*';
+  const toss = !bolt && fx.toss && t0 - fx.toss.t0 < 600 ? fx.toss : null;
+  const spin = toss && toss.w === 7, streak = toss && (toss.w === 3 || toss.w === 6);   // 手裏剣は回る、矢・ダーツは筋を引く
+  if (toss && TOSS_FLY[toss.w]) sp.userData.ch = TOSS_FLY[toss.w];
+  let lastStreak = 0;
   let passed = 0;
   const frame = now => {
     const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
@@ -1916,6 +1921,8 @@ export function missile(m) {
     if (bolt) while (passed <= i) { const [ty, tx] = pts[passed++ + 1] || []; if (ty != null) { fx.trail.push({ y: ty, x: tx, t0: now, col }); startFx(); } }
     const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
     sp.position.set(x + 0.5, 0.42, y + 0.5);
+    if (spin) sp.userData.ch = '*+x+'[Math.floor(now / 45) % 4];
+    if (streak && k > 0.7 && now - lastStreak > 16) { lastStreak = now; fx.trail.push({ y, x, t0: now, col: '#c8ccd1', ch: '-', ms: 160 }); startFx(); }
     draw();
     if (k < pts.length - 1) requestAnimationFrame(frame); else { scene.remove(sp); flying.delete(sp); draw(); }
   };
@@ -1926,7 +1933,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null };
+const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -1964,7 +1971,9 @@ function sizeFx(w, h) {
 
 export function effect(d) {
   const now = performance.now();
-  if (d.type === 'swing') {
+  if (d.type === 'throw') {
+    fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
+  } else if (d.type === 'swing') {
     fx.swing = { t0: now, w: d.w in SWING_ART ? d.w : -1, hit: !!d.hit };
   } else if (d.type === 'hit') {
     const delay = fx.swing && now - fx.swing.t0 < 60 ? SWING_HIT : 0;   // 振った刃が届いてから当たりを見せる
@@ -2099,7 +2108,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || moodActive();
+const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -2108,7 +2117,8 @@ function startFx() {
     fx.nums = fx.nums.filter(n => now - n.t0 < NUM_MS);
     fx.debris = fx.debris.filter(p => now - p.t0 < DEBRIS_MS);
     fx.pops = fx.pops.filter(p => now - p.t0 < POP_MS);
-    fx.trail = fx.trail.filter(p => now - p.t0 < TRAIL_MS);
+    fx.trail = fx.trail.filter(p => now - p.t0 < (p.ms || TRAIL_MS));
+    if (fx.toss && now - fx.toss.t0 > TOSS_MS) fx.toss = null;
     if (fx.swing && now - fx.swing.t0 > SWING_MS) fx.swing = null;
     draw();
     if (fxActive(now)) requestAnimationFrame(tick);
@@ -2144,6 +2154,61 @@ function project(x, y, z) {
   const W2 = fxcv.width / Math.min(devicePixelRatio || 1, 2), H2 = fxcv.height / Math.min(devicePixelRatio || 1, 2);
   return { px: (_v.x + 1) / 2 * W2, py: (1 - _v.y) / 2 * H2, dist, unit: H2 / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) };
 }
+// 投げる・射る（手元の動き）。fired: 弓で矢を射る（引いて放し、弦が震える）。それ以外は手に持った物を振りかぶって投げる
+const TOSS_MS = 520;
+const TOSS_ART = { 3: '----->', 4: '=+===>', 6: '=->', 7: '*', 8: '=------------<>', 0: '==-----(@)', 1: '==+========>', 5: '===+=============>', 2: '==-)' };
+const TOSS_FLY = { 3: '-', 6: '-', 4: ')', 8: '|' };   // 飛んでいる間の字（ほかは物の字のまま）
+function drawToss(now) {
+  const t = fx.toss, ms = now - t.t0, k = ms / TOSS_MS;
+  if (k < 0 || k > 1) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
+  const size = Math.round(Math.min(W2, H2) * 0.11), rel = t.fired ? 170 : 120;
+  const fade = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
+  fxctx.save();
+  fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
+  const put = (ch, x, y, col, sz = size, a = 0) => {
+    fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
+    fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`;
+    fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(ch, 0, 0);
+    fxctx.fillStyle = col; fxctx.fillText(ch, 0, 0);
+  };
+  fxctx.globalAlpha = fade;
+  if (t.fired) {
+    // 弓: 右下に縦に構える。弦を引き（矢が手前へ下がる）、放すと矢は消え、弦が震えて戻る
+    const bx = W2 * 0.74, by = H2 * 0.66, bh = H2 * 0.42;
+    const pull = ms < rel ? (ms / rel) ** 0.7 : 0;
+    const vib = ms < rel ? 0 : Math.sin((ms - rel) / 14) * Math.exp(-(ms - rel) / 90);
+    const nx = bx + size * (0.4 + 1.1 * pull + 0.35 * vib), ny = by + size * 0.5 * pull;
+    const n = 9;
+    for (let i = 0; i <= n; i++) {   // 弓の背: ( の字を弧に並べる
+      const q = i / n - 0.5, x = bx - Math.cos(q * Math.PI) * size * 0.9, y = by + q * bh;
+      put(i === 0 || i === n ? '.' : '(', x, y, '#9a7a58', size * 0.8);
+    }
+    for (const [tx, ty] of [[bx, by - bh / 2], [bx, by + bh / 2]]) {   // 弦: 弓の両端から引き手まで点で
+      for (let i = 1; i < 6; i++) { const q = i / 6; put('.', tx + (nx - tx) * q, ty + (ny - ty) * q, '#bbb', size * 0.6); }
+    }
+    if (ms < rel) {   // つがえた矢: 引き手から画面の真ん中へ向ける
+      const a = Math.atan2(H2 * 0.45 - ny, W2 * 0.5 - nx);
+      fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(nx, ny); fxctx.rotate(a);
+      fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+      const art = '>>----->';
+      for (let i = 0; i < art.length; i++) { fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(art[i], i * size * 0.5, 0); fxctx.fillStyle = i < 2 ? '#c8ccd1' : '#d6dbe0'; fxctx.fillText(art[i], i * size * 0.5, 0); }
+    }
+  } else if (ms < rel) {
+    // 投げる: 右下へ振りかぶってから、真ん中へ向けて小さくなりながら放つ
+    const back = Math.min(1, ms / (rel * 0.55)), fwd = Math.max(0, (ms - rel * 0.55) / (rel * 0.45));
+    const x = W2 * (0.84 + 0.06 * back - 0.34 * fwd * fwd), y = H2 * (0.92 + 0.06 * back - 0.45 * fwd * fwd);
+    const art = TOSS_ART[t.w] || t.ch, sz = size * (1.2 - 0.6 * fwd);
+    const a = t.w === 7 ? ms / 30 : art.length > 2 ? Math.atan2(H2 * 0.45 - y, W2 * 0.5 - x) - (1 - fwd) * 0.6 : 0;
+    if (art.length > 2) {
+      fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
+      fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`;
+      for (let i = 0; i < art.length; i++) { const cx = (i - art.length + 1) * sz * 0.5; fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(art[i], cx, 0); fxctx.fillStyle = i < 2 ? '#9a7a58' : '#d6dbe0'; fxctx.fillText(art[i], cx, 0); }
+    } else put(art, x, y, t.w === 7 ? '#d6dbe0' : '#e8d8b0', sz * 1.3, a);
+  }
+  fxctx.restore();
+}
+
 // 振りの角度（画面の右下の手元から見た向き。-90° が真上、180° が真左）。構え直し→速く振り下ろす→当たれば少し止まる・外れれば振り抜く
 function swingAngle(sw, k) {
   const A0 = -70, A1 = -78, HIT = -128, END = sw.hit ? -150 : -185;
@@ -2213,13 +2278,13 @@ function drawFx(now) {
   }
   // 光線の通り道: 光る * が残って消えていく
   for (const o of fx.trail) {
-    const k = (now - o.t0) / TRAIL_MS;
+    const k = (now - o.t0) / (o.ms || TRAIL_MS);
     const p = project(o.x + 0.5, 0.42, o.y + 0.5); if (!p) continue;
-    const size = Math.max(10, Math.min(120, p.unit * 0.35));
-    fxctx.globalAlpha = 1 - k;
+    const size = Math.max(10, Math.min(o.ch ? 30 : 120, p.unit * (o.ch ? 0.22 : 0.35)));
+    fxctx.globalAlpha = (1 - k) * (o.ch ? 0.7 : 1);
     fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
-    fxctx.shadowColor = o.col; fxctx.shadowBlur = 18;
-    fxctx.fillStyle = o.col; fxctx.fillText('*', p.px, p.py);
+    fxctx.shadowColor = o.col; fxctx.shadowBlur = o.ch ? 0 : 18;
+    fxctx.fillStyle = o.col; fxctx.fillText(o.ch || '*', p.px, p.py);
     fxctx.shadowBlur = 0;
   }
   // 見つけた扉: + が光りながら大きくなって消える
@@ -2234,6 +2299,7 @@ function drawFx(now) {
     fxctx.shadowBlur = 0;
   }
   if (fx.swing) drawSwing(now);
+  if (fx.toss) drawToss(now);
   const dark = transDark(now);   // 階段・落とし穴の暗転
   if (dark > 0) { fxctx.globalAlpha = dark; fxctx.fillStyle = trans.col; fxctx.fillRect(0, 0, fxcv.width, fxcv.height); }
   fxctx.globalAlpha = 1;
