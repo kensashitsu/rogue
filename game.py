@@ -574,6 +574,8 @@ class Game:
         if target:
             result = player_attacks_monster(self.player, target)
             ui.add_messages(result.messages)
+            weapon = self.player.weapon
+            ui.effect('swing', w=weapon.o_which if weapon is not None and weapon.o_type == CH_WEAPON else -1, hit=result.hit)
             if result.hit:
                 ui.effect('hit', y=target.y, x=target.x, dmg=result.damage, killed=result.monster_killed)
             if result.monster_killed:
