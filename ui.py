@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Optional
 
 from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause
 from term import text_width, char_width
-from constants import F_SEEN, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
+from constants import F_SEEN, CH_FLOOR, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
 from items import get_knowledge
 
 if TYPE_CHECKING:
@@ -681,7 +681,8 @@ class UI:
 
                 if visible:
                     tile_room = dungeon.find_room_at(y, x)
-                    if tile_room is None or not tile_room.is_dark:
+                    # 暗い部屋は床だけ覚えない（Rogue 5.4 の erase_lamp は離れたとき FLOOR だけ消す。壁・扉・階段・アイテムは残る）
+                    if tile_room is None or not tile_room.is_dark or tile.ch != CH_FLOOR:
                         dungeon.mark_seen(y, x)
 
                 seen    = bool(tile.flags & F_SEEN)
