@@ -1556,7 +1556,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
 }
 
 // 色 #rrggbb を明るさ v（0〜1）で暗くした rgb()
-// モンスター・アイテムの陰影（tune.objLight）: 燭台の光が当たる側だけを明るくする（形を縦の筒とみなし、列ごとに面の向きを変えて光との角度を取る）。
+// モンスター・アイテムの陰影（tune.objLight）: 燭台の光が当たる側を明るく、反対側を暗くする（形を縦の筒とみなし、列ごとに面の向きを変えて光との角度を取る）。
 // 燭台の光は炎と一緒に揺らぐ
 const _ol = new THREE.Vector3();
 function objLight(o, u) {
@@ -1573,7 +1573,7 @@ function objLight(o, u) {
     _ol.set(L.x - P.x, L.y - P.y, L.z - P.z);
     const d = _ol.length();
     if (d > 7) continue;
-    const f = L.w * (1 + 2 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 2 倍（形は小さいので、同じ揺れでは見えない）
+    const f = L.w * (1 + 5 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 5 倍（形は小さく、色の差も出にくいので、同じ揺れでは見えない）
     const hx = _ol.x / d, hz = _ol.z / d;
     ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
   }
@@ -1583,11 +1583,12 @@ function objLight(o, u) {
 // 形の横の位置 cx（-1 = 左の端、1 = 右の端）での色。いつもの色のまま、燭台の光が当たる側だけを橙がかった明るい色へ寄せる
 function litCol(hex, L, cx) {
   const n = Math.sqrt(Math.max(0, 1 - cx * cx));
-  let h = 0;
-  for (const l of L.ls) if (l.warm) { const k = Math.max(0, cx * l.s + n * l.fr); h += k * k * k * l.c * 2.6; }   // 3 乗: 光に正対する所だけが明るく、端へ急に落ちる
-  h = Math.min(1, h) * 0.9;
-  const v = parseInt(hex.slice(1), 16), r = v >> 16 & 255, g = v >> 8 & 255, bl = v & 255;
-  return `rgb(${Math.round(r + (255 - r) * h)},${Math.round(g + (215 - g) * h)},${Math.round(bl + (150 - bl) * h)})`;
+  let e = L.amb, w = 0;   // e: 当たる光の強さ、w: そのうち燭台の分（橙に寄せる）
+  for (const l of L.ls) { const k = Math.max(0, cx * l.s + n * l.fr), q = k * k * l.c * (l.warm ? 2.6 : 1); e += q; if (l.warm) w += q; }
+  // 頭打ちにしない（明るい所でも、炎の揺らぎがいつも色に出る）。光の当たらない側は暗く沈む
+  const v = e / (e + 0.5), wv = w / (e + 0.5), sc = 0.22 + 0.85 * v;   // 光の正面でも元の色の 8 割ほど（元の色が明るい赤などでも、揺れが頭打ちにならない）
+  const c = parseInt(hex.slice(1), 16), r = c >> 16 & 255, g = c >> 8 & 255, bl = c & 255;
+  return `rgb(${Math.min(255, Math.round(r * sc + 90 * wv * v))},${Math.min(255, Math.round(g * sc + 40 * wv * v))},${Math.round(bl * sc * (1 - 0.3 * wv))})`;
 }
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
