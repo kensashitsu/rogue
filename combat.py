@@ -293,6 +293,8 @@ def _apply_special(
 
     # ── I Ice Monster: 凍結 rnd(2)+2 ターンを加算（5.4 fight.c）────────
     if letter == 'I':
+        if player.godmode:   # 無敵モードは凍らない（死なないので凍り続けて動けなくなる）
+            return msgs, teleport
         if player.status.paralyzed == 0:
             msgs.append(tr('You are frozen by the Ice Monster!'))
         player.status.paralyzed += random.randint(0, 1) + 2
