@@ -1428,17 +1428,19 @@ class Game:
                     hp = self.player.hp
                     m.last_attack = None
                     msgs = m.do_turn(self.dungeon, self.player, self.monsters, self.floor_items)
-                    ui.add_messages(msgs)
                     attacked = getattr(m, 'last_attack', None)
                     if self.player.hp < hp or attacked is not None:
                         # 殴りかかってくる・くらった演出。どこから殴られたかは、そのモンスターが見えているときだけ知らせる
                         st = self.player.status
                         seen = (ui._is_visible(self.dungeon, self.player, m.y, m.x)
                                 and not ((m.flags & ISINVIS) and not st.can_see_invisible))
+                        # 演出はメッセージの列に挟み、こちらの攻撃のメッセージを読み進めてから出す
                         if attacked is not None and seen:
-                            ui.effect('mattack', y=m.y, x=m.x, hit=attacked, ch=m.letter)
+                            ui.queue_effect('mattack', y=m.y, x=m.x, hit=attacked, ch=m.letter)
                     if self.player.hp < hp:
-                        ui.effect('hurt', dmg=hp - self.player.hp, **({'y': m.y, 'x': m.x} if seen else {}))
+                        ui.effect('hurtsoon')   # 3D 版: 状態行の HP が先に減っても、ここでは揺らさない
+                        ui.queue_effect('hurt', dmg=hp - self.player.hp, **({'y': m.y, 'x': m.x} if seen else {}))
+                    ui.add_messages(msgs)
                     if not self.player.is_alive:
                         self._death_cause = f"killed by a {MONSTER_DB[m.letter].name}"
                         self._running = False
