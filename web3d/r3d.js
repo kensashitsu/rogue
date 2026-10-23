@@ -2237,9 +2237,9 @@ function drawSwing(now) {
     fxctx.fillStyle = '#d8b48a'; fxctx.fillText(art, x, y);
     fxctx.restore(); return;
   }
-  if (sw.w === 3 || sw.w === 6 || sw.w === 7) {   // 矢・ダーツ・手裏剣: 短いので振らずに、大きく持って敵へ突き刺す（手裏剣は回しながら）
+  if (sw.w === 3 || sw.w === 6 || sw.w === 7 || sw.w === 8) {   // 槍は突く。矢・ダーツ・手裏剣は短いので振らずに、大きく持って突き刺す（手裏剣は回しながら）
     const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
-    const x = W2 * (0.86 - 0.32 * q), y = H2 * (1.02 - 0.47 * q), sz = size * (1.8 - 0.5 * q);
+    const x = W2 * (0.86 - 0.32 * q), y = H2 * (1.02 - 0.47 * q), sz = size * (sw.w === 8 ? 1.15 - 0.2 * q : 1.8 - 0.5 * q);   // 槍は長いので字は大きくしない
     const a = sw.w === 7 ? k * 14 : Math.atan2(-0.57 * H2, -0.36 * W2), txt = sw.w === 7 ? '*' : art;
     fxctx.globalAlpha = fade;
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
