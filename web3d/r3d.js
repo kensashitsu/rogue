@@ -549,7 +549,9 @@ function kindMat(kind) {
         float lam = mix(1.0, 0.15 + 0.85 * abs(dot(vN, toCam / dc)), lt.y);
         // 遠いほど暗く（薄い字に）。いま見えている所（明るい部屋）はゆっくり、覚えているだけの所は手元の明かりが届く範囲で
         float far = 1.0 - 0.9 * smoothstep(0.6, 10.0, dd);
-        float tl = 1.0 / (1.0 + torch * dd * dd);
+        // 手に持った火の揺らぎ（lt.z）: 少し暗くなる向きにだけ揺れる
+        float hf = 1.0 - lt.z * 0.9 * (0.5 + 0.5 * (0.6 * sin(time * 9.3) + 0.4 * sin(time * 21.7 + 1.3)));
+        float tl = hf / (1.0 + torch * dd * dd);
         float sl = 0.0, rl = 0.0;   // sl: 燭台のすぐ周りを照らす光（覚えているだけの所が闇に沈むとき）、rl: 部屋を照らす光
         for (int i = 0; i < ${MAX_LIGHTS}; i++) {
           vec4 L = lights[i];
@@ -561,7 +563,7 @@ function kindMat(kind) {
           rl += f / (1.0 + 0.6 * d * d * d);
         }
         if (torch < 0.2) sl = 0.0;
-        float lit = vB > 0.9 ? far * lam : min(1.0, vB * 2.3 * tl * lam + 0.04 * far * (torch < 0.2 ? 1.0 : 0.0) + sl);
+        float lit = vB > 0.9 ? far * lam * hf : min(1.0, vB * 2.3 * tl * lam + 0.04 * far * (torch < 0.2 ? 1.0 : 0.0) + sl);
         if (vC.g > 0.5) {   // 明るい部屋（lt.x）: 燭台の近くが明るく、間や真ん中はやや暗い。部屋を出ても明かりは灯ったまま
           float room = far * clamp(0.08 + 0.95 * rl, 0.0, 1.0);
           lit = mix(lit, max(room, min(1.0, 2.3 * tl * lam)), lt.x);   // 部屋の光の届かない所（部屋の壁の外側など）は手元の明かり
@@ -1559,6 +1561,8 @@ function drawArtSmall(art, u, h, bottom, cx) {
 // モンスター・アイテムの陰影（tune.objLight）: 燭台の光が当たる側を明るく、反対側を暗くする（形を縦の筒とみなし、列ごとに面の向きを変えて光との角度を取る）。
 // 燭台の光は炎と一緒に揺らぐ
 const _ol = new THREE.Vector3();
+// 手に持った火の揺らぎ（シェーダーの hf と同じ式）
+const handFlick = t => 1 - tune.flicker * 0.9 * (0.5 + 0.5 * (0.6 * Math.sin(t * 9.3) + 0.4 * Math.sin(t * 21.7 + 1.3)));
 function objLight(o, u) {
   if (!tune.objLight || u.ghost || u.flash || u.cell == null) return null;
   const P = o.sp.position, t = TIME_U.value, yaw = camera.rotation.y;
@@ -1577,7 +1581,7 @@ function objLight(o, u) {
     const hx = _ol.x / d, hz = _ol.z / d;
     ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
   }
-  ls.push({ c: 2.3 / (1 + tune.torch * o.dist * o.dist), s: 0, fr: 1, warm: 0 });   // 手元の明かり（正面から）
+  ls.push({ c: 2.3 * handFlick(t) / (1 + tune.torch * o.dist * o.dist), s: 0, fr: 1, warm: 0 });   // 手元の明かり（正面から）
   return { amb, ls };
 }
 // 形の横の位置 cx（-1 = 左の端、1 = 右の端）での色。いつもの色のまま、燭台の光が当たる側だけを橙がかった明るい色へ寄せる
@@ -1590,6 +1594,63 @@ function litCol(hex, L, cx) {
   const c = parseInt(hex.slice(1), 16), r = c >> 16 & 255, g = c >> 8 & 255, bl = c & 255;
   return `rgb(${Math.min(255, Math.round(r * sc + 130 * wv * v))},${Math.min(255, Math.round(g * sc + 60 * wv * v))},${Math.round(bl * sc * (1 - 0.3 * wv))})`;
 }
+// 足元の陰（床に立って見えるように）と、近くの燭台の光で反対側の床に伸びる影。
+// 字の画面では床の点の間はもともと黒いので、上から黒を重ねても見えない。影の升は床の字そのものを暗くする（濃い所は消える）。
+// 升ごとの影の濃さ（0〜1）を返す
+const _sh = new THREE.Vector3();
+function shadowMask(C, R, depthOf) {
+  const mask = new Float32Array(C * R), SW = C * tcw, SH = R * tch, t = TIME_U.value;
+  const scr = (x, z) => { _sh.set(x, 0.01, z).applyMatrix4(camera.matrixWorldInverse); if (_sh.z > -0.08) return null; _sh.applyMatrix4(camera.projectionMatrix); return [(_sh.x + 1) / 2 * C, (1 - _sh.y) / 2 * R]; };
+  const fillPoly = (pts, a) => {   // 升の真ん中が多角形の中なら、その升に濃さ a
+    const sp = pts.map(([x, z]) => scr(x, z));
+    if (sp.some(q => !q)) return;
+    const x0 = Math.max(0, Math.floor(Math.min(...sp.map(q => q[0])))), x1 = Math.min(C - 1, Math.ceil(Math.max(...sp.map(q => q[0]))));
+    const y0 = Math.max(0, Math.floor(Math.min(...sp.map(q => q[1])))), y1 = Math.min(R - 1, Math.ceil(Math.max(...sp.map(q => q[1]))));
+    for (let gy = y0; gy <= y1; gy++) for (let gx = x0; gx <= x1; gx++) {
+      const px = gx + 0.5, py = gy + 0.5;
+      let inside = false;
+      for (let i = 0, j = sp.length - 1; i < sp.length; j = i++) {
+        const [xi, yi] = sp[i], [xj, yj] = sp[j];
+        if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) mask[gy * C + gx] = Math.max(mask[gy * C + gx], a);
+    }
+  };
+  const v3 = new THREE.Vector3();
+  for (const sp of glyphGroup.children) {
+    const u = sp.userData, P = sp.position;
+    if (u.cell == null) continue;
+    v3.copy(P).applyMatrix4(camera.matrixWorldInverse);
+    const dist = -v3.z;
+    if (dist < 0.3) continue;
+    const c0 = scr(P.x, P.z);
+    if (!c0 || c0[0] < -2 || c0[0] > C + 2 || c0[1] < -2 || c0[1] > R + 2) continue;
+    const gx = Math.min(C - 1, Math.max(0, Math.floor(c0[0]))), gy = Math.min(R - 1, Math.max(0, Math.floor(c0[1])));
+    if (depthOf(gx, gy) < dist - 0.6) continue;   // 足元が壁の向こう
+    const mon = u.ch >= 'A' && u.ch <= 'Z';
+    // 燭台の光で落ちる影（いちばん強く当たる燭台から、反対向きへ）
+    let best = null, bc = 0;
+    for (const L of LIGHTS_U.value) {
+      if (!L.w) break;
+      const d = Math.hypot(L.x - P.x, L.z - P.z);
+      if (d > 3.2 || d < 0.05) continue;
+      const c = L.w * (1 + 7 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5))) / (1 + 0.6 * d * d * d);
+      if (c > bc) { bc = c; best = { dx: (P.x - L.x) / d, dz: (P.z - L.z) / d, d }; }
+    }
+    if (best && bc > 0.05) {
+      const len = (mon ? 1.2 : 0.5) * Math.min(1.6, 0.8 + best.d * 0.35), w = mon ? 0.3 : 0.14;   // 燭台から離れるほど長く
+      const px = -best.dz, pz = best.dx;
+      fillPoly([[P.x + px * w, P.z + pz * w], [P.x + best.dx * len + px * w * 0.7, P.z + best.dz * len + pz * w * 0.7],
+        [P.x + best.dx * len * 1.08, P.z + best.dz * len * 1.08], [P.x + best.dx * len - px * w * 0.7, P.z + best.dz * len - pz * w * 0.7], [P.x - px * w, P.z - pz * w]],
+        Math.min(0.9, 0.35 + bc * 1.2));
+    }
+    // 足元の陰
+    const r = mon ? 0.36 : 0.2, ring = [];
+    for (let k = 0; k < 12; k++) ring.push([P.x + Math.cos(k / 12 * Math.PI * 2) * r, P.z + Math.sin(k / 12 * Math.PI * 2) * r * 0.8]);
+    fillPoly(ring, 0.6);
+  }
+  return mask;
+}
 function tint(hex, v) {
   const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
   return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
@@ -1600,7 +1661,7 @@ function tint(hex, v) {
 // sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
 // roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
 const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
-  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1 };   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1 };   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
@@ -1629,12 +1690,15 @@ function drawTerm() {
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
   tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
+  const shadow = tune.shadow ? shadowMask(C, R, depthOf) : null;
   for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) {
     const i = at(x, y);
     // 2. 壁の輪郭の線が通る升は、線の傾きに合った字（drawLines で決めたもの）。面がない所（闇との境）にも引く
     const ln = lines[y * C + x];
     if (!tbuf[i + 3] && !ln) continue;
-    const lit = tbuf[i] / 255, kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0;
+    const kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0;
+    const sh = shadow && (kind === 4 || kind === 5 || kind === 10 || kind === 11) ? shadow[y * C + x] : 0;   // 床に落ちた影
+    const lit = tbuf[i] / 255 * (1 - sh);
     if (lit < 0.03 && !ln) continue;
     let ch = null, v = lit;
     if (ln) {
@@ -1659,7 +1723,7 @@ function drawTerm() {
     else if (kind === 9) { ch = '^'; v = Math.min(1, lit * 1.1 + 0.1); }
     else if (kind === 7) { ch = tune.ceil && x % 3 === 0 && y % 2 === 0 ? '`' : ' '; v = lit * 0.4; }   // 天井はまばらに
     if (!ch || ch === ' ') continue;
-    const g = Math.round(40 + v * 215);
+    const g = Math.round((tune.fadeDark ? 40 * Math.min(1, lit / 0.3) : 40) + v * 215);   // 字の明るさの下限も、光が弱いほど下げる（暗がりでは床・天井の字も闇に消える）
     let tx = (x + 0.5) * tcw;
     if (warpK > 0) {
       if (Math.random() < warpK * 0.7) ch = WARP_CHARS[(Math.random() * WARP_CHARS.length) | 0];
@@ -2039,10 +2103,9 @@ function draw() {
   if (!renderer || !cam) return;
   const now = performance.now();
   TIME_U.value = now / 1000;
-  // 炎の揺らぎ: 近くに灯った燭台があれば、止まっていても少しずつ描き直す
+  // 炎の揺らぎ: 止まっていても少しずつ描き直す
   if (tune.flicker && !flickTimer && !document.hidden) {
-    const l = LIGHTS_U.value[0];
-    if (l.w && Math.hypot(l.x - cam.x, l.z - cam.z) < 9) flickTimer = setTimeout(() => { flickTimer = 0; draw(); }, 110);
+    flickTimer = setTimeout(() => { flickTimer = 0; draw(); }, 110);   // 手元の明かりはいつも揺れる
   }
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
