@@ -1835,7 +1835,7 @@ function drawTerm() {
     const behind = depthOf(ix, iy) < dist - 0.45;   // 壁の向こう: 探知で見えている物だけ、透けた形で描く
     if (behind && !sp.userData.det) continue;
     const hPx = sp.scale.y / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) * R * tch;
-    list.push({ sp, dist, ghost: behind, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(R * tch * 0.6, hPx * 1.15)) });   // 上限は画面の高さに対して（升目の大きさで変わらないように）
+    list.push({ sp, dist, ghost: behind, px: cx * tcw, py: cy * tch, size: Math.max(tch * 0.95, Math.min(R * tch * 0.6, hPx * 1.15)) * (1 + 0.3 * (sp.userData.lunge || 0)) });   // 上限は画面の高さに対して（升目の大きさで変わらないように）
   }
   list.sort((a, b) => b.dist - a.dist);   // 遠い物から
   for (const o of list) {
@@ -1933,7 +1933,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null };
+const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [] };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -1971,7 +1971,10 @@ function sizeFx(w, h) {
 
 export function effect(d) {
   const now = performance.now();
-  if (d.type === 'throw') {
+  if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
+    fx.lunges.push({ y: d.y, x: d.x, t0: now, hit: !!d.hit });
+    if (d.hit) fx.claws.push({ t0: now + LUNGE_HIT, seed: Math.random() });
+  } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
     fx.swing = { t0: now, w: d.w in SWING_ART ? d.w : -1, hit: !!d.hit };
@@ -2028,7 +2031,9 @@ export function effect(d) {
     if (lastGrid) { build(lastGrid); draw(); }
     return;
   } else if (d.type === 'hurt') {
-    hurt(d.y == null ? null : [d.y, d.x]);
+    const from = d.y == null ? null : [d.y, d.x];
+    if (fx.lunges.some(l => now - l.t0 < 60)) setTimeout(() => { hurt(from); startFx(); }, LUNGE_HIT);   // 踏み込みきってから揺らす
+    else hurt(from);
   }
   startFx();
 }
@@ -2108,7 +2113,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || moodActive();
+const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || fx.lunges.length || fx.claws.length || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -2119,6 +2124,8 @@ function startFx() {
     fx.pops = fx.pops.filter(p => now - p.t0 < POP_MS);
     fx.trail = fx.trail.filter(p => now - p.t0 < (p.ms || TRAIL_MS));
     if (fx.toss && now - fx.toss.t0 > TOSS_MS) fx.toss = null;
+    fx.lunges = fx.lunges.filter(l => now - l.t0 < LUNGE_MS);
+    fx.claws = fx.claws.filter(c => now - c.t0 < CLAW_MS);
     if (fx.swing && now - fx.swing.t0 > SWING_MS) fx.swing = null;
     draw();
     if (fxActive(now)) requestAnimationFrame(tick);
@@ -2129,17 +2136,24 @@ function startFx() {
 // 当てたモンスターの札を震わせる（draw の間だけ位置をずらす）。点滅は ASCII では drawTerm、ほかは材質を白に
 function hitAt(y, x, now) { return fx.hits.find(h => h.y === y && h.x === x && now >= h.t0 && now - h.t0 < HIT_MS); }
 function jitterSprites(now, on) {
-  if (!fx.hits.length) return;
+  if (!fx.hits.length && !fx.lunges.length) return;
   for (const sp of glyphGroup.children) {
     const y = Math.round(sp.position.z - 0.5), x = Math.round(sp.position.x - 0.5);
     if (on) {
+      const l = player && fx.lunges.find(l => l.y === y && l.x === x);
+      if (l) {   // 踏み込み: 速く前へ出て、ゆっくり戻る
+        const ms = now - l.t0, q = ms < LUNGE_HIT ? Math.sin(ms / LUNGE_HIT * Math.PI / 2) : Math.max(0, 1 - (ms - LUNGE_HIT) / (LUNGE_MS - LUNGE_HIT)) ** 2;
+        sp.userData.base = sp.position.clone();
+        sp.position.x += (player[1] - x) * 0.42 * q; sp.position.z += (player[0] - y) * 0.42 * q; sp.position.y -= 0.04 * q;
+        sp.userData.lunge = q;   // 隣の敵は大きさの上限に当たっていて近づいても大きくならないので、描くときに膨らませる
+      }
       const h = hitAt(y, x, now); if (!h) continue;
       const k = 1 - (now - h.t0) / HIT_MS;
-      sp.userData.base = sp.position.clone();
+      if (!sp.userData.base) sp.userData.base = sp.position.clone();
       sp.position.x += (Math.random() - 0.5) * 0.12 * k; sp.position.y += (Math.random() - 0.5) * 0.06 * k;
       sp.userData.flash = ((now - h.t0) / 65 | 0) % 2 === 0;
     } else if (sp.userData.base) {
-      sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false;
+      sp.position.copy(sp.userData.base); sp.userData.base = null; sp.userData.flash = false; sp.userData.lunge = 0;
     }
   }
 }
@@ -2154,6 +2168,29 @@ function project(x, y, z) {
   const W2 = fxcv.width / Math.min(devicePixelRatio || 1, 2), H2 = fxcv.height / Math.min(devicePixelRatio || 1, 2);
   return { px: (_v.x + 1) / 2 * W2, py: (1 - _v.y) / 2 * H2, dist, unit: H2 / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) };
 }
+// 敵の攻撃: 踏み込み（LUNGE_HIT で当たる）と、当たったときに画面に走る 3 本の爪あと（/ の字を斜めに並べる）
+const LUNGE_MS = 380, LUNGE_HIT = 110, CLAW_MS = 360;
+function drawClaw(c, now) {
+  const ms = now - c.t0; if (ms < 0) return;
+  const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
+  const size = Math.round(Math.min(W2, H2) * 0.12), reveal = Math.min(1, ms / 70), fade = ms < 140 ? 1 : 1 - (ms - 140) / (CLAW_MS - 140);
+  const cx = W2 * (0.45 + 0.1 * c.seed), cy = H2 * 0.45, len = Math.min(W2, H2) * 0.5, a = -Math.PI / 3 + (c.seed - 0.5) * 0.4;
+  fxctx.save(); fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
+  fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+  for (let j = -1; j <= 1; j++) {
+    const ox = Math.cos(a + Math.PI / 2) * j * size * 1.1, oy = Math.sin(a + Math.PI / 2) * j * size * 1.1;
+    const n = Math.round(len / (size * 0.4)), shown = Math.ceil(n * reveal);
+    for (let i = 0; i < shown; i++) {
+      const q = i / (n - 1) - 0.5, taper = 1 - Math.abs(q) * 1.2;   // 両端は細く薄く
+      const x = cx + ox + Math.cos(a) * q * len, y = cy + oy + Math.sin(a) * q * len;
+      fxctx.globalAlpha = fade * Math.max(0.2, taper);
+      fxctx.lineWidth = 6; fxctx.strokeStyle = '#000'; fxctx.strokeText('/', x, y);
+      fxctx.fillStyle = taper > 0.6 && ms < 120 ? '#fff' : '#ff6a5c'; fxctx.fillText('/', x, y);
+    }
+  }
+  fxctx.restore();
+}
+
 // 投げる・射る（手元の動き）。fired: 弓で矢を射る（引いて放し、弦が震える）。それ以外は手に持った物を振りかぶって投げる
 const TOSS_MS = 640, TOSS_REL = 230, TOSS_REL_BOW = 280;   // TOSS_REL: 構えてから手を離すまで（game.py の effect_wait と同じ値）
 const TOSS_ART = { 3: '----->', 4: '=+===>', 6: '=->', 7: '*', 8: '=------------<>', 0: '==-----(@)', 1: '==+========>', 5: '===+=============>', 2: '==-)' };
@@ -2314,6 +2351,7 @@ function drawFx(now) {
   }
   if (fx.swing) drawSwing(now);
   if (fx.toss) drawToss(now);
+  for (const c of fx.claws) drawClaw(c, now);
   const dark = transDark(now);   // 階段・落とし穴の暗転
   if (dark > 0) { fxctx.globalAlpha = dark; fxctx.fillStyle = trans.col; fxctx.fillRect(0, 0, fxcv.width, fxcv.height); }
   fxctx.globalAlpha = 1;
