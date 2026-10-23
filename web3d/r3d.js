@@ -2155,14 +2155,14 @@ function project(x, y, z) {
   return { px: (_v.x + 1) / 2 * W2, py: (1 - _v.y) / 2 * H2, dist, unit: H2 / (2 * dist * Math.tan(camera.fov * Math.PI / 360)) };
 }
 // 投げる・射る（手元の動き）。fired: 弓で矢を射る（引いて放し、弦が震える）。それ以外は手に持った物を振りかぶって投げる
-const TOSS_MS = 520;
+const TOSS_MS = 640, TOSS_REL = 230, TOSS_REL_BOW = 280;   // TOSS_REL: 構えてから手を離すまで（game.py の effect_wait と同じ値）
 const TOSS_ART = { 3: '----->', 4: '=+===>', 6: '=->', 7: '*', 8: '=------------<>', 0: '==-----(@)', 1: '==+========>', 5: '===+=============>', 2: '==-)' };
 const TOSS_FLY = { 3: '-', 6: '-', 4: ')', 8: '|' };   // 飛んでいる間の字（ほかは物の字のまま）
 function drawToss(now) {
   const t = fx.toss, ms = now - t.t0, k = ms / TOSS_MS;
   if (k < 0 || k > 1) return;
   const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
-  const size = Math.round(Math.min(W2, H2) * 0.11), rel = t.fired ? 170 : 120;
+  const size = Math.round(Math.min(W2, H2) * 0.11), rel = t.fired ? TOSS_REL_BOW : TOSS_REL;
   const fade = k > 0.7 ? 1 - (k - 0.7) / 0.3 : 1;
   fxctx.save();
   fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
@@ -2196,9 +2196,9 @@ function drawToss(now) {
     }
   } else if (ms < rel) {
     // 投げる: 右下へ振りかぶってから、真ん中へ向けて小さくなりながら放つ
-    const back = Math.min(1, ms / (rel * 0.55)), fwd = Math.max(0, (ms - rel * 0.55) / (rel * 0.45));
+    const back = Math.min(1, ms / (rel * 0.35)), fwd = Math.max(0, (ms - rel * 0.35) / (rel * 0.65));
     const x = W2 * (0.84 + 0.06 * back - 0.34 * fwd * fwd), y = H2 * (0.92 + 0.06 * back - 0.45 * fwd * fwd);
-    const art = TOSS_ART[t.w] || t.ch, sz = size * (1.2 - 0.6 * fwd);
+    const art = TOSS_ART[t.w] || t.ch, sz = size * (1.6 - 0.8 * fwd);
     const a = t.w === 7 ? ms / 30 : art.length > 2 ? Math.atan2(H2 * 0.45 - y, W2 * 0.5 - x) - (1 - fwd) * 0.6 : 0;
     if (art.length > 2) {
       fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
@@ -2223,7 +2223,7 @@ function drawSwing(now) {
   const sw = fx.swing, k = (now - sw.t0) / SWING_MS;
   if (k < 0 || k > 1) return;
   const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
-  const art = SWING_ART[sw.w], size = Math.round(Math.min(W2, H2) * 0.11);
+  const art = SWING_ART[sw.w], size = Math.round(Math.min(W2, H2) * 0.11 * (sw.w === 2 ? 1.5 : 1));
   const fade = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
   fxctx.save();
   fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
@@ -2235,6 +2235,20 @@ function drawSwing(now) {
     fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`; fxctx.globalAlpha = fade;
     fxctx.lineWidth = 5; fxctx.strokeStyle = '#000'; fxctx.strokeText(art, x, y);
     fxctx.fillStyle = '#d8b48a'; fxctx.fillText(art, x, y);
+    fxctx.restore(); return;
+  }
+  if (sw.w === 3 || sw.w === 6 || sw.w === 7) {   // 矢・ダーツ・手裏剣: 短いので振らずに、大きく持って敵へ突き刺す（手裏剣は回しながら）
+    const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
+    const x = W2 * (0.86 - 0.32 * q), y = H2 * (1.02 - 0.47 * q), sz = size * (1.8 - 0.5 * q);
+    const a = sw.w === 7 ? k * 14 : Math.atan2(-0.57 * H2, -0.36 * W2), txt = sw.w === 7 ? '*' : art;
+    fxctx.globalAlpha = fade;
+    fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
+    fxctx.font = `700 ${sz * (sw.w === 7 ? 1.6 : 1)}px "BIZ UDGothic", monospace`;
+    for (let i = 0; i < txt.length; i++) {   // 刃先を手前の点に、握りを後ろへ
+      const cx = (i - txt.length + 1) * sz * 0.5;
+      fxctx.lineWidth = 5; fxctx.strokeStyle = '#000'; fxctx.strokeText(txt[i], cx, 0);
+      fxctx.fillStyle = i === 0 && txt.length > 2 ? '#9a7a58' : '#d6dbe0'; fxctx.fillText(txt[i], cx, 0);
+    }
     fxctx.restore(); return;
   }
   const ghosts = sw.hit && k > SWING_HIT / SWING_MS && k < SWING_HIT / SWING_MS + 0.18 ? [0] : [0, 0.025, 0.05];   // 速いときは残像
