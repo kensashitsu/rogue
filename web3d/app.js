@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.65';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.66';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -539,6 +539,27 @@ tap($('vFull'), () => setView('full'));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
 $('ver').textContent = 'v' + VERSION;
+
+// 落ちた跡を残す。iPhone の Safari はタブが落ちると黙って読み込み直すので、画面を見ている間に止まったら、次に開いたとき前回の様子を上に出す
+const ALIVE = 'rogue3d-alive';
+const lastRun = (() => { try { const o = JSON.parse(localStorage.getItem(ALIVE) || 'null'); return o && !o.clean ? o : null; } catch { return null; } })();
+const alive = { v: VERSION, t0: Date.now(), beat: Date.now(), err: '', clean: false };
+const saveAlive = () => { try { localStorage.setItem(ALIVE, JSON.stringify(alive)); } catch {} };
+saveAlive();
+setInterval(() => { alive.beat = Date.now(); saveAlive(); }, 5000);
+addEventListener('pagehide', () => { alive.clean = true; saveAlive(); });
+document.addEventListener('visibilitychange', () => { alive.clean = document.hidden; alive.beat = Date.now(); saveAlive(); });   // 裏に回っている間に閉じられたのは落ちたのではない
+addEventListener('error', e => { alive.err = String(e.message).slice(0, 120); saveAlive(); });
+addEventListener('unhandledrejection', e => { alive.err = String(e.reason).slice(0, 120); saveAlive(); });
+if (lastRun) {
+  const min = Math.round((lastRun.beat - lastRun.t0) / 60000), el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99;padding:8px 10px;background:#2a1c14;color:#f0d0b0;border:1px solid #6a4a30;border-radius:6px;font:13px/1.5 sans-serif';
+  el.textContent = (lang === 'ja' ? `前回は画面が途中で止まりました（v${lastRun.v}・開いてから約${min}分）` : `The page stopped last time (v${lastRun.v}, about ${min} min after opening)`) + (lastRun.err ? '\n' + lastRun.err : '');
+  el.style.whiteSpace = 'pre-wrap';
+  document.body.appendChild(el);
+  tap(el, () => el.remove());
+  setTimeout(() => el.remove(), 20000);
+}
 
 // 新しい版が出ていたら版番号の所に知らせる（iPhone はページを開いたまま保つので、自分では読み込み直さない）。
 // 遊んでいる途中で勝手に読み込み直すと保存していない冒険が消えるので、押されたときだけ読み込み直す
