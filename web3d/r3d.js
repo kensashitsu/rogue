@@ -290,8 +290,14 @@ function build(grid) {
     dummy.scale.set(sx, sy, sz); dummy.updateMatrix();
     const i = counts[name]++;
     mesh.setMatrixAt(i, dummy.matrix);
-    mesh.setColorAt(i, color.setScalar(bright));
+    color.r = bright; color.g = cellRoom; color.b = cellMask / 16;
+    mesh.setColorAt(i, color);
   };
+  let cellRoom = 0, cellMask = 0;
+  // 明るい部屋のマス（壁・扉も含む）
+  const litRoom = new Uint8Array(W * 24);
+  if (tune.roomLight) for (const r of rooms) if (!r.dark) for (let y = r.top; y <= r.bottom; y++) for (let x = r.left; x <= r.right; x++) litRoom[y * W + x] = 1;
+  const isWall = (y, x) => { const c = ch(y, x); return c === '-' || c === '|' || (c === ' ' && rock.has(y * W + x)); };
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   const stairCells = [], doorCells = [];
@@ -299,11 +305,13 @@ function build(grid) {
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
       let [c, s] = cellAt(grid, y, x);
+      cellRoom = litRoom[y * W + x];
+      cellMask = tune.ao ? (isWall(y - 1, x) ? 1 : 0) + (isWall(y + 1, x) ? 2 : 0) + (isWall(y, x - 1) ? 4 : 0) + (isWall(y, x + 1) ? 8 : 0) : 0;
       // 階段の上に立っている間も、足もとの階段を描く（画面では @ に隠れるので、見えたときの場所を覚えておく）
       if (c === '%') stairAt = { level: rockLevel, cell: y * W + x };
       let onStairs = false;
       if (c === '@' && stairAt.level === rockLevel && stairAt.cell === y * W + x) { c = '%'; s = 0; onStairs = true; }
-      const bright = s & 512 ? 0.38 : 1;   // 覚えているだけの所は暗く
+      const bright = s & 512 && !cellRoom ? 0.38 : 1;   // 覚えているだけの所は暗く（明るい部屋は離れても灯ったまま）
       if ((c === '-' || c === '|') && secretCells.has(y * W + x)) { put(meshes.secrets, 'secrets', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === '-') { put(hwalls, 'hwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
@@ -395,12 +403,20 @@ function build(grid) {
       addGlyph(c, s, x, y, det);
     }
   }
+  cellRoom = 0; cellMask = 0;
   for (const k of aheadRocks) {
     const y = Math.floor(k / W), x = k % W;
     put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
   }
   buildEdges(solid, stairCells, doorCells);
   buildSconces(grid);
+  // 明るい部屋の扉の口から、通路へ光が漏れる（口の少し外に弱い光源を置く）
+  lamps = [];
+  for (const [y, x, , wallEW, side] of doorCells) {
+    if (!litRoom[y * W + x] && !rooms.some(r => !r.dark && y >= r.top && y <= r.bottom && x >= r.left && x <= r.right)) continue;
+    const [nx, nz] = wallEW ? [0, side] : [side, 0];
+    lamps.push({ x: x + 0.5 - nx * 0.45, y: 0.45, z: y + 0.5 - nz * 0.45, w: 0.75 });
+  }
   setLights();
   for (const [name, mesh] of Object.entries(meshes)) {
     mesh.count = counts[name];
@@ -476,37 +492,42 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
 // ---------------------------------------------------------------------------
 // 覚えているだけの所を照らす手元の明かりの落ち方（大きいほど近くしか見えない）
 const TORCH_U = { value: 3 };
-// 灯った燭台の光（tune.torch が大きく、覚えているだけの所が闇に沈むときに、燭台の周りの床・壁を照らす）。近い順に MAX_LIGHTS 個まで
-const MAX_LIGHTS = 48, LIGHT_R = 2.6;
-const LIGHTS_U = { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3(0, -99, 0)) };
+// 光源（灯った燭台と、明るい部屋の扉の口）。xyz が場所、w が強さ。近い順に MAX_LIGHTS 個まで
+const MAX_LIGHTS = 128, LIGHT_R = 2.6;
+const LIGHTS_U = { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4(0, 0, 0, 0)) };
+const TIME_U = { value: 0 }, LTUNE_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 部屋の光・手元の明かり・揺らぎ・隅の陰
+let lamps = [];   // 明るい部屋の扉の口から漏れる光
 // 燭台の光の強さ（d は燭台からの距離）。シェーダーと drawLines で同じ式
 const sconceLit = d => d < LIGHT_R ? 0.9 * (1 - d / LIGHT_R) ** 2 : 0;
 function setLights() {
   const [py, px] = player || [0, 0];
-  const ls = sconces.filter(s => !s.dark).map(s => ({ s, d: Math.hypot(s.x - px - 0.5, s.z - py - 0.5) }));
+  const ls = [...sconces.filter(s => !s.dark).map(s => ({ x: s.x, y: 0.62, z: s.z, w: 1 })), ...(tune.doorLight ? lamps : [])]
+    .map(l => ({ l, d: Math.hypot(l.x - px - 0.5, l.z - py - 0.5) }));
   ls.sort((a, b) => a.d - b.d);
-  LIGHTS_U.value.forEach((v, i) => { const l = ls[i]; if (l) v.set(l.s.x, 0.62, l.s.z); else v.set(0, -99, 0); });
+  LIGHTS_U.value.forEach((v, i) => { const l = ls[i]?.l; if (l) v.set(l.x, l.y, l.z, l.w); else v.set(0, 0, 0, 0); });
+  LTUNE_U.value.set(tune.roomLight, tune.hand, tune.flicker, tune.ao);
 }
 function lightAt(x, y, z) {
   if (tune.torch < 0.2) return 0;
   let k = 0;
-  for (const v of LIGHTS_U.value) { if (v.y < 0) break; k += sconceLit(Math.hypot(v.x - x, v.y - y, v.z - z)); }
+  for (const v of LIGHTS_U.value) { if (!v.w) break; k += v.w * sconceLit(Math.hypot(v.x - x, v.y - y, v.z - z)); }
   return Math.min(1, k);
 }
+// 材質の色（インスタンスごと）: 赤 = 明るさ、緑 = 明るい部屋の中か、青 = 床の隣の壁（北 1・南 2・西 4・東 8 の和 / 16。隅の陰に使う）
 function kindMat(kind) {
   return new THREE.ShaderMaterial({
-    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U },
+    uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U },
     vertexShader: `
-      varying vec3 vN; varying float vB; varying float vD; varying vec3 vW;
+      varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       void main() {
         mat4 m = modelMatrix;
         #ifdef USE_INSTANCING
           m = m * instanceMatrix;
         #endif
         vN = normalize(mat3(m) * normal);
-        vB = 1.0;
+        vC = vec3(1.0, 0.0, 0.0);
         #ifdef USE_INSTANCING_COLOR
-          vB = instanceColor.r;
+          vC = instanceColor;
         #endif
         vec4 wp = m * vec4(position, 1.0);
         vW = wp.xyz;
@@ -515,21 +536,48 @@ function kindMat(kind) {
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: `
-      uniform float kind; uniform float torch; uniform vec3 lights[${MAX_LIGHTS}];
-      varying vec3 vN; varying float vB; varying float vD; varying vec3 vW;
+      uniform float kind; uniform float torch; uniform vec4 lights[${MAX_LIGHTS}]; uniform float time; uniform vec4 lt;
+      varying vec3 vN; varying vec3 vC; varying float vD; varying vec3 vW;
       void main() {
+        float vB = vC.r;
         float side = abs(vN.y) > 0.5 ? 0.0 : (abs(vN.x) > 0.5 ? 1.0 : 2.0);
         float face = side == 2.0 ? 0.78 : 1.0;   // 壁は向きで濃さを変えて角を見せる
+        // 手元の明かり（lt.y）: 画面の奥行きではなく本当の距離で落ち、斜めに当たる面ほど暗い（正面の壁は真ん中が明るく、端へ暗くなる）
+        vec3 toCam = cameraPosition - vW; float dc = length(toCam);
+        float dd = mix(vD, dc, lt.y);
+        float lam = mix(1.0, 0.15 + 0.85 * abs(dot(vN, toCam / dc)), lt.y);
         // 遠いほど暗く（薄い字に）。いま見えている所（明るい部屋）はゆっくり、覚えているだけの所は手元の明かりが届く範囲で
-        float far = 1.0 - 0.9 * smoothstep(0.6, 10.0, vD);
-        float tl = 1.0 / (1.0 + torch * vD * vD);
-        float sl = 0.0;   // 灯った燭台の光（覚えているだけの所が闇に沈むときだけ）
-        if (torch >= 0.2) for (int i = 0; i < ${MAX_LIGHTS}; i++) {
-          if (lights[i].y < 0.0) break;
-          float d = length(lights[i] - vW);
-          if (d < ${LIGHT_R.toFixed(2)}) { float q = 1.0 - d / ${LIGHT_R.toFixed(2)}; sl += 0.9 * q * q; }
+        float far = 1.0 - 0.9 * smoothstep(0.6, 10.0, dd);
+        float tl = 1.0 / (1.0 + torch * dd * dd);
+        float sl = 0.0, rl = 0.0;   // sl: 燭台のすぐ周りを照らす光（覚えているだけの所が闇に沈むとき）、rl: 部屋を照らす光
+        for (int i = 0; i < ${MAX_LIGHTS}; i++) {
+          vec4 L = lights[i];
+          if (L.w <= 0.0) break;
+          vec3 dv = L.xyz - vW; float d = length(dv);
+          if (dot(vN, dv) < -0.05) continue;   // 面の裏側からの光は届かない（部屋の壁の外側は部屋の光で照らされない）
+          float f = L.w * (1.0 + lt.z * (0.6 * sin(time * 11.1 + L.x * 3.0 + L.z * 7.0) + 0.4 * sin(time * 27.0 + L.x * 5.0)));   // 炎の揺らぎ
+          if (d < ${LIGHT_R.toFixed(2)}) { float q = 1.0 - d / ${LIGHT_R.toFixed(2)}; sl += 0.9 * q * q * f; }
+          rl += f / (1.0 + 0.6 * d * d * d);
         }
-        float lit = face * (vB > 0.9 ? far : min(1.0, vB * 2.3 * tl + 0.04 * far * (torch < 0.2 ? 1.0 : 0.0) + sl));
+        if (torch < 0.2) sl = 0.0;
+        float lit = vB > 0.9 ? far * lam : min(1.0, vB * 2.3 * tl * lam + 0.04 * far * (torch < 0.2 ? 1.0 : 0.0) + sl);
+        if (vC.g > 0.5) {   // 明るい部屋（lt.x）: 燭台の近くが明るく、間や真ん中はやや暗い。部屋を出ても明かりは灯ったまま
+          float room = far * clamp(0.08 + 0.95 * rl, 0.0, 1.0);
+          lit = mix(lit, max(room, min(1.0, 2.3 * tl * lam)), lt.x);   // 部屋の光の届かない所（部屋の壁の外側など）は手元の明かり
+        }
+        // 隅の陰（lt.w）: 壁の根元と天井際、床の壁際は光が回りにくい
+        float ao = 1.0;
+        if (kind < 3.5 && side != 0.0) ao = mix(0.55, 1.0, smoothstep(0.0, 0.28, vW.y)) * mix(0.8, 1.0, smoothstep(1.0, 0.85, vW.y));
+        if (kind == 4.0 || kind == 5.0) {
+          float m = floor(vC.b * 16.0 + 0.5), fx = fract(vW.x), fz = fract(vW.z), e = 1.0;
+          if (mod(m, 2.0) >= 1.0) e = min(e, fz);
+          if (mod(floor(m / 2.0), 2.0) >= 1.0) e = min(e, 1.0 - fz);
+          if (mod(floor(m / 4.0), 2.0) >= 1.0) e = min(e, fx);
+          if (mod(floor(m / 8.0), 2.0) >= 1.0) e = min(e, 1.0 - fx);
+          ao = mix(0.55, 1.0, smoothstep(0.0, 0.35, e));
+        }
+        lit *= mix(1.0, ao, lt.w);
+        lit *= face;
         gl_FragColor = vec4(lit, kind / 15.0, side / 2.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0));
       }`,
   });
@@ -1054,7 +1102,8 @@ function sconceLights(C, R) {
     if (dist < 0.2) continue;
     v3.set(s.x, 0.62, s.z).project(camera);
     if (Math.abs(v3.x) > 1.6 || Math.abs(v3.y) > 1.6) continue;
-    out.push({ cx: (v3.x + 1) / 2 * C, cy: (1 - v3.y) / 2 * R, dist, rad: unitK / dist * tune.glow / tch });   // rad は升（縦）の数
+    const fl = 1 + tune.flicker * 0.6 * Math.sin(performance.now() / 90 + s.x * 3 + s.z * 7);   // 炎と同じ揺らぎ
+    out.push({ cx: (v3.x + 1) / 2 * C, cy: (1 - v3.y) / 2 * R, dist, rad: unitK / dist * tune.glow * fl / tch });   // rad は升（縦）の数
   }
   return out;
 }
@@ -1164,7 +1213,10 @@ function tint(hex, v) {
 
 // ASCII の濃さのつまみ: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無。
 // 2026-10-22 に案を並べて見比べ、壁は . : の点描（* + や - = は横じまや重さでうるさい）、床は暗めに決めた
-const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3 };   // corrGap: 通路の燭台の間隔（0 でなし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）   // sconce: 燭台の形、glow: 光の広さ（0 で光なし）
+// sconce: 燭台の形、glow: 光の広さ（0 で光なし）、torch: 手元の明かりの落ち方（大きいほど闇が近い）、corrGap: 通路の燭台の間隔（0 でなし）。
+// roomLight: 部屋を燭台の光で照らす、doorLight: 扉の口から光が漏れる、hand: 手元の明かりの当たり方、flicker: 炎の揺らぎ、ao: 隅の陰（2026-10-23）
+const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true, sconce: 'B', glow: 1.0, torch: 3, corrGap: 3,
+  roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1 };
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; if (lastGrid) build(lastGrid); draw(); }
 const ROCK_RAMP = ' ..::';
 function drawTerm() {
@@ -1584,9 +1636,16 @@ function drawFx(now) {
   fxctx.globalAlpha = 1;
 }
 
+let flickTimer = 0;
 function draw() {
   if (!renderer || !cam) return;
   const now = performance.now();
+  TIME_U.value = now / 1000;
+  // 炎の揺らぎ: 近くに灯った燭台があれば、止まっていても少しずつ描き直す
+  if (tune.flicker && !flickTimer && !document.hidden) {
+    const l = LIGHTS_U.value[0];
+    if (l.w && Math.hypot(l.x - cam.x, l.z - cam.z) < 9) flickTimer = setTimeout(() => { flickTimer = 0; draw(); }, 110);
+  }
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
   const back = 0.32;
   eye += ((mood.lev ? EYE + 0.3 : EYE) - eye) * 0.15;   // 浮遊中は視点を高く（ゆっくり上がり下がりする）
