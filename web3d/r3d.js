@@ -173,6 +173,7 @@ export function update(grid, pos) {
   if (!renderer) return;
   const sig = grid.slice(MAP_TOP, MAP_BOT + 1).map(r => r.map(c => c ? c[0] + (c[1] & 512 ? '_' : '') : '').join('')).join('\n');
   const moved = !player || !pos || player[0] !== pos[0] || player[1] !== pos[1];
+  const prev = player;
   if (pos) player = pos;
   const lvBefore = rockLevel;
   const learned = learnRock(grid, pos);
@@ -182,13 +183,17 @@ export function update(grid, pos) {
   watchStatus(grid);
   if (sig !== lastSig || learned) { lastSig = sig; build(grid); }
   // 始めたときや、階段・テレポートで遠くへ移ったときは、いちばん先まで歩ける方向を向く
-  const jumped = pos && (!cam || Math.hypot(pos[1] + 0.5 - cam.x, pos[0] + 0.5 - cam.z) > 1.6);
-  if (cam && (jumped || lvBefore !== rockLevel)) {   // 新しい階に着いた（暗転から明ける。落ちてきたなら揺れる）か、同じ階でテレポートした
+  // テレポートしたかは、ゲームからの知らせ（effect 'teleport'）で見る。位置の飛び方で推し量ると、iPhone で画面が重く
+  // 2 歩分がまとめて描かれた時にも遠くへ移ったとみなし、テレポートの演出が出て向きも変わってしまっていた（2026-10-24）
+  const teleported = pendingWarp && !!pos && !!prev && (pos[0] !== prev[0] || pos[1] !== prev[1]);
+  if (teleported) pendingWarp = false;
+  const jumped = pos && (!cam || !prev || teleported);
+  if (cam && (teleported || lvBefore !== rockLevel)) {   // 新しい階に着いた（暗転から明ける。落ちてきたなら揺れる）か、同じ階でテレポートした
     const now = performance.now();
     if (trans.how) { if (trans.how === 'fall') fx.shakeT0 = now; trans.how = null; trans.fadeT0 = now; startFx(); }
-    else if (jumped && lvBefore === rockLevel) { trans.warpT0 = now; startFx(); }
+    else if (teleported && lvBefore === rockLevel) { trans.warpT0 = now; startFx(); }
   }
-  if (jumped) faceOpen(grid);
+  if (jumped || lvBefore !== rockLevel) faceOpen(grid);
   look(grid);
   if (moved) startMove();
   draw();
@@ -217,6 +222,7 @@ const WARP_CHARS = '#%&*+=~:;!?';
 // iPhone でメモリが足りなくなって落ちた（2026-10-24。1 分で 4700 通り以上の大きさを使っていた）
 const fpx = s => Math.round(Math.exp(Math.round(Math.log(Math.max(1, s)) / 0.03) * 0.03) * 10) / 10;
 const trans = { how: null, t0: 0, fadeT0: -1e9, warpT0: -1e9, col: '#000' };
+let pendingWarp = false;   // ゲームからテレポートの知らせが来て、まだ飛んだ先を描いていない
 const transActive = now => (trans.how && now - trans.t0 < DESCEND_MS[trans.how] + 3000) || now - trans.fadeT0 < FADEIN_MS || now - trans.warpT0 < WARP_MS;
 // 階段・落とし穴の途中の視点（null なら普段どおり）
 function transCamera(now) {
@@ -2069,6 +2075,9 @@ export function effect(d) {
         fx.debris.push({ y: d.y, x: d.x, t0, ch, col, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 0.8 + Math.random() * 1.6, h: 0.2 + Math.random() * 0.5 });
       }
     }
+  } else if (d.type === 'teleport') {
+    pendingWarp = true;
+    return;
   } else if (d.type === 'descend') {
     trans.how = d.how in DESCEND_MS ? d.how : 'stairs'; trans.t0 = performance.now();
     trans.col = BRIGHT_TRANS.has(trans.how) ? '#fff' : '#000';

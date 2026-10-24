@@ -49,7 +49,7 @@ from constants import (
     STOMACHSIZE,
     R_AGGR, R_TELEPORT,
     MACE, BOW, ARROW, RING_MAIL,
-    S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_FDET, S_SCARE, P_MFIND, P_TFIND,
+    S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_FDET, S_SCARE, S_TELEP, P_MFIND, P_TFIND,
     OBJ_ISFOUND,
     T_DOOR, T_ARROW, T_SLEEP, T_BEAR, T_TELEP, T_DART, T_RUST, T_MYST, NTRAPS,
 )
@@ -830,6 +830,8 @@ class Game:
             item, self.player, self.dungeon, self.knowledge,
             self.monsters, fi_items, target_item=target_item,
         )
+        if item.o_which == S_TELEP:
+            ui.effect('teleport')   # 3D 版: 同じ階で遠くへ飛んだ演出（位置の飛び方からは推し量らない）
         ui.add_messages(msgs)
         if item.o_which == S_FDET:
             food = [fi for fi in self.floor_items if fi.item.o_type == CH_FOOD]
@@ -1193,6 +1195,8 @@ class Game:
         if trap.which == T_DOOR:   # 3D 版: 罠の上に立ったところを見せてから、床を抜けて落ちる
             ui.draw_all(self.dungeon, self.player, self.monsters, self.floor_items)
             ui.effect_wait('descend', 650, how='fall')
+        if trap.which == T_TELEP:
+            ui.effect('teleport')
         ui.add_messages(self._apply_trap(trap))
 
     def _apply_trap(self, trap) -> list[str]:
@@ -1417,6 +1421,7 @@ class Game:
             if random.randint(0, 32) == 0:
                 pos = self.dungeon.teleport_player(self.player.y, self.player.x)
                 self.player.y, self.player.x = pos.y, pos.x
+                ui.effect('teleport')
                 ui.add_message(tr('The ring teleports you!'))
 
         # 加速中: モンスターAI前に追加行動を1回与える（再帰は1段まで）
