@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.76';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.77';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -133,6 +133,22 @@ function ensureGlyphs() {
   if (fresh) Promise.all([400, 700].map(w => document.fonts.load(`${w} 16px "BIZ UDGothic"`, fresh))).then(requestDraw, () => {});
 }
 
+// メッセージを端末に打ち込むように一字ずつ出す（1 フレームに 3 字）。末尾のカーソルは入力待ちの間点滅する
+let typeRaf = 0;
+function typeMsg(text, from) {
+  const msg = $('msg');
+  cancelAnimationFrame(typeRaf);
+  let n = from;
+  const put = () => {
+    const cur = document.createElement('span'); cur.className = 'cur'; cur.textContent = '▌';
+    if (n < text.length) cur.classList.add('typing');
+    msg.replaceChildren(text.slice(0, n), ...(text ? [cur] : []));
+  };
+  const step = () => { n = Math.min(text.length, n + 3); put(); if (n < text.length) typeRaf = requestAnimationFrame(step); };
+  put();
+  if (n < text.length) typeRaf = requestAnimationFrame(step);
+}
+
 function render() {
   ensureGlyphs();
   mode = isMap() ? 'map' : 'text';
@@ -143,10 +159,12 @@ function render() {
 
   if (mode === 'map') {
     const msg = $('msg'), text = rowText(0).trim();
-    if (msg.textContent !== text) {
-      msg.textContent = text; msg.style.fontSize = '';
+    if (msg.dataset.text !== text) {
+      const prev = msg.dataset.text || '';
+      msg.dataset.text = text; msg.textContent = text + (text ? '▌' : ''); msg.style.fontSize = '';
       for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
         msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする
+      typeMsg(text, text.startsWith(prev) ? prev.length : 0);   // 続きが足されたときは足された所だけ打つ
     }
     const st = $('status'), stText = rowText(H - 1).trim();
     if (st.dataset.text !== stText) {
@@ -658,29 +676,47 @@ function buildManual(body, text) {
 $('manualBody').addEventListener('scroll', e => { $('manualTop').hidden = e.target.scrollTop < 400; }, { passive: true });
 tap($('manualTop'), () => $('manualBody').scrollTo({ top: 0, behavior: 'smooth' }));
 tap($('manualClose'), () => { $('manual').hidden = true; });
-addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textContent = ''; requestDraw(); });   // 幅が変わったら詰め直す
+addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').dataset.text = ' '; requestDraw(); });   // 幅が変わったら詰め直す
 
 // ---------------------------------------------------------------------------
 // 起動
 // ---------------------------------------------------------------------------
-// 読み込みの間、ゲーム本体のソース（この世界を作っているコード）を端末の出力のように流す
+// ゲーム本体のソース（この世界を作っているコード）。読み込み画面・階の生成・死んだときの表示で、端末の出力のように見せる
+const SOURCE_FILES = ['main.py', 'game.py', 'dungeon.py', 'monsters.py', 'player.py', 'items.py', 'combat.py', 'ui.py', 'term.py'];
+const sources = {};   // ファイル名 → 行の配列
+(async () => {
+  for (const f of SOURCE_FILES) {
+    try { sources[f] = (await (await fetch('../' + f)).text()).split('\n'); } catch { /* 読めなくてもゲームは続ける */ }
+  }
+})();
+const CODE_KW = /\b(def|class|return|if|elif|else|for|while|in|not|and|or|import|from|self|None|True|False|try|except|with|lambda|yield|break|continue|pass)\b/g;
+const CODE_FONT = 'ui-monospace, Menlo, Consolas, monospace';
+
+// コードの 1 行を色分けして描く（命令の言葉は琥珀、コメントは灰色、ほかは白）。a は濃さ
+function paintCode(ctx, line, x, y, a) {
+  const t = line.replace(/\t/g, '    ');
+  const cm = t.indexOf('#'), body = cm >= 0 && !/['"]/.test(t.slice(0, cm)) ? t.slice(0, cm) : t;
+  ctx.fillStyle = `rgba(200,204,209,${a})`; ctx.fillText(body, x, y);
+  ctx.fillStyle = `rgba(240,198,82,${a})`;
+  for (const m of body.matchAll(CODE_KW)) ctx.fillText(m[0], x + ctx.measureText(body.slice(0, m.index)).width, y);
+  if (body !== t) { ctx.fillStyle = `rgba(125,134,144,${a * 0.8})`; ctx.fillText(t.slice(cm), x + ctx.measureText(body).width, y); }
+}
+
+// 読み込みの間、ソースを流す
 const rain = (() => {
-  const FILES = ['main.py', 'game.py', 'dungeon.py', 'monsters.py', 'player.py', 'items.py', 'combat.py', 'ui.py', 'term.py'];
-  const cfg = { size: 11, rate: 60, color: 1 };   // 字の大きさ・1 秒に流す行数・色分け（試験用に window.__rain から変えられる）
-  const KW = /\b(def|class|return|if|elif|else|for|while|in|not|and|or|import|from|self|None|True|False|try|except|with|lambda|yield|break|continue|pass)\b/g;
+  const cfg = { size: 11, rate: 60 };   // 字の大きさ・1 秒に流す行数（試験用に window.__rain から変えられる）
   const cv = $('codeRain'), ctx = cv.getContext('2d');
-  let src = [], out = [], at = 0, acc = 0, last = 0, hold = 0, raf = 0;
-  (async () => {
-    for (const f of FILES) {
-      try {
-        const text = await (await fetch('../' + f)).text();
-        src.push({ t: `$ python -c "import ${f.replace('.py', '')}"`, cmd: 1 }, ...text.split('\n').map(t => ({ t })));
-      } catch { /* 読めなくても読み込み自体は続ける */ }
-    }
-  })();
+  let src = [], out = [], at = 0, acc = 0, last = 0, hold = 0, raf = 0, fed = 0;
+  function feed() {   // 読めたファイルから順に流す行を並べる
+    const n = Object.keys(sources).length;
+    if (n === fed) return;
+    fed = n; src = [];
+    for (const f of SOURCE_FILES) if (sources[f]) src.push({ t: `$ python -c "import ${f.replace('.py', '')}"`, cmd: 1 }, ...sources[f].map(t => ({ t })));
+  }
   function step(now) {
     raf = requestAnimationFrame(step);
     const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
+    feed();
     if (hold > 0) hold -= dt;
     else if (src.length) {
       acc += dt * cfg.rate * (0.6 + 0.8 * Math.random());
@@ -700,20 +736,12 @@ const rain = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const lh = Math.round(cfg.size * 1.3), rows = Math.floor((h - 8) / lh), from = Math.max(0, out.length - rows);
-    ctx.font = `${cfg.size}px ui-monospace, Menlo, Consolas, monospace`; ctx.textBaseline = 'top';
+    ctx.font = `${cfg.size}px ${CODE_FONT}`; ctx.textBaseline = 'top';
     for (let i = from; i < out.length; i++) {
       const l = out[i], y = 4 + (i - from) * lh, age = out.length - 1 - i;
       const a = age === 0 ? 0.95 : 0.22 + 0.3 * Math.max(0, 1 - age / 12);
-      const t = l.t.replace(/\t/g, '    ');
-      if (l.cmd) { ctx.fillStyle = `rgba(240,198,82,${a + 0.2})`; ctx.fillText(t, 8, y); continue; }
-      const cm = t.indexOf('#'), body = cm >= 0 && !/['"]/.test(t.slice(0, cm)) ? t.slice(0, cm) : t;
-      ctx.fillStyle = `rgba(200,204,209,${a})`; ctx.fillText(body, 8, y);
-      if (cfg.color) {
-        const x0 = 8;
-        ctx.fillStyle = `rgba(240,198,82,${a})`;
-        for (const m of body.matchAll(KW)) ctx.fillText(m[0], x0 + ctx.measureText(body.slice(0, m.index)).width, y);
-        if (body !== t) { ctx.fillStyle = `rgba(125,134,144,${a * 0.8})`; ctx.fillText(t.slice(cm), x0 + ctx.measureText(body).width, y); }
-      }
+      if (l.cmd) { ctx.fillStyle = `rgba(240,198,82,${a + 0.2})`; ctx.fillText(l.t, 8, y); }
+      else paintCode(ctx, l.t, 8, y, a);
     }
     // 真ん中の題字の所は暗く沈める
     const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.45);
@@ -727,6 +755,99 @@ const rain = (() => {
   };
 })();
 window.__rain = rain;
+
+// 画面の上に重ねる端末の出力（新しい階を作るとき・死んだとき）。
+// 行は { t: 文字, at: 出る時刻 ms, kind: 'cmd' | 'code' | 'out' | 'ok' | 'err', type: 1 なら一字ずつ打つ }。
+// ms たったら薄れて消え、下のゲーム画面が現れる
+const termFx = (() => {
+  const cv = $('termFx'), ctx = cv.getContext('2d');
+  let lines = [], t0 = 0, until = 0, raf = 0, fading = 0;
+  const COL = { cmd: '240,198,82', out: '200,204,209', ok: '127,209,122', err: '255,106,92' };
+  function show(list, ms) {
+    const r = box.getBoundingClientRect();
+    Object.assign(cv.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', transition: 'none', opacity: 1 });
+    cv.hidden = false; clearTimeout(fading);
+    lines = list; t0 = performance.now(); until = t0 + ms;
+    if (!raf) raf = requestAnimationFrame(step);
+  }
+  function step(now) {
+    draw(now - t0, now);
+    if (now < until) { raf = requestAnimationFrame(step); return; }
+    raf = 0;
+    cv.style.transition = 'opacity .35s'; cv.style.opacity = 0;
+    fading = setTimeout(() => { cv.hidden = true; }, 400);
+  }
+  function draw(el, now) {
+    const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, w, h);
+    const size = w < 360 ? 10 : 11, lh = Math.round(size * 1.35), x0 = 8;
+    ctx.font = `${size}px ${CODE_FONT}`; ctx.textBaseline = 'top';
+    const vis = lines.filter(l => l.at <= el);
+    const rows = Math.floor((h - 8) / lh), from = Math.max(0, vis.length - rows);
+    let cx = x0, cy = 4;
+    for (let i = from; i < vis.length; i++) {
+      const l = vis[i], y = 4 + (i - from) * lh;
+      const t = l.type ? l.t.slice(0, Math.floor((el - l.at) / 18)) : l.t;   // 一字ずつ打つ行は 1 字 18ms
+      if (l.kind === 'code') paintCode(ctx, t, x0, y, 0.55);
+      else { ctx.fillStyle = `rgba(${COL[l.kind] || COL.out},0.95)`; ctx.fillText(t, x0, y); }
+      cx = x0 + ctx.measureText(t).width; cy = y;
+    }
+    if (Math.floor(now / 400) % 2 === 0) { ctx.fillStyle = 'rgba(240,198,82,0.9)'; ctx.fillRect(cx + 1, cy, size * 0.6, size * 1.1); }   // カーソル
+  }
+
+  // ソースの中で needle を含む行を探し、Python のエラー表示の 1 段（File "…", line N, in 関数）にする
+  function frame(file, needle, after) {
+    const src = sources[file]; if (!src) return [];
+    const start = after ? Math.max(0, src.findIndex(l => l.includes(after))) : 0;
+    const i = src.findIndex((l, k) => k >= start && l.includes(needle)); if (i < 0) return [];
+    const ind = src[i].search(/\S/);
+    let fn = '<module>';
+    for (let k = i - 1; k >= 0; k--) {
+      const m = src[k].match(/^(\s*)def (\w+)/);
+      if (m && m[1].length < ind) { fn = m[2]; break; }
+    }
+    return [`  File "${file}", line ${i + 1}, in ${fn}`, '    ' + src[i].trim()];
+  }
+
+  return {
+    // 新しい階: dungeon.py のどこかを流してから、出来た階の中身を出す
+    level(d, ms) {
+      const src = sources['dungeon.py'] || [];
+      const defs = src.map((l, i) => /^def /.test(l) ? i : -1).filter(i => i >= 0);
+      const s = defs.length ? defs[Math.floor(Math.random() * defs.length)] : 0;
+      const list = [{ t: `>>> dungeon.new_level(${d.depth})`, at: 0, kind: 'cmd', type: 1 }];
+      let at = 330;
+      for (const t of src.slice(s, s + 28)) { list.push({ t, at, kind: 'code' }); at += 10; }
+      at += 60;
+      for (const [k, v] of [['rooms', d.rooms], ['monsters', d.mons], ['objects', d.items], ['traps', d.traps]]) {
+        list.push({ t: `  ${k.padEnd(9, ' ')}${String(v).padStart(3, ' ')}`, at, kind: 'out' }); at += 50;
+      }
+      list.push({ t: `<Level ${d.depth}: ok>`, at: at + 40, kind: 'ok' });
+      show(list, ms);
+    },
+    // 死んだとき: その死に方に至った呼び出しを Python のエラー表示のように出す
+    died(d, ms) {
+      const cause = String(d.cause || 'unknown cause');
+      let frames;
+      if (cause === 'quit') frames = [frame('game.py', 'if ui.confirm_quit():')];
+      else if (cause.startsWith('starved')) frames = [frame('game.py', 'msgs = self.player.tick()'), frame('player.py', 'self.hp = 0')];
+      else if (cause.startsWith('killed by')) frames = [
+        frame('game.py', 'if _run_monsters():', 'def _end_turn'), frame('game.py', 'msgs = m.do_turn('),
+        frame('monsters.py', 'monster_attacks_player('), frame('combat.py', 'player.take_damage(', 'def monster_attacks_player'),
+        frame('player.py', 'self.hp = max(0, self.hp - amount)'),
+      ];
+      else frames = [frame('game.py', 'self._end_turn(ui)')];
+      const list = [{ t: 'Traceback (most recent call last):', at: 0, kind: 'out' }];
+      let at = 260;
+      for (const f of frames) for (const [j, t] of f.entries()) { list.push({ t, at, kind: j ? 'code' : 'out' }); at += j ? 200 : 70; }
+      const err = cause === 'quit' ? 'SystemExit: quit' : `PlayerDied: ${cause} (floor ${d.floor})`;
+      list.push({ t: err, at: at + 150, kind: 'err', type: 1 });
+      show(list, ms);
+    },
+  };
+})();
 // 読み込み画面のロゴ（タイトル画面と同じ ROGUE と、その右下に水色の 3D）。罫線やブロックの字はフォントで幅が変わるので升目に縮めて描く
 function drawCoverLogo() {
   const ROGUE = [
@@ -800,7 +921,11 @@ function start() {
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
     else if (d.type === 'missile') r3d.missile(d.data);
-    else if (d.type === 'effect') r3d.effect(d.data);
+    else if (d.type === 'effect') {
+      if (d.data.type === 'newlevel') termFx.level(d.data, d.data.dur);
+      else if (d.data.type === 'died') termFx.died(d.data, d.data.dur);
+      else r3d.effect(d.data);
+    }
     else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
     else if (d.type === 'exit') {
       rain.stop();
@@ -811,7 +936,7 @@ function start() {
   };
 }
 r3d.init($('v3'));
-window.__rogue = { rowText, findPlayer, r3d, grid };   // 試験用（自動で歩かせて撮る）
+window.__rogue = { rowText, findPlayer, r3d, grid, termFx };   // 試験用（自動で歩かせて撮る）
 new ResizeObserver(() => { r3d.resize(); }).observe(box);
 start();
 document.fonts && document.fonts.ready.then(requestDraw);

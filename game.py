@@ -369,6 +369,10 @@ class Game:
                 # 3D 版へ、この階の隠し扉の場所を知らせる（近くで見ると壁が少し違って見える。意図的な改変）
                 if getattr(self, '_secrets_sent', None) is not self.dungeon:
                     self._secrets_sent = self.dungeon
+                    # 3D 版: 階を作るコードが端末に流れる演出（出来た階の部屋・モンスター・物・罠の数を添える）
+                    ui.effect_wait('newlevel', 1300, dur=1300, depth=self.floor,
+                                   rooms=sum(1 for r in self.dungeon.rooms if not r.is_gone),
+                                   mons=len(self.monsters), items=len(self.floor_items), traps=len(self.dungeon.traps))
                     ui.effect('secrets', cells=[[y, x] for y, row in enumerate(self.dungeon.map)
                                                 for x, t in enumerate(row) if t.flags & F_SECRETDOOR])
                     # 部屋の壁の位置と、明るい部屋か暗い部屋か（3D 版は明るい部屋の壁に燭台を灯す）
@@ -432,6 +436,7 @@ class Game:
         entries, rank = _add_score(entry)
         _delete_save()
         _write_gameover_log(self.player, self._player_name, self._death_cause, ui.get_event_log())
+        ui.effect_wait('died', 3000, dur=3000, cause=self._death_cause, floor=self.floor)   # 3D 版: Python のエラー表示のように死因を出す
         ui.game_over(self.player, self._death_cause, rank, entries)
 
     # -------------------------------------------------------------------------

@@ -205,6 +205,10 @@ canvas { display: block; flex: none; }
 #ver.update { font-size: 12px; color: var(--accent); opacity: 1; border: 1px solid var(--accent); border-radius: 6px; padding: 3px 8px; cursor: pointer; }
 #debug { position: fixed; left: 0; right: 0; top: 40%; z-index: 30; margin: 0; padding: 6px 10px; font-size: 11px; line-height: 1.35; color: #7fd17a; background: rgba(0, 0, 0, .75); pointer-events: none; white-space: pre-wrap; }
 #debug:empty { display: none; }
+#msg .cur { color: var(--accent); margin-left: 1px; animation: blink 1s steps(1) infinite; }
+#msg .cur.typing { animation: none; }
+@keyframes blink { 50% { opacity: 0; } }
+#termFx { position: fixed; z-index: 15; pointer-events: none; }
 #flash { position: fixed; inset: 0; background: var(--fg); opacity: 0; pointer-events: none; z-index: 20; }
 @media (prefers-reduced-motion: no-preference) { #flash { transition: opacity .12s; } }
 </style>
@@ -255,6 +259,7 @@ canvas { display: block; flex: none; }
   <p id="coverText">読み込み中…</p>
   <button type="button" class="plain" id="coverBtn" hidden></button>
 </div>
+<canvas id="termFx" aria-hidden="true" hidden></canvas>
 <div id="flash"></div>
 <pre id="debug"></pre>
 
