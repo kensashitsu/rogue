@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.79';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.80';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -156,6 +156,8 @@ function render() {
   const land = innerWidth > innerHeight;
   app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}${fullMap ? ' fullmap' : ''}`;
   box.classList.toggle('text', mode === 'text');
+  box.classList.toggle('list', mode === 'text' && hint === 'list');
+  if (mode === 'text' && hint === 'list') box.scrollLeft = 0;
   $('zoomSeg').style.visibility = view === 'follow' ? '' : 'hidden';
 
   if (mode === 'map') {
