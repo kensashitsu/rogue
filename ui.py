@@ -908,15 +908,15 @@ class UI:
                     pass
                 row += 1
 
-            # スクロールインジケータ
+            # スクロールインジケータ（左寄せ。右に置くとスマホ版で一覧の幅が広がり字が小さくなる）
             if offset > 0:
                 try:
-                    self.stdscr.addstr(21, 42, tr("(↑ more)"))
+                    self.stdscr.addstr(21, 4, tr("(↑ more)"))
                 except curses.error:
                     pass
             if offset + page_size < len(items):
                 try:
-                    self.stdscr.addstr(21, 52, tr("(↓ more)"))
+                    self.stdscr.addstr(21, 16, tr("(↓ more)"))
                 except curses.error:
                     pass
 
