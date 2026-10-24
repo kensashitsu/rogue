@@ -374,7 +374,9 @@ class Monster:
             return msgs
 
         # 隣接 → 攻撃（不可視プレイヤーには CANSEE 持ちのみ攻撃可）
-        adjacent = _cheby(self.y, self.x, player.y, player.x) <= 1
+        # 斜めに隣り合っていても、間の角が壁・岩なら殴れない（5.4 diag_ok）。回り込んでくる
+        adjacent = _cheby(self.y, self.x, player.y, player.x) <= 1 \
+            and dungeon.diag_ok(self.y, self.x, player.y, player.x)
         can_target = (not player.status.invisible) or bool(self.flags & CANSEE)
         if adjacent and can_target:
             result = monster_attacks_player(self, player, dungeon)
@@ -521,7 +523,10 @@ class Monster:
             return None
 
         py, px = player.y, player.x
-        cur_dist = _cheby(self.y, self.x, py, px)
+        # 近さは Chebyshev 距離、同じなら直線距離の 2 乗（5.4 の chase と同じ）で比べる。
+        # 斜めに隣り合っていて角の壁で殴れないとき、縦横に隣り合う所へ回り込めるように
+        dist = lambda y, x: (_cheby(y, x, py, px), (y - py) ** 2 + (x - px) ** 2)
+        cur_dist = dist(self.y, self.x)
 
         best_pos  = None
         best_dist = cur_dist
@@ -533,7 +538,7 @@ class Monster:
                 ny, nx = self.y + dy, self.x + dx
                 if not self._can_enter(dungeon, ny, nx, monsters):
                     continue
-                d = _cheby(ny, nx, py, px)
+                d = dist(ny, nx)
                 if d < best_dist:
                     best_dist = d
                     best_pos  = (ny, nx)
@@ -549,6 +554,8 @@ class Monster:
     ) -> bool:
         """指定マスに移動可能か判定する。"""
         if not dungeon.is_walkable(y, x):
+            return False
+        if not dungeon.diag_ok(self.y, self.x, y, x):   # 5.4 diag_ok: 角が壁・岩なら斜めに進めない
             return False
         # 他のモンスターが占有していないか
         if any(m.y == y and m.x == x and m.is_alive and m is not self

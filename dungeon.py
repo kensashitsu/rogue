@@ -218,6 +218,7 @@ class Dungeon:
         self._place_rooms()
         self._connect_all()
         self._ensure_maze_connectivity()
+        self._fix_diagonal_joints()
         self._place_stairs()
         self._place_gold()
         self._place_items()
@@ -348,6 +349,32 @@ class Dungeon:
     # ------------------------------------------------------------------
     # 通路接続
     # ------------------------------------------------------------------
+
+    def _fix_diagonal_joints(self) -> None:
+        """
+        通路の曲がり角が部屋の角などに当たって描けず、斜めにしかつながっていない所に通路を 1 マス足す。
+        斜めの移動は diag_ok で角が壁・岩だと通れないので、そのままでは行けない所ができる（約 2000 階に 1 回）。
+        """
+        def joint(y: int, x: int) -> bool:   # 通路・扉（見つけていない隠し扉も）
+            return self._ch(y, x) in (CH_PASSAGE, CH_DOOR) or bool(self.map[y][x].flags & F_SECRETDOOR)
+        for y in range(1, SCREEN_ROWS - 2):
+            for x in range(SCREEN_COLS - 1):
+                if not joint(y, x):
+                    continue
+                for dx in (-1, 1):
+                    ny, nx = y + 1, x + dx
+                    if not (0 <= nx < SCREEN_COLS) or not joint(ny, nx):
+                        continue
+                    c1, c2 = (ny, x), (y, nx)   # 間の角
+                    if self._ch(*c1) not in (' ', '-', '|') or self._ch(*c2) not in (' ', '-', '|'):
+                        continue
+                    if (self.map[c1[0]][c1[1]].flags | self.map[c2[0]][c2[1]].flags) & F_SECRETDOOR:
+                        continue
+                    for cy, cx in (c1, c2):
+                        if self._ch(cy, cx) == ' ':
+                            self._set(cy, cx, CH_PASSAGE)
+                            self.map[cy][cx].flags |= F_PASS
+                            break
 
     def _connect_all(self) -> None:
         """全部屋を接続する（横方向→縦方向）。"""
@@ -701,6 +728,15 @@ class Dungeon:
 
     def is_walkable(self, y: int, x: int) -> bool:
         return self._ch(y, x) in _WALKABLE
+
+    def diag_ok(self, sy: int, sx: int, ey: int, ex: int) -> bool:
+        """
+        5.4 diag_ok: 斜めに動く・殴るときは、間の角の 2 マスが両方とも壁・岩でないこと。
+        扉の口から斜めに出入りできず、壁越しに斜めの相手と殴り合えない。
+        """
+        if sy == ey or sx == ex:
+            return True
+        return self._ch(ey, sx) not in (' ', '-', '|') and self._ch(sy, ex) not in (' ', '-', '|')
 
     def find_room_at(self, y: int, x: int) -> "Room | None":
         """座標 (y, x) を含む部屋を返す。"""

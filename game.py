@@ -572,6 +572,11 @@ class Game:
         ny = self.player.y + dy
         nx = self.player.x + dx
 
+        # 5.4 diag_ok: 角が壁・岩なら斜めには動けず、殴れもしない（扉の口で壁の向こうの斜めの相手）
+        if not self.dungeon.diag_ok(self.player.y, self.player.x, ny, nx):
+            ui.add_message(tr("You can't go that way."))
+            return
+
         target = next(
             (m for m in self.monsters if m.is_alive and m.y == ny and m.x == nx),
             None,
