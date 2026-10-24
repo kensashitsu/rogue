@@ -50,6 +50,7 @@ from constants import (
     R_AGGR, R_TELEPORT,
     MACE, BOW, ARROW, RING_MAIL,
     S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_FDET, S_SCARE, S_TELEP, P_MFIND, P_TFIND,
+    P_CONFUSE, P_LSD, P_POISON, P_BLIND, ISHUH, ISSLOW, ISHASTE, HUHDURATION,
     OBJ_ISFOUND,
     T_DOOR, T_ARROW, T_SLEEP, T_BEAR, T_TELEP, T_DART, T_RUST, T_MYST, NTRAPS,
 )
@@ -1103,7 +1104,10 @@ class Game:
             if launcher is not None:
                 hplus += getattr(launcher, 'o_hplus', 0)
             need = max(2, 21 - hit_monster.ac - self.player.level - hplus)
-            if random.randint(1, 20) >= need:
+            hit = random.randint(1, 20) >= need
+            if hit and item.o_type == CH_POTION and item.o_which in (P_CONFUSE, P_LSD, P_POISON, P_BLIND):
+                self._splash_potion(item, hit_monster, ui)
+            elif hit:
                 item.o_flags |= ISKNOW
                 name = dc_replace(item, o_count=1).display_name(self.knowledge)
                 hurldmg = getattr(item, 'o_hurldmg', '1x1')
@@ -1151,6 +1155,27 @@ class Game:
                 self.floor_items.append(
                     FloorItem(item=item, y=fy, x=fx)
                 )
+
+    def _splash_potion(self, item: Item, m, ui: UI) -> None:
+        """害のある薬が敵に当たると瓶が割れ、敵がその状態になる（トルネコの大冒険に合わせた。5.4 は 1 ダメージで消えるだけ）。
+        混乱・幻覚 → 混乱してでたらめに歩く。盲目 → こちらが見えず、でたらめに歩いて殴ってこない。毒 → 動きが鈍る（減速の杖と同じ）。
+        続くターンは、5.4 で敵が混乱する長さ（HUHDURATION）に揃える"""
+        m.flags |= ISRUN | ISFOUND
+        vname = m.display_name(self.player.status.can_see_invisible)
+        w = item.o_which
+        if w == P_POISON:
+            m.flags |= ISSLOW
+            m.flags &= ~ISHASTE
+            ui.add_message(tr('The flask shatters and the {vname} slows down from the poison!', vname=vname))
+        elif w == P_BLIND:
+            m._blind_turns = HUHDURATION
+            ui.add_message(tr('The flask shatters and the {vname} is blinded!', vname=vname))
+        else:
+            m.flags |= ISHUH
+            m._huh_turns = HUHDURATION
+            ui.add_message(tr('The flask shatters and the {vname} looks confused!', vname=vname))
+        if not self.player.status.blind:
+            self.knowledge.know(CH_POTION, w)
 
     def _do_zap(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
