@@ -1199,10 +1199,14 @@ class Game:
         else:
             ui.add_message(tr('The flask shatters over the {vname}. Nothing seems to happen.', vname=vname))
         seen = not self.player.status.blind and (not (m.flags & ISINVIS) or self.player.status.can_see_invisible)
-        if seen and w in (P_POISON, P_BLIND, P_HASTE, P_RAISE) and not self.knowledge.is_known(CH_POTION, w):
+        if self.knowledge.is_known(CH_POTION, w):
+            return
+        if seen and w in (P_POISON, P_BLIND, P_HASTE, P_RAISE):
             self.knowledge.know(CH_POTION, w)
             from items import POTION_INFO, tr_name
             ui.add_message(tr('That was a potion of {name}.', name=tr_name('potion', POTION_INFO[w].name)))
+        else:
+            ui.add_message(tr("You can't tell what kind of potion it was."))
 
     def _do_zap(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
