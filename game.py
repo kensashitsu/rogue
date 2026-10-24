@@ -1158,7 +1158,9 @@ class Game:
                 )
 
     def _splash_potion(self, item: Item, m, ui: UI) -> None:
-        """薬が敵に当たると瓶が割れ、敵に効く。何の薬だったかも分かる（トルネコの大冒険に合わせた。5.4 は 1 ダメージで消えるだけ）。
+        """薬が敵に当たると瓶が割れ、敵に効く（トルネコの大冒険に合わせた。5.4 は 1 ダメージで消えるだけ）。
+        何の薬だったか分かるのは、敵が見えていて、その様子から 1 種類に決まるときだけ（毒・盲目・加速・レベルアップ）。
+        混乱と幻覚、回復と特製回復は様子が同じなので見分けられず、効かない薬は何も起きないので分からない。
         混乱・幻覚 → 混乱してでたらめに歩く。盲目 → こちらが見えず、でたらめに歩いて殴ってこない。毒 → 動きが鈍る（減速の杖と同じ）。
         続くターンは、5.4 で敵が混乱する長さ（HUHDURATION）に揃える。
         回復・特製回復 → 敵の傷が治る（飲んだときと同じ量。敵のレベルで振る）。加速 → 敵が速くなる。レベルアップ → 敵が強くなる。
@@ -1195,8 +1197,9 @@ class Game:
             m.hp += gain
             ui.add_message(tr('The flask shatters and the {vname} looks stronger!', vname=vname))
         else:
-            ui.add_message(tr('The flask shatters over the {vname}.', vname=vname))
-        if not self.player.status.blind and not self.knowledge.is_known(CH_POTION, w):
+            ui.add_message(tr('The flask shatters over the {vname}. Nothing seems to happen.', vname=vname))
+        seen = not self.player.status.blind and (not (m.flags & ISINVIS) or self.player.status.can_see_invisible)
+        if seen and w in (P_POISON, P_BLIND, P_HASTE, P_RAISE) and not self.knowledge.is_known(CH_POTION, w):
             self.knowledge.know(CH_POTION, w)
             from items import POTION_INFO, tr_name
             ui.add_message(tr('That was a potion of {name}.', name=tr_name('potion', POTION_INFO[w].name)))
