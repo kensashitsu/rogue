@@ -145,6 +145,8 @@ class Monster:
     _held_turns:   int  = field(default=0,     repr=False)
     # 混乱残りターン数（0 = 混乱なし）
     _huh_turns:    int  = field(default=0,     repr=False)
+    # 盲目の残りターン数（0 = 見えている）。盲目の薬を投げつけられたとき（5.4 にはない）
+    _blind_turns:  int  = field(default=0,     repr=False)
 
     # ---- 読み取り専用プロパティ ----
 
@@ -237,6 +239,10 @@ class Monster:
             self._huh_turns -= 1
             if self._huh_turns == 0:
                 self.flags &= ~ISHUH
+
+        # ---- 盲目タイマー ----
+        if self._blind_turns > 0:
+            self._blind_turns -= 1
 
         # ---- 拘束タイマー（ISHELD）----
         if self._held_turns > 0:
@@ -373,6 +379,11 @@ class Monster:
             msgs.extend(dragon_breath(player))
             return msgs
 
+        # 目が見えない: こちらを狙えず、でたらめに歩く
+        if self._blind_turns > 0:
+            self._move_random(dungeon, monsters, floor_items, avoid=(player.y, player.x))
+            return msgs
+
         # 隣接 → 攻撃（不可視プレイヤーには CANSEE 持ちのみ攻撃可）
         # 斜めに隣り合っていても、間の角が壁・岩なら殴れない（5.4 diag_ok）。回り込んでくる
         adjacent = _cheby(self.y, self.x, player.y, player.x) <= 1 \
@@ -459,13 +470,14 @@ class Monster:
         dungeon:  "Dungeon",
         monsters: list["Monster"],
         floor_items: list = [],
+        avoid: Optional[tuple[int, int]] = None,   # 踏み込まないマス（隣にいる自分。盲目の敵が重ならないように）
     ) -> None:
         dirs = [(dy, dx) for dy in (-1, 0, 1) for dx in (-1, 0, 1)
                 if not (dy == 0 and dx == 0)]
         random.shuffle(dirs)
         for dy, dx in dirs:
             ny, nx = self.y + dy, self.x + dx
-            if self._can_enter(dungeon, ny, nx, monsters):
+            if (ny, nx) != avoid and self._can_enter(dungeon, ny, nx, monsters):
                 self.y, self.x = ny, nx
                 from constants import S_SCARE, CH_SCROLL, OBJ_ISFOUND
                 for fi in floor_items:
