@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.88';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.89';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -650,7 +650,7 @@ addEventListener('unhandledrejection', e => { alive.err = String(e.reason).slice
 if (lastRun) {
   const min = Math.round((lastRun.beat - lastRun.t0) / 60000), el = document.createElement('div');
   el.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99;padding:8px 10px;background:#2a1c14;color:#f0d0b0;border:1px solid #6a4a30;border-radius:6px;font:13px/1.5 sans-serif';
-  el.textContent = (lang === 'ja' ? `前回は画面が途中で止まりました（v${lastRun.v}・開いてから約${min}分）` : `The page stopped last time (v${lastRun.v}, about ${min} min after opening)`) + (lastRun.err ? '\n' + lastRun.err : '') + (lastRun.last && lastRun.last.length ? '\n' + (lang === 'ja' ? '直前: ' : 'Last: ') + lastRun.last.join(' ') : '');
+  el.textContent = (lang === 'ja' ? `前回は画面が途中で止まりました（v${lastRun.v}・開いてから約${min}分）` : `The page stopped last time (v${lastRun.v}, about ${min} min after opening)`) + (lastRun.err ? '\n' + lastRun.err : '') + (lastRun.last && lastRun.last.length ? '\n' + (lang === 'ja' ? '直前: ' : 'Last: ') + lastRun.last.join(' ') : '') + (lastRun.mem ? `\nPython: ${lastRun.mem0}MB → ${lastRun.mem}MB` : '');
   el.style.whiteSpace = 'pre-wrap';
   document.body.appendChild(el);
   tap(el, () => el.remove());
@@ -1006,6 +1006,7 @@ function start() {
       requestDraw();
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
+    else if (d.type === 'mem') { alive.mem = Math.round(d.wasm / 1048576); if (!alive.mem0) alive.mem0 = alive.mem; }
     else if (d.type === 'missile') { alive.last.push('missile'); if (alive.last.length > 8) alive.last.shift(); r3d.missile(d.data); }
     else if (d.type === 'effect') {
       alive.last.push(d.data.type); if (alive.last.length > 8) alive.last.shift();

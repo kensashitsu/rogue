@@ -53,8 +53,11 @@ self.rogue_effect = json => postMessage({ type: 'effect', data: JSON.parse(json)
 const nap = new Int32Array(new SharedArrayBuffer(4));   // 待つだけに使う（投げた物が飛ぶ間）
 self.rogue_sleep = ms => { Atomics.wait(nap, 0, 0, ms); };
 self.rogue_flushinp = () => { keys[1] = Atomics.load(keys, 0); };
+let getchCount = 0;
 self.rogue_getch = (kind, valid) => {
   syncSaves();
+  // 落ちた原因を調べる用: Python（WebAssembly）のメモリの大きさを時々知らせる
+  if (getchCount++ % 20 === 0) { try { postMessage({ type: 'mem', wasm: py._module.HEAP8.length }); } catch { /* 取れなくても続ける */ } }
   postMessage({ type: 'wait', kind, valid });
   return takeKey();
 };
