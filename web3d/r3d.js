@@ -213,6 +213,9 @@ function addGlyph(c, s, x, y, det) {
 const DESCEND_MS = { stairs: 900, fall: 650, up: 900, win: 1300 }, FADEIN_MS = 400, WARP_MS = 600;
 const BRIGHT_TRANS = new Set(['up', 'win']);   // 上るときは白く明るくなって、上の階が白から明ける
 const WARP_CHARS = '#%&*+=~:;!?';
+// 字の大きさは約 3% 刻みの段に丸める。近さに合わせて連続した大きさで描くと、WebKit が大きさごとに字体のデータを作って溜め、
+// iPhone でメモリが足りなくなって落ちた（2026-10-24。1 分で 4700 通り以上の大きさを使っていた）
+const fpx = s => Math.round(Math.exp(Math.round(Math.log(Math.max(1, s)) / 0.03) * 0.03) * 10) / 10;
 const trans = { how: null, t0: 0, fadeT0: -1e9, warpT0: -1e9, col: '#000' };
 const transActive = now => (trans.how && now - trans.t0 < DESCEND_MS[trans.how] + 3000) || now - trans.fadeT0 < FADEIN_MS || now - trans.warpT0 < WARP_MS;
 // 階段・落とし穴の途中の視点（null なら普段どおり）
@@ -521,7 +524,12 @@ function setLights() {
 function lightAt(x, y, z) {
   if (tune.torch < 0.2) return 0;
   let k = 0;
-  for (const v of LIGHTS_U.value) { if (!v.w) break; k += v.w * sconceLit(Math.hypot(v.x - x, v.y - y, v.z - z)); }
+  const L = LIGHTS_U.value;
+  for (let i = 0; i < L.length; i++) {
+    const v = L[i]; if (!v.w) break;
+    const dx = v.x - x, dy = v.y - y, dz = v.z - z;
+    k += v.w * sconceLit(Math.sqrt(dx * dx + dy * dy + dz * dz));
+  }
   return Math.min(1, k);
 }
 // 材質の色（インスタンスごと）: 赤 = 明るさ、緑 = 明るい部屋の中か、青 = 床の隣の壁（北 1・南 2・西 4・東 8 の和 / 16。隅の陰に使う）
@@ -635,11 +643,12 @@ function kindMat(kind) {
 }
 
 const CELL_W = 5.5;   // 升目 1 つの横幅（CSS の px。縦はその 2 倍）。粗・中・細を見比べて中に決めた
-let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null;
+let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null, tdpr = 1;
 function sizeTerm(w, h) {
   tcols = Math.max(24, Math.round(w / CELL_W)); tcw = w / tcols;
   tch = tcw * 2; trows = Math.max(12, Math.floor(h / tch));
-  const dpr = Math.min(devicePixelRatio || 1, 2);
+  const dpr = tdpr = Math.min(devicePixelRatio || 1, 2);
+  glyph.shapes.clear();
   tcv.width = Math.round(w * dpr); tcv.height = Math.round(h * dpr);
   tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (rt) rt.dispose();
@@ -653,20 +662,29 @@ function sizeTerm(w, h) {
 //   ゆるやか   → 1 列に 1 字。升の中の高さで _ . - ' を使い分ける（__..--'' のように滑らかにつながる）
 // 手前の面に隠れる所は引かない。同じ升に何本も通るときは手前の線
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _p = new THREE.Vector3();
+// 毎回作り直すと iPhone で使い捨てのメモリが溜まって落ちるので（2026-10-24）、線の結果や途中の点は入れ物を使い回す
+const lineOut = { ch: [], d: new Float32Array(0), v: new Float32Array(0) };
+const linePts = new Float32Array(601 * 3);
+let lineBest = { e: new Float32Array(0), p: new Float32Array(0), d: new Float32Array(0) };
 function drawLines(C, R, depthOf) {
-  const out = new Array(C * R);
+  const N = C * R;
+  if (lineOut.d.length !== N) { lineOut.ch = new Array(N); lineOut.d = new Float32Array(N); lineOut.v = new Float32Array(N); }
+  const M = Math.max(C, R);
+  if (lineBest.e.length < M) lineBest = { e: new Float32Array(M), p: new Float32Array(M), d: new Float32Array(M) };
+  const out = lineOut.ch, outD = lineOut.d, outV = lineOut.v, bestE = lineBest.e, bestP = lineBest.p, bestD = lineBest.d;
+  out.fill(null);
   const near = 0.12;
   let segB = 1, segL = 0;
   const put = (x, y, ch, dist) => {
     if (x < 0 || y < 0 || x >= C || y >= R) return;
     if (depthOf(x, y) < dist - 0.35) return;   // 手前の壁に隠れる
-    const o = out[y * C + x];
-    if (o && o.d <= dist) return;
+    const j = y * C + x;
+    if (out[j] && outD[j] <= dist) return;
     // 明るさ: 遠いほど暗く。覚えているだけ・まだ分からない所の線は、その暗さに合わせる
     const far = 1 - 0.9 * Math.min(1, Math.max(0, (dist - 0.6) / 9.4));
     const v = segB >= 0.9 ? far : Math.min(1, segB * 2.3 / (1 + tune.torch * dist * dist) + segL);
     if (segB < 0.9 && tune.torch >= 0.2 && v < 0.06) return;   // 手元の明かりが届かない、覚えているだけの所の線は引かない
-    out[y * C + x] = { ch, d: dist, v };
+    out[j] = ch; outD[j] = dist; outV[j] = v;
   };
   for (let i = 0; i < edgeSegs.length; i += 6) {
     segB = edgeBright[i / 6] ?? 1;
@@ -682,45 +700,47 @@ function drawLines(C, R, depthOf) {
     const pb = _p.copy(_b).applyMatrix4(camera.projectionMatrix), bx = (pb.x + 1) / 2 * C, by = (1 - pb.y) / 2 * R;
     if ((ax < 0 && bx < 0) || (ax > C && bx > C) || (ay < 0 && by < 0) || (ay > R && by > R)) continue;
     const n = Math.min(600, Math.ceil(Math.max(Math.abs(bx - ax), Math.abs(by - ay)) * 4) + 2);
-    const pts = [];
     for (let k = 0; k <= n; k++) {
       _p.copy(_a).lerp(_b, k / n);
       const dist = -_p.z;
       _p.applyMatrix4(camera.projectionMatrix);
-      pts.push([(_p.x + 1) / 2 * C, (1 - _p.y) / 2 * R, dist]);
+      linePts[k * 3] = (_p.x + 1) / 2 * C; linePts[k * 3 + 1] = (1 - _p.y) / 2 * R; linePts[k * 3 + 2] = dist;
     }
     const dxc = bx - ax, dyc = by - ay;
     const slope = Math.abs(dyc * 2 / (dxc || 1e-6));
     if (slope >= 1) {
-      // 1 行に 1 字: 行の真ん中を通る所
-      const rows = new Map();
-      for (const q of pts) {
-        const y = Math.floor(q[1]); if (y < 0 || y >= R) continue;
-        const e = Math.abs(q[1] - (y + 0.5)), r = rows.get(y);
-        if (!r || e < r.e) rows.set(y, { e, x: q[0], d: q[2] });
+      // 1 行に 1 字: 行の真ん中を通る所（行ごとに一番近い点。bestE が -1 の行は通らない）
+      bestE.fill(-1, 0, R);
+      for (let k = 0; k <= n; k++) {
+        const qx = linePts[k * 3], qy = linePts[k * 3 + 1];
+        const y = Math.floor(qy); if (y < 0 || y >= R) continue;
+        const e = Math.abs(qy - (y + 0.5));
+        if (bestE[y] < 0 || e < bestE[y]) { bestE[y] = e; bestP[y] = qx; bestD[y] = linePts[k * 3 + 2]; }
       }
       const ch = slope > 3 ? '|' : (dyc > 0) === (dxc > 0) ? '\\' : '/';
-      const ys = [...rows.keys()].sort((p, q) => p - q);
-      ys.forEach((y, j) => {
-        const r = rows.get(y), x = Math.floor(r.x);
-        put(x, y, ch, r.d);
-        const nx = rows.has(y + 1) ? Math.floor(rows.get(y + 1).x) : null;
-        if (ch === '|' || nx === null) return;
+      for (let y = 0; y < R; y++) {
+        if (bestE[y] < 0) continue;
+        const x = Math.floor(bestP[y]), d = bestD[y];
+        put(x, y, ch, d);
+        if (ch === '|' || y + 1 >= R || bestE[y + 1] < 0) continue;
+        const nx = Math.floor(bestP[y + 1]);
         // 次の行まで横に 2 升以上ずれるなら、この行の続きを _ で埋める
-        if (ch === '\\') for (let k = x + 1; k < nx; k++) put(k, y, '_', r.d);
-        else for (let k = nx + 1; k < x; k++) put(k, y, '_', r.d);
-      });
+        if (ch === '\\') for (let k = x + 1; k < nx; k++) put(k, y, '_', d);
+        else for (let k = nx + 1; k < x; k++) put(k, y, '_', d);
+      }
     } else {
       // 1 列に 1 字: 列の真ん中を通る所の高さで字を選ぶ
-      const cols = new Map();
-      for (const q of pts) {
-        const x = Math.floor(q[0]); if (x < 0 || x >= C) continue;
-        const e = Math.abs(q[0] - (x + 0.5)), c = cols.get(x);
-        if (!c || e < c.e) cols.set(x, { e, y: q[1], d: q[2] });
+      bestE.fill(-1, 0, C);
+      for (let k = 0; k <= n; k++) {
+        const qx = linePts[k * 3];
+        const x = Math.floor(qx); if (x < 0 || x >= C) continue;
+        const e = Math.abs(qx - (x + 0.5));
+        if (bestE[x] < 0 || e < bestE[x]) { bestE[x] = e; bestP[x] = linePts[k * 3 + 1]; bestD[x] = linePts[k * 3 + 2]; }
       }
-      for (const [x, c] of cols) {
-        const y = Math.floor(c.y), f = c.y - y;   // 升の中の高さ（0 = 上、1 = 下）
-        put(x, y, f > 0.72 ? '_' : f > 0.5 ? '.' : f > 0.28 ? '-' : "'", c.d);
+      for (let x = 0; x < C; x++) {
+        if (bestE[x] < 0) continue;
+        const y = Math.floor(bestP[x]), f = bestP[x] - y;   // 升の中の高さ（0 = 上、1 = 下）
+        put(x, y, f > 0.72 ? '_' : f > 0.5 ? '.' : f > 0.28 ? '-' : "'", bestD[x]);
       }
     }
   }
@@ -1470,7 +1490,7 @@ function drawArt(o, u) {
   if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px);
   const w = h / 2, x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
   const st = u.st;
-  tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
+  tctx.font = `700 ${fpx(h)}px "BIZ UDGothic", monospace`;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
     const m = art[r][c];
     if (m === ' ') continue;
@@ -1513,10 +1533,11 @@ function sconceLights(C, R) {
 }
 function glowAt(lights, x, y, depth) {
   let k = 0;
-  for (const l of lights) {
+  for (let i = 0; i < lights.length; i++) {
+    const l = lights[i];
     if (Math.abs(depth - l.dist) > 1.6) continue;   // 燭台から離れた奥や手前の面は照らさない
     const dx = (x + 0.5 - l.cx) * tcw / tch, dy = y + 0.5 - l.cy;
-    const d = Math.hypot(dx, dy) / l.rad;
+    const d = Math.sqrt(dx * dx + dy * dy) / l.rad;
     if (d < 1) k = Math.max(k, Math.min(1, (1 - d) * (1 - d) * l.fi));
   }
   return k;
@@ -1541,7 +1562,7 @@ function drawSconces(C, R, depthOf) {
     let h = unit * 0.36 / rows;
     if (h < tch * 0.8) {   // 遠い: 炎の 1 字だけ
       if (!lit) continue;
-      tctx.font = `700 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+      tctx.font = `700 ${fpx(tch * 0.94)}px "BIZ UDGothic", monospace`;
       tctx.globalAlpha = fade; tctx.fillStyle = '#ffb054';
       tctx.fillText('*', (ix + 0.5) * tcw, (iy + 0.5) * tch + tch * 0.04);
       tctx.globalAlpha = 1;
@@ -1549,7 +1570,7 @@ function drawSconces(C, R, depthOf) {
     }
     h = Math.min(h, tch * 4);
     const w = h / 2, x0 = cx * tcw - cols * w / 2, y0 = cy * tch - rows * h / 2;
-    tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
+    tctx.font = `700 ${fpx(h)}px "BIZ UDGothic", monospace`;
     tctx.globalAlpha = fade;
     let flick = 0.85 + 0.15 * Math.sin(now / 90 + s.x * 3 + s.z * 7);
     // 炎の揺らぎ（tune.flame）: 部屋を照らす光（シェーダの L.w の揺らぎ）と同じ式で、明るさ・先の形・横の揺れ・大きさを動かす
@@ -1569,9 +1590,9 @@ function drawSconces(C, R, depthOf) {
         else dx = sway * w * 0.06;
       }
       if (isFlame && tune.flame >= 3 && r > 0) sc = 1 + 0.14 * ff;   // 炎の芯が膨らんだり縮んだり
-      if (sc !== 1) tctx.font = `700 ${h * sc}px "BIZ UDGothic", monospace`;
+      if (sc !== 1) tctx.font = `700 ${fpx(h * sc)}px "BIZ UDGothic", monospace`;
       tctx.fillText(ch, x0 + c * w + w / 2 + dx, y0 + r * h + h / 2 + h * 0.04 + dy);
-      if (sc !== 1) tctx.font = `700 ${h}px "BIZ UDGothic", monospace`;
+      if (sc !== 1) tctx.font = `700 ${fpx(h)}px "BIZ UDGothic", monospace`;
     }
     tctx.globalAlpha = 1;
   }
@@ -1587,8 +1608,8 @@ function wounded(hp, r, c) {
 function drawZzz(x, y, h) {
   const font = tctx.font;
   tctx.fillStyle = '#6cc6d6';
-  tctx.font = `700 ${h * 0.8}px "BIZ UDGothic", monospace`; tctx.fillText('z', x, y - h * 0.3);
-  tctx.font = `700 ${h * 1.1}px "BIZ UDGothic", monospace`; tctx.fillText('Z', x + h * 0.7, y - h * 1.2);
+  tctx.font = `700 ${fpx(h * 0.8)}px "BIZ UDGothic", monospace`; tctx.fillText('z', x, y - h * 0.3);
+  tctx.font = `700 ${fpx(h * 1.1)}px "BIZ UDGothic", monospace`; tctx.fillText('Z', x + h * 0.7, y - h * 1.2);
   tctx.font = font;
 }
 
@@ -1599,7 +1620,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
   const tr = Math.max(1, Math.round(rows * h / tch)), tc = Math.max(1, Math.round(cols * h / 2 / tcw));
   if (tr * tc <= 1) return false;   // 1 升にしかならないなら 1 文字で
   const gx0 = Math.round(cx / tcw - tc / 2), gy0 = Math.round(bottom / tch - tr);
-  tctx.font = `700 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+  tctx.font = `700 ${fpx(tch * 0.94)}px "BIZ UDGothic", monospace`;
   let drawn = 0;
   for (let r = 0; r < tr; r++) for (let c = 0; c < tc; c++) {
     const r0 = Math.floor(r * rows / tr), r1 = Math.max(r0 + 1, Math.floor((r + 1) * rows / tr));
@@ -1662,8 +1683,10 @@ function litCol(hex, L, cx) {
 // 字の画面では床の点の間はもともと黒いので、上から黒を重ねても見えない。影の升は床の字そのものを暗くする（濃い所は消える）。
 // 升ごとの影の濃さ（0〜1）を返す
 const _sh = new THREE.Vector3();
+let shadowBuf = new Float32Array(0);   // 毎回作らず使い回す
 function shadowMask(C, R, depthOf) {
-  const mask = new Float32Array(C * R), SW = C * tcw, SH = R * tch, t = TIME_U.value;
+  if (shadowBuf.length !== C * R) shadowBuf = new Float32Array(C * R); else shadowBuf.fill(0);
+  const mask = shadowBuf, SW = C * tcw, SH = R * tch, t = TIME_U.value;
   const scr = (x, z) => { _sh.set(x, 0.01, z).applyMatrix4(camera.matrixWorldInverse); if (_sh.z > -0.08) return null; _sh.applyMatrix4(camera.projectionMatrix); return [(_sh.x + 1) / 2 * C, (1 - _sh.y) / 2 * R]; };
   const fillPoly = (pts, a) => {   // 升の真ん中が多角形の中なら、その升に濃さ a
     const sp = pts.map(([x, z]) => scr(x, z));
@@ -1716,15 +1739,60 @@ function shadowMask(C, R, depthOf) {
   return mask;
 }
 // 灰色の字を、燭台の光の分だけ暖かい色に
+// 地形の字の色は 0xRRGGBB の数で扱う（升ごとに色の文字列を作ると、使い捨てのメモリが溜まる）
+function rgb(r, g, b) {
+  return Math.max(0, Math.min(255, Math.round(r))) << 16 | Math.max(0, Math.min(255, Math.round(g))) << 8 | Math.max(0, Math.min(255, Math.round(b)));
+}
+
+// 地形の字は 1 画面に数千あり、毎回 fillText で描くと iPhone（WebKit）がメモリを溜め込んで落ちる（2026-10-24。
+// fillText を止めると増えないのを確かめた）。字の形を一度だけ描いて取っておき、色を掛けて画素へ直接書き、最後に 1 回で画面に出す
+const glyph = { shapes: new Map(), cv: null, cx: null, img: null, px: null, px32: null };
+if (document.fonts) document.fonts.addEventListener('loadingdone', () => glyph.shapes.clear());   // 字の形は字体が届いてから取り直す
+function glyphShape(ch) {
+  let sh = glyph.shapes.get(ch);
+  if (sh) return sh;
+  const fs = tch * 0.94 * tdpr, w = Math.ceil(fs * 1.4) + 4, h = Math.ceil(fs * 1.4) + 4, ox = w >> 1, oy = h >> 1;
+  if (!glyph.cv) { glyph.cv = document.createElement('canvas'); glyph.cx = glyph.cv.getContext('2d', { willReadFrequently: true }); }
+  const cv = glyph.cv, cx = glyph.cx;
+  if (cv.width < w || cv.height < h) { cv.width = Math.max(cv.width, w); cv.height = Math.max(cv.height, h); }
+  cx.setTransform(1, 0, 0, 1, 0, 0); cx.clearRect(0, 0, w, h);
+  cx.font = `400 ${fs}px "BIZ UDGothic", monospace`; cx.textAlign = 'center'; cx.textBaseline = 'middle'; cx.fillStyle = '#fff';
+  cx.fillText(ch, ox, oy);
+  const d = cx.getImageData(0, 0, w, h).data, dx = [], dy = [], a = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = d[(y * w + x) * 4 + 3]; if (v) { dx.push(x - ox); dy.push(y - oy); a.push(v); } }
+  sh = { dx: Int16Array.from(dx), dy: Int16Array.from(dy), a: Uint8Array.from(a) };
+  glyph.shapes.set(ch, sh);
+  return sh;
+}
+function glyphBegin() {   // 黒で塗った画素の入れ物を用意する
+  if (!glyph.img || glyph.img.width !== tcv.width || glyph.img.height !== tcv.height) {
+    glyph.img = tctx.createImageData(tcv.width, tcv.height); glyph.px = glyph.img.data; glyph.px32 = new Uint32Array(glyph.px.buffer);
+  }
+  glyph.px32.fill(0xff000000);
+}
+function glyphPut(ch, x, y, col) {   // x, y は字の真ん中（CSS の px）
+  const sh = glyphShape(ch), W = glyph.img.width, H = glyph.img.height, px = glyph.px;
+  const bx = Math.round(x * tdpr), by = Math.round(y * tdpr), r = col >> 16 & 255, g = col >> 8 & 255, b = col & 255;
+  const { dx, dy, a } = sh;
+  for (let i = 0; i < a.length; i++) {
+    const X = bx + dx[i], Y = by + dy[i];
+    if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+    const j = (Y * W + X) * 4, k = a[i] / 255;
+    px[j] += (r - px[j]) * k; px[j + 1] += (g - px[j + 1]) * k; px[j + 2] += (b - px[j + 2]) * k;
+  }
+}
 function warmGray(g, w) {
-  if (w < 0.02) return `rgb(${g},${g},${Math.min(255, g + 8)})`;
-  if (tune.warmHue) return `rgb(${Math.min(255, Math.round(g * (1 + 0.22 * w)))},${Math.min(255, Math.round(g * (1 + 0.14 * w)))},${Math.round(g * (1 - 0.25 * w))})`;   // 琥珀（黄寄り）
-  return `rgb(${Math.min(255, Math.round(g * (1 + 0.45 * w) + 14 * w))},${Math.min(255, Math.round(g * (1 + 0.08 * w)))},${Math.round(g * (1 - 0.4 * w))})`;
+  if (w < 0.02) return rgb(g, g, g + 8);
+  if (tune.warmHue) return rgb(g * (1 + 0.22 * w), g * (1 + 0.14 * w), g * (1 - 0.25 * w));   // 琥珀（黄寄り）
+  return rgb(g * (1 + 0.45 * w) + 14 * w, g * (1 + 0.08 * w), g * (1 - 0.4 * w));
 }
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];   // 点の密度を明るさで変えるときの順番（4×4）
+const HEX_CACHE = new Map();
 function tint(hex, v) {
-  const n = parseInt(hex.slice(1), 16), k = 0.25 + v * 0.75;
-  return `rgb(${Math.round((n >> 16 & 255) * k)},${Math.round((n >> 8 & 255) * k)},${Math.round((n & 255) * k)})`;
+  let n = HEX_CACHE.get(hex);
+  if (n === undefined) { n = parseInt(hex.slice(1), 16); HEX_CACHE.set(hex, n); }
+  const k = 0.25 + v * 0.75;
+  return rgb((n >> 16 & 255) * k, (n >> 8 & 255) * k, (n & 255) * k);
 }
 
 // ASCII の濃さのつまみ: 壁の字の並び（暗い → 明るい）、壁・床の明るさ、天井の点の有無。
@@ -1755,17 +1823,19 @@ function drawTerm() {
   const at = (x, y) => ((R - 1 - y) * C + x) * 4;   // 読み出しは下の行から
   const depthOf = (x, y) => { if (!inside(x, y)) return 99; const i = at(x, y); return tbuf[i + 3] ? tbuf[i + 3] / 255 * 16 : 99; };
 
-  const lines = drawLines(C, R, depthOf);
+  drawLines(C, R, depthOf);
+  const lines = lineOut.ch, lineV = lineOut.v;
   const lights = sconceLights(C, R);
   const tnow = performance.now(), warpK = Math.max(0, 1 - (tnow - trans.warpT0) / WARP_MS);
   tctx.fillStyle = '#000'; tctx.fillRect(0, 0, C * tcw, (R + 1) * tch);
-  tctx.font = `400 ${tch * 0.94}px "BIZ UDGothic", monospace`;
+  tctx.font = `400 ${fpx(tch * 0.94)}px "BIZ UDGothic", monospace`;
   tctx.textAlign = 'center'; tctx.textBaseline = 'middle';
   const shadow = tune.shadow ? shadowMask(C, R, depthOf) : null;
+  if (!mood.halu) glyphBegin();
   for (let y = 0; y < R; y++) for (let x = 0; x < C; x++) {
     const i = at(x, y);
     // 2. 壁の輪郭の線が通る升は、線の傾きに合った字（drawLines で決めたもの）。面がない所（闇との境）にも引く
-    const ln = lines[y * C + x];
+    const ln = lines[y * C + x];   // 輪郭の字（なければ null）
     if (!tbuf[i + 3] && !ln) continue;
     const kind = tbuf[i + 3] ? Math.round(tbuf[i + 1] / 255 * 15) : 0;
     const sh = shadow && (kind === 4 || kind === 5 || kind === 10 || kind === 11) ? shadow[y * C + x] : 0;   // 床に落ちた影
@@ -1773,7 +1843,7 @@ function drawTerm() {
     if (lit < 0.03 && !ln) continue;
     let ch = null, v = lit;
     if (ln) {
-      ch = ln.ch; v = Math.min(1, ln.v * 1.2 + 0.12);
+      ch = ln; v = Math.min(1, lineV[y * C + x] * 1.2 + 0.12);
     } else if (kind === 2 && tbuf[i + 3] / 255 * 16 < SECRET_NEAR) {
       ch = (x * 7 + y * 3) % 4 === 0 ? ',' : tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
     } else if (kind === 1 || kind === 2) {
@@ -1809,15 +1879,16 @@ function drawTerm() {
       tctx.fillText(ch, (x + 0.5) * tcw + Math.sin(performance.now() / 300 + y * 0.6) * tcw * 0.35, (y + 0.5) * tch + tch * 0.04);
       continue;
     }
-    tctx.fillStyle = ln ? `rgb(${Math.round(30 + v * 113)},${Math.round(40 + v * 139)},${Math.round(60 + v * 195)})`   // 境界線は青
+    let fill = ln ? rgb(30 + v * 113, 40 + v * 139, 60 + v * 195)   // 境界線は青
       : kind === 6 ? tint('#d39a5c', v)
       : kind === 8 ? tint(stairsColor, v) : kind === 9 ? tint(DECALS['^'].color, v) : kind === 12 ? tint('#9a7a58', v) : warmGray(g, (tbuf[i + 2] & 63) / 63);
     if (lights.length && !ln && (kind !== 7 || tune.ceilDither)) {   // 燭台の光: 近くの字を橙に明るく
       const k = glowAt(lights, x, y, tbuf[i + 3] / 255 * 16);
-      if (k > 0.02) tctx.fillStyle = `rgb(${Math.min(255, Math.round(g + 150 * k))},${Math.min(255, Math.round(g + 70 * k))},${Math.round(g * (1 - 0.4 * k))})`;
+      if (k > 0.02) fill = rgb(g + 150 * k, g + 70 * k, g * (1 - 0.4 * k));
     }
-    tctx.fillText(ch, tx, (y + 0.5) * tch + tch * 0.04);
+    glyphPut(ch, tx, (y + 0.5) * tch + tch * 0.04, fill);
   }
+  if (!mood.halu) tctx.putImageData(glyph.img, 0, 0);
 
   drawSconces(C, R, depthOf);
 
@@ -1847,7 +1918,7 @@ function drawTerm() {
     uu.L = objLight(o, uu);
     if (u.flying) o.size = Math.min(o.size, R * tch * 0.14);   // 飛んでいる物は字 1 つで、手元でも大きくなりすぎないように
     else if (drawArt(o, uu)) continue;
-    tctx.font = `700 ${o.size}px "BIZ UDGothic", monospace`;
+    tctx.font = `700 ${fpx(o.size)}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
     if (!o.ghost) tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
@@ -2191,7 +2262,7 @@ const TOUCH_COL = { I: '#9fd8ff', P: '#b0b8c8', W: '#8a6fb0', L: '#f0c652', N: '
 function markCtx(size) {
   const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
   fxctx.save(); fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
-  fxctx.font = `700 ${Math.round(Math.min(W2, H2) * size)}px "BIZ UDGothic", monospace`;
+  fxctx.font = `700 ${fpx(Math.round(Math.min(W2, H2) * size))}px "BIZ UDGothic", monospace`;
   return { W2, H2, u: Math.min(W2, H2) };
 }
 function markChar(ch, x, y, col, a = 1, rot = 0) {
@@ -2217,9 +2288,9 @@ function drawBite(c, ms) {
 function drawBlunt(c, ms) {
   const { W2, H2, u } = markCtx(0.11), k = Math.min(1, ms / CLAW_MS), fade = ms < 100 ? 1 : 1 - (ms - 100) / (CLAW_MS - 100);
   const cx = W2 * (0.45 + 0.1 * c.seed), cy = H2 * 0.47;
-  fxctx.font = `700 ${Math.round(u * (0.22 + 0.25 * Math.min(1, ms / 60)))}px "BIZ UDGothic", monospace`;
+  fxctx.font = `700 ${fpx(Math.round(u * (0.22 + 0.25 * Math.min(1, ms / 60))))}px "BIZ UDGothic", monospace`;
   markChar('*', cx, cy, ms < 90 ? '#fff' : '#ffb054', fade);
-  fxctx.font = `700 ${Math.round(u * 0.1)}px "BIZ UDGothic", monospace`;
+  fxctx.font = `700 ${fpx(Math.round(u * 0.1))}px "BIZ UDGothic", monospace`;
   const RAY = ['-', '\\', '|', '/', '-', '\\', '|', '/'];
   for (let j = 0; j < 8; j++) {
     const a = j * Math.PI / 4 + c.seed * 0.4, r = u * (0.16 + 0.32 * Math.sqrt(k));
@@ -2270,7 +2341,7 @@ function drawClaw(c, now) {
   const size = Math.round(Math.min(W2, H2) * 0.12), reveal = Math.min(1, ms / 70), fade = ms < 140 ? 1 : 1 - (ms - 140) / (CLAW_MS - 140);
   const cx = W2 * (0.45 + 0.1 * c.seed), cy = H2 * 0.45, len = Math.min(W2, H2) * 0.5, a = -Math.PI / 3 + (c.seed - 0.5) * 0.4;
   fxctx.save(); fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
-  fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+  fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
   for (let j = -1; j <= 1; j++) {
     const ox = Math.cos(a + Math.PI / 2) * j * size * 1.1, oy = Math.sin(a + Math.PI / 2) * j * size * 1.1;
     const n = Math.round(len / (size * 0.4)), shown = Math.ceil(n * reveal);
@@ -2299,7 +2370,7 @@ function drawToss(now) {
   fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
   const put = (ch, x, y, col, sz = size, a = 0) => {
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
-    fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(sz)}px "BIZ UDGothic", monospace`;
     fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(ch, 0, 0);
     fxctx.fillStyle = col; fxctx.fillText(ch, 0, 0);
   };
@@ -2321,7 +2392,7 @@ function drawToss(now) {
     if (ms < rel) {   // つがえた矢: 引き手から画面の真ん中へ向ける
       const a = Math.atan2(H2 * 0.45 - ny, W2 * 0.5 - nx);
       fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(nx, ny); fxctx.rotate(a);
-      fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+      fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
       const art = '>>----->';
       for (let i = 0; i < art.length; i++) { fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(art[i], i * size * 0.5, 0); fxctx.fillStyle = i < 2 ? '#c8ccd1' : '#d6dbe0'; fxctx.fillText(art[i], i * size * 0.5, 0); }
     }
@@ -2333,7 +2404,7 @@ function drawToss(now) {
     const a = t.w === 7 ? ms / 30 : art.length > 2 ? Math.atan2(H2 * 0.45 - y, W2 * 0.5 - x) - (1 - fwd) * 0.6 : 0;
     if (art.length > 2) {
       fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
-      fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`;
+      fxctx.font = `700 ${fpx(sz)}px "BIZ UDGothic", monospace`;
       for (let i = 0; i < art.length; i++) { const cx = (i - art.length + 1) * sz * 0.5; fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(art[i], cx, 0); fxctx.fillStyle = i < 2 ? '#9a7a58' : '#d6dbe0'; fxctx.fillText(art[i], cx, 0); }
     } else put(art, x, y, t.w === 7 ? '#d6dbe0' : '#e8d8b0', sz * 1.3, a);
   }
@@ -2357,13 +2428,13 @@ function drawSwing(now) {
   const art = SWING_ART[sw.w], size = Math.round(Math.min(W2, H2) * 0.11 * (sw.w === 2 ? 1.5 : 1));
   const fade = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
   fxctx.save();
-  fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+  fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
   fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
   const px = W2 * 0.9, py = H2 * 1.04, step = size * 0.5;   // 字を詰めて、刃が一続きに見えるように
   if (sw.w === -1) {   // 素手: 右下から敵へ突き出して戻す
     const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
     const x = W2 * (0.82 - 0.3 * q), y = H2 * (1.0 - 0.45 * q), sz = size * (1.6 - 0.5 * q);
-    fxctx.font = `700 ${sz}px "BIZ UDGothic", monospace`; fxctx.globalAlpha = fade;
+    fxctx.font = `700 ${fpx(sz)}px "BIZ UDGothic", monospace`; fxctx.globalAlpha = fade;
     fxctx.lineWidth = 5; fxctx.strokeStyle = '#000'; fxctx.strokeText(art, x, y);
     fxctx.fillStyle = '#d8b48a'; fxctx.fillText(art, x, y);
     fxctx.restore(); return;
@@ -2374,7 +2445,7 @@ function drawSwing(now) {
     const a = sw.w === 7 ? k * 14 : Math.atan2(-0.57 * H2, -0.36 * W2), txt = sw.w === 7 ? '*' : art;
     fxctx.globalAlpha = fade;
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
-    fxctx.font = `700 ${sz * (sw.w === 7 ? 1.6 : 1)}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(sz * (sw.w === 7 ? 1.6 : 1))}px "BIZ UDGothic", monospace`;
     for (let i = 0; i < txt.length; i++) {   // 刃先を手前の点に、握りを後ろへ
       const cx = (i - txt.length + 1) * sz * 0.5;
       fxctx.lineWidth = 5; fxctx.strokeStyle = '#000'; fxctx.strokeText(txt[i], cx, 0);
@@ -2407,7 +2478,7 @@ function drawFx(now) {
     const p = project(n.x + 0.5, 0.95 + k * 0.45, n.y + 0.5); if (!p) continue;
     const size = Math.max(14, Math.min(48, p.unit * 0.3));
     fxctx.globalAlpha = 1 - Math.max(0, (k - 0.5) * 2);
-    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
     fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(n.text, p.px, p.py);
     fxctx.fillStyle = '#ffe08a'; fxctx.fillText(n.text, p.px, p.py);
   }
@@ -2418,7 +2489,7 @@ function drawFx(now) {
     const p = project(d.x + 0.5 + d.vx * t, y, d.y + 0.5 + d.vz * t); if (!p) continue;
     const size = Math.max(8, Math.min(40, p.unit * 0.16));
     fxctx.globalAlpha = 1 - k;
-    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
     fxctx.fillStyle = d.col; fxctx.fillText(d.ch, p.px, p.py);
   }
   // 光線の通り道: 光る * が残って消えていく
@@ -2427,7 +2498,7 @@ function drawFx(now) {
     const p = project(o.x + 0.5, 0.42, o.y + 0.5); if (!p) continue;
     const size = Math.max(10, Math.min(o.ch ? 30 : 120, p.unit * (o.ch ? 0.22 : 0.35)));
     fxctx.globalAlpha = (1 - k) * (o.ch ? 0.7 : 1);
-    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
     fxctx.shadowColor = o.col; fxctx.shadowBlur = o.ch ? 0 : 18;
     fxctx.fillStyle = o.col; fxctx.fillText(o.ch || '*', p.px, p.py);
     fxctx.shadowBlur = 0;
@@ -2438,7 +2509,7 @@ function drawFx(now) {
     const p = project(o.x + 0.5, 0.5, o.y + 0.5); if (!p) continue;
     const size = Math.max(16, Math.min(160, p.unit * (0.5 + k * 0.6)));
     fxctx.globalAlpha = 1 - k;
-    fxctx.font = `700 ${size}px "BIZ UDGothic", monospace`;
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
     fxctx.shadowColor = '#f0c652'; fxctx.shadowBlur = 24;
     fxctx.fillStyle = '#ffe08a'; fxctx.fillText(o.ch, p.px, p.py);
     fxctx.shadowBlur = 0;
