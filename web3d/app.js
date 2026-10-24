@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.92';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.93';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -215,7 +215,7 @@ function render() {
       vx = 0; vy = 1;
     } else {
       // 右上の小さな地図: 自分を真ん中にして周りだけ
-      cols = MINI_COLS; cw = Math.min(bw * 0.42 / cols, 190 / cols, bh * 0.45 / (MINI_ROWS * RATIO));   // 横持ちでは高さで抑える
+      cols = MINI_COLS; cw = Math.min(bw * 0.42 / cols, 190 / cols, bh * 0.45 / (MINI_ROWS * RATIO)) * 0.7;   // 横持ちでは高さで抑える。3D の画面を邪魔しないよう 7 割に（ユーザー指定）
       rows = MINI_ROWS;
       vx = Math.max(0, Math.min(W - cols, px - (cols >> 1)));
       vy = Math.max(1, Math.min(H - 1 - rows, py - (rows >> 1)));
