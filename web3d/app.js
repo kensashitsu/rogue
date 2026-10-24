@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.78';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.79';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -25,6 +25,7 @@ function debug(s) {
 const KEY = { DOWN: 0x102, UP: 0x103, LEFT: 0x104, RIGHT: 0x105, NPAGE: 0x152, PPAGE: 0x153 };
 const PALETTE = ['#0b0d0f', '#ff6a5c', '#7fd17a', '#f0c652', '#6f9df2', '#d58cf0', '#6cc6d6', '#c8ccd1'];
 const DEFAULT_FG = '#c8ccd1', DEFAULT_BG = '#0b0d0f';
+const LIST_ROW = 30;                  // 選ぶ一覧の 1 行の高さ（px）の下限
 const RATIO = 2.05;                  // セルの縦横比
 const STORE = 'rogue3d-files';
 
@@ -197,7 +198,8 @@ function render() {
     cols = Math.min(W, used); rows = Math.max(1, rowMap.length);
     // 幅と高さの両方に収める。ただし字が小さくなりすぎるとき（1 マス 6px 未満）は収めずにスクロールさせる。
     // 短い画面で字が大きくなりすぎないよう、地図の「大」（32 桁）より大きくはしない
-    cw = Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
+    // 選ぶ一覧（どれを飲む？など）は高さに収めず、字を小さくしない（行が多いと縦にスクロールする。指で選びやすく）
+    cw = hint === 'list' ? Math.min(bw / cols, bw / 32) : Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
     cw = Math.max(cw, 6); ox = 0;
   } else {
     const p = findPlayer(); if (p) [py, px] = p;
@@ -216,6 +218,7 @@ function render() {
     r3d.update(grid, p);
   }
   ch = cw * RATIO;
+  if (mode === 'text' && hint === 'list') ch = Math.max(ch, LIST_ROW);   // 一覧の行は指で押せる高さに（字の大きさは変えず行の間を空ける）
   const dpr = devicePixelRatio || 1;
   const wpx = Math.floor(cols * cw), hpx = Math.floor(rows * ch);
   if (cv.width !== Math.floor(wpx * dpr) || cv.height !== Math.floor(hpx * dpr)) {
@@ -492,7 +495,12 @@ cv.addEventListener('click', e => {
   const y = rowMap[Math.floor(e.offsetY / ch)];
   if (y === undefined) return;
   const m = rowText(y).match(/^\s*(\S)\)/);
-  if (m && valid.includes(m[1])) answer(m[1]);
+  if (!m || !valid.includes(m[1]) || !waiting) return;
+  // 押した行を一瞬光らせてから答える（どれを選んだか目で分かるように）
+  const r = Math.floor(e.offsetY / ch);
+  ctx.fillStyle = 'rgba(240,198,82,0.28)'; ctx.fillRect(0, r * ch, cols * cw, ch);
+  waiting = false;
+  setTimeout(() => send(m[1]), 110);
 });
 // 3D の画面を左右にスワイプして向きを変える（90 度）。景色を指でつかんで回す向き: 左へ払うと右を向く。
 // 地図（#cv）の上から始めたときは地図のタップなので回さない
