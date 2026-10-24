@@ -50,7 +50,8 @@ from constants import (
     R_AGGR, R_TELEPORT,
     MACE, BOW, ARROW, RING_MAIL,
     S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S, S_FDET, S_SCARE, S_TELEP, P_MFIND, P_TFIND,
-    P_CONFUSE, P_LSD, P_POISON, P_BLIND, ISHUH, ISSLOW, ISHASTE, HUHDURATION,
+    P_CONFUSE, P_LSD, P_POISON, P_BLIND, P_HEALING, P_XHEAL, P_HASTE, P_RAISE,
+    ISHUH, ISSLOW, ISHASTE, HUHDURATION,
     OBJ_ISFOUND,
     T_DOOR, T_ARROW, T_SLEEP, T_BEAR, T_TELEP, T_DART, T_RUST, T_MYST, NTRAPS,
 )
@@ -1105,7 +1106,7 @@ class Game:
                 hplus += getattr(launcher, 'o_hplus', 0)
             need = max(2, 21 - hit_monster.ac - self.player.level - hplus)
             hit = random.randint(1, 20) >= need
-            if hit and item.o_type == CH_POTION and item.o_which in (P_CONFUSE, P_LSD, P_POISON, P_BLIND):
+            if hit and item.o_type == CH_POTION:
                 self._splash_potion(item, hit_monster, ui)
             elif hit:
                 item.o_flags |= ISKNOW
@@ -1129,9 +1130,9 @@ class Game:
             else:
                 hit_monster.flags |= ISRUN | ISFOUND
                 vname = hit_monster.display_name(self.player.status.can_see_invisible)
-                ui.add_message(tr('The {name} misses the {vname}.', name=name, vname=vname))
+                ui.add_message(tr('{name} misses the {vname}.', name=name[:1].upper() + name[1:], vname=vname))
         else:
-            ui.add_message(tr('The {name} misses.', name=name))
+            ui.add_message(tr('{name} misses.', name=name[:1].upper() + name[1:]))
 
         # 命中した矢は消滅、外れた矢のみ着地点に落ちて回収可能
         drop_on_floor = not bool(hit_monster)
@@ -1157,9 +1158,11 @@ class Game:
                 )
 
     def _splash_potion(self, item: Item, m, ui: UI) -> None:
-        """害のある薬が敵に当たると瓶が割れ、敵がその状態になる（トルネコの大冒険に合わせた。5.4 は 1 ダメージで消えるだけ）。
+        """薬が敵に当たると瓶が割れ、敵に効く。何の薬だったかも分かる（トルネコの大冒険に合わせた。5.4 は 1 ダメージで消えるだけ）。
         混乱・幻覚 → 混乱してでたらめに歩く。盲目 → こちらが見えず、でたらめに歩いて殴ってこない。毒 → 動きが鈍る（減速の杖と同じ）。
-        続くターンは、5.4 で敵が混乱する長さ（HUHDURATION）に揃える"""
+        続くターンは、5.4 で敵が混乱する長さ（HUHDURATION）に揃える。
+        回復・特製回復 → 敵の傷が治る（飲んだときと同じ量。敵のレベルで振る）。加速 → 敵が速くなる。レベルアップ → 敵が強くなる。
+        ほかの薬は敵には効かない"""
         m.flags |= ISRUN | ISFOUND
         vname = m.display_name(self.player.status.can_see_invisible)
         w = item.o_which
@@ -1170,12 +1173,33 @@ class Game:
         elif w == P_BLIND:
             m._blind_turns = HUHDURATION
             ui.add_message(tr('The flask shatters and the {vname} is blinded!', vname=vname))
-        else:
+        elif w in (P_CONFUSE, P_LSD):
             m.flags |= ISHUH
             m._huh_turns = HUHDURATION
             ui.add_message(tr('The flask shatters and the {vname} looks confused!', vname=vname))
-        if not self.player.status.blind:
+        elif w in (P_HEALING, P_XHEAL):
+            sides = 8 if w == P_XHEAL else 4
+            m.hp = min(m.max_hp, m.hp + sum(random.randint(1, sides) for _ in range(max(1, m.level))))
+            m._blind_turns = 0
+            ui.add_message(tr('The flask shatters and the {vname} looks healthier!', vname=vname))
+        elif w == P_HASTE:
+            if m.flags & ISSLOW:
+                m.flags &= ~ISSLOW
+            else:
+                m.flags |= ISHASTE
+            ui.add_message(tr('The flask shatters and the {vname} starts moving faster!', vname=vname))
+        elif w == P_RAISE:
+            gain = random.randint(1, 8)   # 5.4 でレベルが 1 上がった敵と同じく 1d8
+            m.level += 1
+            m.max_hp += gain
+            m.hp += gain
+            ui.add_message(tr('The flask shatters and the {vname} looks stronger!', vname=vname))
+        else:
+            ui.add_message(tr('The flask shatters over the {vname}.', vname=vname))
+        if not self.player.status.blind and not self.knowledge.is_known(CH_POTION, w):
             self.knowledge.know(CH_POTION, w)
+            from items import POTION_INFO, tr_name
+            ui.add_message(tr('That was a potion of {name}.', name=tr_name('potion', POTION_INFO[w].name)))
 
     def _do_zap(self, ui: UI, slot: Optional[str] = None) -> None:
         if slot is None:
