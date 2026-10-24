@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-24.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-24.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -205,6 +205,9 @@ function updateMoreHints() {
   $('moreDown').hidden = !(text && box.scrollTop + box.clientHeight < box.scrollHeight - 2);
 }
 box.addEventListener('scroll', updateMoreHints, { passive: true });
+// 印は押すとその側へ送る（押せない印だと、押したつもりの指が下の一覧の行に抜けて、その物を選んでしまう）
+tap($('moreDown'), () => { box.scrollTop += box.clientHeight * 0.8; updateMoreHints(); });
+tap($('moreRight'), () => { box.scrollLeft += box.clientWidth * 0.8; updateMoreHints(); });
 
 // @ が表示の端から 1/4 以内に来たら視点をずらす（地図は 1〜22 行目）
 function follow() {

@@ -91,7 +91,7 @@ body {
 #screenBox { grid-area: screen; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
 #screenBox.text { overflow: auto; align-items: flex-start; justify-content: flex-start; -webkit-overflow-scrolling: touch; }
 /* 文字だけの画面が収まらないとき、続きがある側に出す印（ハイスコア表の右の列など） */
-.more-hint { grid-area: screen; pointer-events: none; z-index: 1; align-self: end; justify-self: end;
+.more-hint { grid-area: screen; z-index: 1; cursor: pointer; align-self: end; justify-self: end;
   width: 26px; height: 26px; margin: 4px; border-radius: 50%; display: grid; place-items: center;
   font-size: 18px; line-height: 1; color: var(--bg); background: var(--accent); opacity: .85; }
 #moreRight { align-self: center; }
