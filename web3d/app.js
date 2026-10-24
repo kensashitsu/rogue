@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.81';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.82';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -448,13 +448,28 @@ function updateControls() {
     // 持ち物が多くて 1 画面に収まらないときは ↑↓ で前後のページを出す
     note(T.list + (/↓/.test(rowText(21)) ? T.listMore : ''));
     const r = row();
-    btn('↑', '', r, () => { answer(KEY.PPAGE); box.scrollTop = 0; }); btn('↓', '', r, () => { answer(KEY.NPAGE); box.scrollTop = 0; });   // 1 ページずつ送る
+    btn('↑', '', r, () => pageList(-1)); btn('↓', '', r, () => pageList(1));
     btn(T.cancel, 'ESC', row(), () => answer(27));
   } else if (hint === 'text' || hint === 'name' || hint === 'char') {
     textEntry(c, T, keep);
   } else {
     // ボタンは置かない（画面のどこをタップしても進む。案内はメッセージの下の #tapHint）
   }
+}
+
+// 一覧の ↑↓: 行が高いので一覧は画面の中でスクロールする。まず画面の中を送り、端まで来ていたらゲームに前後のページを頼む
+// （新しいページは、↓ なら末尾・↑ なら先頭が見えるように合わせる）
+let pageEnd = 0;
+function pageList(dir) {
+  const max = box.scrollHeight - box.clientHeight;
+  if (dir > 0 ? box.scrollTop < max - 2 : box.scrollTop > 2) {
+    box.scrollTop += dir * Math.max(60, box.clientHeight * 0.8);
+    updateMoreHints();
+    return;
+  }
+  if (!waiting) return;
+  pageEnd = dir;
+  answer(dir > 0 ? KEY.NPAGE : KEY.PPAGE);
 }
 
 function textEntry(c, T, keep) {
@@ -930,6 +945,7 @@ function start() {
     if (d.type === 'progress') cover(d.text === 'python' ? t().loadPy : t().loadGame);
     else if (d.type === 'draw') { for (const [y, chars, styles] of JSON.parse(d.rows)) putRow(y, chars, styles); requestDraw(); }
     else if (d.type === 'wait') {
+      if (pageEnd) { const dir = pageEnd; pageEnd = 0; requestAnimationFrame(() => requestAnimationFrame(() => { box.scrollTop = dir > 0 ? box.scrollHeight : 0; updateMoreHints(); })); }
       $('cover').hidden = true; rain.stop();
       const changed = hint !== d.kind || valid !== d.valid;
       if (d.kind === 'more' || d.kind === 'any') moreSince = performance.now();   // メッセージが続くときも 1 つごとに数え直す
