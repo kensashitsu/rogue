@@ -365,7 +365,7 @@ JA: dict[str, str] = {
     "The flask shatters and the {vname} looks healthier!": "瓶が割れ、{vname}の傷が治った！",
     "The flask shatters and the {vname} starts moving faster!": "瓶が割れ、{vname}の動きが速くなった！",
     "The flask shatters and the {vname} looks stronger!": "瓶が割れ、{vname}は強くなったようだ！",
-    "The flask shatters over the {vname}.": "瓶が割れ、{vname}に薬がかかった。",
+    "The flask shatters over the {vname}. Nothing seems to happen.": "瓶が割れ、{vname}に薬がかかった。何も起きないようだ。",
     "You feel too weak to use it.": "弱りすぎていて使えない。",
     "You feel your life force draining away!": "生命力が吸い取られていく！",
     "The {name} disappears!": "{name}は消えた！",
