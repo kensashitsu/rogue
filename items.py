@@ -804,6 +804,8 @@ def use_potion(
         msgs.append(tr('You begin to feel better. (HP {hp}/{max_hp})', hp=player.hp, max_hp=player.max_hp))
 
     elif which == P_MFIND:
+        # この階にいる間はずっと敵の居場所が分かる（トルネコの大冒険に合わせた。5.4 は約 20 ターンで切れる）
+        dungeon.sense_monsters = True
         alive = [m for m in monsters if m.is_alive]
         if alive:
             for m in alive:

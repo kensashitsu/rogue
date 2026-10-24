@@ -167,6 +167,7 @@ class Dungeon:
         self.monsters:     list[PlacedMonster] = []
         self.traps:        list[PlacedTrap]    = []
         self.player_start: Coord | None        = None
+        self.sense_monsters = False   # 魔物検知の薬を飲んだ階（この階にいる間は敵の居場所が分かる）
 
         self._generate()
 
