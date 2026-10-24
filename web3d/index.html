@@ -100,6 +100,7 @@ canvas { display: block; flex: none; }
 /* 3D: 一人称の画面を欄いっぱいに、2D の地図は右上に小さく重ねる。持ち物などの文字の画面では 2D だけ */
 #screenBox { position: relative; }
 #app:not(.text) #screenBox { touch-action: none; }   /* スワイプで向きを変える（ブラウザのスクロールや戻るにしない） */
+#screenBox.text.list { overflow-x: hidden; overscroll-behavior: contain; touch-action: pan-y; }   /* 選ぶ一覧は幅に収めてあるので、縦だけに動かす（左右に揺れないように） */
 #v3 { position: absolute; inset: 0; width: 100% !important; height: 100% !important; border-radius: 6px; }
 #app:not(.text) #cv { position: absolute; z-index: 3; top: 6px; right: 6px; background: rgba(11, 13, 15, .65); border: 1px solid var(--line); border-radius: 4px; }
 /* 全体の地図: 3D の画面の真ん中に大きく（もう一度タップで小さな地図に戻る） */
