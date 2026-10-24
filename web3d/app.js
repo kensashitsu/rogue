@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.93';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.94';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -205,7 +205,9 @@ function render() {
     // 幅と高さの両方に収める。ただし字が小さくなりすぎるとき（1 マス 6px 未満）は収めずにスクロールさせる。
     // 短い画面で字が大きくなりすぎないよう、地図の「大」（32 桁）より大きくはしない
     // 選ぶ一覧（どれを飲む？など）は高さに収めず、字を小さくしない（行が多いと縦にスクロールする。指で選びやすく）
-    cw = hint === 'list' ? Math.min(bw / cols, bw / 32) : Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
+    // 一覧から選んだ直後の方向待ち（投げる・杖を振る）も一覧が残っているので、同じ字の大きさのままにする
+    const listLike = hint === 'list' || hint === 'direction';
+    cw = listLike ? Math.min(bw / cols, bw / 32) : Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
     cw = Math.max(cw, 6); ox = 0;
   } else {
     const p = findPlayer(); if (p) [py, px] = p;
@@ -224,7 +226,7 @@ function render() {
     r3d.update(grid, p);
   }
   ch = cw * RATIO;
-  if (mode === 'text' && hint === 'list') ch = Math.max(ch, LIST_ROW);   // 一覧の行は指で押せる高さに（字の大きさは変えず行の間を空ける）
+  if (mode === 'text' && (hint === 'list' || hint === 'direction')) ch = Math.max(ch, LIST_ROW);   // 一覧の行は指で押せる高さに（字の大きさは変えず行の間を空ける）
   const dpr = devicePixelRatio || 1;
   const wpx = Math.floor(cols * cw), hpx = Math.floor(rows * ch);
   if (cv.width !== Math.floor(wpx * dpr) || cv.height !== Math.floor(hpx * dpr)) {
