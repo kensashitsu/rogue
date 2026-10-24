@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.75';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.76';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -739,7 +739,7 @@ function drawCoverLogo() {
   ];
   const D3 = ['██████╗ ██████╗ ', '╚════██╗██╔══██╗', ' █████╔╝██║  ██║', ' ╚═══██╗██║  ██║', '██████╔╝██████╔╝', '╚═════╝ ╚═════╝ '];
   const cols = 44, rows = 12, cv = $('coverLogo'), dpr = devicePixelRatio || 1;
-  const cw = Math.min(8, (innerWidth - 48) / cols), ch = cw * 2;
+  const cw = 3.4, ch = cw * 2;   // 横幅は以前の題字（ROGUE の文字）と同じくらい
   cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
   cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
   const ctx = cv.getContext('2d');
