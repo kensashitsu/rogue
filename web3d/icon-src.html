@@ -233,6 +233,27 @@ Promise.all([document.fonts.load('700 40px "BIZ UDGothic"'), document.fonts.load
       ctx.fillStyle = it.color; ctx.fillText(it.ch, it.p.x, it.p.y);
     }
   }
+  if (v.startsWith('R3')) {   // タイトルのロゴの字（ROGUE の R と、水色の 3D の 3）で「R3」。R3 = 横に並べる、R3b = タイトルのように 3 を右下へ
+    ctx.fillStyle = '#0b0d0f'; ctx.fillRect(0, 0, 512, 512);
+    const R = ['██████╗ ', '██╔══██╗', '██████╔╝', '██╔══██╗', '██║  ██║', '╚═╝  ╚═╝'];
+    const THREE = ['██████╗ ', '╚════██╗', ' █████╔╝', ' ╚═══██╗', '██████╔╝', '╚═════╝ '];
+    const side = v === 'R3';
+    const cw = side ? 28 : 24, chh = cw * 2;
+    const w = 16 * cw, h = (side ? 6 : 9) * chh;
+    const ox = (512 - w) / 2, oy = (512 - h) / 2;
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = font(chh * 0.95, 700);
+    const put = (lines, col0, row0, color) => {
+      ctx.fillStyle = color;
+      lines.forEach((line, y) => [...line].forEach((c, x) => {
+        if (c === ' ') return;
+        const px = ox + (col0 + x) * cw, py = oy + (row0 + y) * chh;
+        if (c === '█') ctx.fillRect(px, py + chh * 0.06, cw + 0.5, chh * 0.88);
+        else ctx.fillText(c, px, py + chh / 2, cw);
+      }));
+    };
+    put(R, 0, 0, '#f0c652');
+    put(THREE, 8, side ? 0 : 3, '#6cc6d6');
+  }
   document.body.dataset.ready = '1';
 });
 </script>
