@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.83';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.85';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -255,9 +255,12 @@ function turnView(d) { r3d.turn(d); requestDraw(); }
 function updateMoreHints() {
   const text = mode === 'text';
   $('moreRight').hidden = !(text && box.scrollLeft + box.clientWidth < box.scrollWidth - 2);
-  $('moreDown').hidden = !(text && box.scrollTop + box.clientHeight < box.scrollHeight - 2);
+  // 一覧に次のページがある間（「(↓ 続き)」が出ている）も、下端まで来たあと出したままにする
+  $('moreDown').hidden = !(text && (box.scrollTop + box.clientHeight < box.scrollHeight - 2 || hint === 'list' && /↓/.test(rowText(21))));
 }
 box.addEventListener('scroll', updateMoreHints, { passive: true });
+tap($('moreDown'), () => { if (hint === 'list') pageList(1); else { box.scrollTop += box.clientHeight * 0.8; updateMoreHints(); } });
+tap($('moreRight'), () => { box.scrollLeft += box.clientWidth * 0.8; updateMoreHints(); });
 
 // @ が表示の端から 1/4 以内に来たら視点をずらす（地図は 1〜22 行目）
 function follow() {
@@ -511,7 +514,14 @@ cv.addEventListener('click', e => {
   if (hint !== 'list') return;
   const y = rowMap[Math.floor(e.offsetY / ch)];
   if (y === undefined) return;
-  const m = rowText(y).match(/^\s*(\S)\)/);
+  // 「(↑ 続き)」「(↓ 続き)」の字を押したら、そのページへ送る（両方あるときは押した所に近いほう）
+  const line = rowText(y), up = line.indexOf('↑'), down = line.indexOf('↓');
+  if (up >= 0 || down >= 0) {
+    const col = Math.floor(e.offsetX / cw);
+    pageList(down < 0 || up >= 0 && Math.abs(col - up) < Math.abs(col - down) ? -1 : 1);
+    return;
+  }
+  const m = line.match(/^\s*(\S)\)/);
   if (!m || !valid.includes(m[1]) || !waiting) return;
   // 押した行を一瞬光らせてから答える（どれを選んだか目で分かるように）
   const r = Math.floor(e.offsetY / ch);
