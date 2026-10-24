@@ -681,6 +681,7 @@ class UI:
         obj_at: dict[tuple[int, int], str] = {
             (o.y, o.x): o.ch for o in objects
         }
+        sense = getattr(dungeon, 'sense_monsters', False)   # 古いセーブには無い
 
         for y in range(self.MAP_TOP, self.MAP_BOT + 1):
             for x in range(80):
@@ -694,6 +695,19 @@ class UI:
                         dungeon.mark_seen(y, x)
 
                 seen    = bool(tile.flags & F_SEEN)
+
+                # 魔物検知の薬を飲んだ階: 見えない所（壁の向こう・暗闇・透明）の敵も反転で出す
+                if sense and (y, x) in mon_at and (y, x) != (player.y, player.x):
+                    m = mon_at[(y, x)]
+                    if not visible or ((m.flags & ISINVIS) and not player.status.can_see_invisible):
+                        mch = m.ch
+                        if player.status.hallucinating:
+                            mch = chr(random.randint(ord('A'), ord('Z')))
+                        self._addch(
+                            y, x, mch,
+                            self._cp(_CP_MONSTER) | curses.A_BOLD | curses.A_REVERSE,
+                        )
+                        continue
 
                 if not visible and (not seen or player.status.blind):
                     self._addch(y, x, ' ')
