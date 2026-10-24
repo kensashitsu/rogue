@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.87';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.88';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -40,7 +40,9 @@ const L = {
     follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
     acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'], ['Z', '回復するまで休む'],
-           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる']],
+           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる'], ['export', 'セーブを書き出す'], ['import', 'セーブを読み込む']],
+    noSave: '書き出せるセーブがありません。先に「保存して終了」で保存してください', badSave: 'セーブのファイルではありません',
+    askImport: '今のセーブ（と記録）は、読み込んだセーブで置き換わります。よろしいですか？',
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
     next: '次へ', tapAnywhere: 'タップして次へ進む', cancel: 'やめる', ok: '決定', lang: 'English',
     dir: '方向を選んでください', list: '一覧の行をタップして選びます', listMore: '（↓ で続き）', name: '名前', text: '文字を入力',
@@ -54,7 +56,9 @@ const L = {
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'], ['Z', 'Rest to heal'],
-           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual (ja)'], ['S', 'Save & quit'], ['Q', 'Quit']],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual (ja)'], ['S', 'Save & quit'], ['Q', 'Quit'], ['export', 'Export save'], ['import', 'Import save']],
+    noSave: 'There is no save to export. Use “Save & quit” first', badSave: 'This is not a save file',
+    askImport: 'Your current save (and scores) will be replaced by the imported one. Continue?',
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
     next: 'Next', tapAnywhere: 'Tap to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
     dir: 'Choose a direction', list: 'Tap a line to choose', listMore: ' (↓ for more)', name: 'Name', text: 'Type here',
@@ -360,6 +364,39 @@ function makeKey(label, sub, parent, cls) {
   parent.append(b); return b;
 }
 
+// セーブの書き出し・読み込み。iPhone のホーム画面のアプリは Safari と別の保存場所を持ち、アイコンを消すとセーブも消えるので、
+// 外に持ち出せるようにする。書き出すのは端末に保存してあるもの（最後に「保存して終了」した所）と記録・設定
+const SAVE_HEAD = 'ROGUE3D-SAVE 1';
+async function exportSave() {
+  const files = loadFiles();
+  if (!files['rogue.sav']) { alert(t().noSave); return; }
+  const d = new Date(), pad = n => String(n).padStart(2, '0');
+  const name = `rogue3d-save-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.txt`;
+  const file = new File([SAVE_HEAD + '\n' + btoa(JSON.stringify(files)) + '\n'], name, { type: 'text/plain' });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {   // iPhone: 共有の画面（「ファイル」に保存・メモに送る など）
+    try { await navigator.share({ files: [file] }); return; } catch (e) { if (e.name === 'AbortError') return; }
+  }
+  const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = name;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+function importSave() {
+  const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.txt,text/plain';
+  inp.addEventListener('change', async () => {
+    const f = inp.files && inp.files[0]; if (!f) return;
+    let files = null;
+    try {
+      const [head, body] = (await f.text()).split(/\r?\n/);
+      if (head.trim() === SAVE_HEAD) files = JSON.parse(atob(body.trim()));
+    } catch { files = null; }
+    if (!files || typeof files !== 'object' || !files['rogue.sav']) { alert(t().badSave); return; }
+    if (!confirm(t().askImport)) return;
+    try { localStorage.setItem(STORE, JSON.stringify(files)); } catch (e) { alert(String(e)); return; }
+    location.reload();   // 読み込み直すと、ゲームはこのセーブから始まる
+  });
+  inp.click();
+}
+
 function buildButtons() {
   const T = t();
   $('vFollow').textContent = T.follow; $('vFull').textContent = T.full;
@@ -410,8 +447,14 @@ function buildButtons() {
   }
   const mg = $('moreGrid'); mg.textContent = '';
   for (const [k, label] of T.more) {
-    const b = makeKey(label, k === 'manual' ? '' : k, mg);
-    tap(b, () => { $('more').hidden = true; if (k === 'manual') openManual(); else if (hint === 'command') answer(keyCode(k)); });
+    const b = makeKey(label, ['manual', 'export', 'import'].includes(k) ? '' : k, mg);
+    tap(b, () => {
+      $('more').hidden = true;
+      if (k === 'manual') openManual();
+      else if (k === 'export') exportSave();
+      else if (k === 'import') importSave();
+      else if (hint === 'command') answer(keyCode(k));
+    });
   }
   $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;
   updateControls();
