@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.74';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.75';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -663,6 +663,102 @@ addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textC
 // ---------------------------------------------------------------------------
 // 起動
 // ---------------------------------------------------------------------------
+// 読み込みの間、ゲーム本体のソース（この世界を作っているコード）を端末の出力のように流す
+const rain = (() => {
+  const FILES = ['main.py', 'game.py', 'dungeon.py', 'monsters.py', 'player.py', 'items.py', 'combat.py', 'ui.py', 'term.py'];
+  const cfg = { size: 11, rate: 60, color: 1 };   // 字の大きさ・1 秒に流す行数・色分け（試験用に window.__rain から変えられる）
+  const KW = /\b(def|class|return|if|elif|else|for|while|in|not|and|or|import|from|self|None|True|False|try|except|with|lambda|yield|break|continue|pass)\b/g;
+  const cv = $('codeRain'), ctx = cv.getContext('2d');
+  let src = [], out = [], at = 0, acc = 0, last = 0, hold = 0, raf = 0;
+  (async () => {
+    for (const f of FILES) {
+      try {
+        const text = await (await fetch('../' + f)).text();
+        src.push({ t: `$ python -c "import ${f.replace('.py', '')}"`, cmd: 1 }, ...text.split('\n').map(t => ({ t })));
+      } catch { /* 読めなくても読み込み自体は続ける */ }
+    }
+  })();
+  function step(now) {
+    raf = requestAnimationFrame(step);
+    const dt = Math.min(0.1, (now - (last || now)) / 1000); last = now;
+    if (hold > 0) hold -= dt;
+    else if (src.length) {
+      acc += dt * cfg.rate * (0.6 + 0.8 * Math.random());
+      while (acc >= 1 && hold <= 0) {
+        acc -= 1;
+        const l = src[at++ % src.length];
+        out.push(l); if (out.length > 400) out.splice(0, 200);
+        if (l.cmd) hold = 0.35;                                   // コマンドの後は一呼吸
+        else if (/^(def |class )/.test(l.t) && Math.random() < 0.3) hold = 0.08 + 0.2 * Math.random();
+      }
+    }
+    draw();
+  }
+  function draw() {
+    const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const lh = Math.round(cfg.size * 1.3), rows = Math.floor((h - 8) / lh), from = Math.max(0, out.length - rows);
+    ctx.font = `${cfg.size}px ui-monospace, Menlo, Consolas, monospace`; ctx.textBaseline = 'top';
+    for (let i = from; i < out.length; i++) {
+      const l = out[i], y = 4 + (i - from) * lh, age = out.length - 1 - i;
+      const a = age === 0 ? 0.95 : 0.22 + 0.3 * Math.max(0, 1 - age / 12);
+      const t = l.t.replace(/\t/g, '    ');
+      if (l.cmd) { ctx.fillStyle = `rgba(240,198,82,${a + 0.2})`; ctx.fillText(t, 8, y); continue; }
+      const cm = t.indexOf('#'), body = cm >= 0 && !/['"]/.test(t.slice(0, cm)) ? t.slice(0, cm) : t;
+      ctx.fillStyle = `rgba(200,204,209,${a})`; ctx.fillText(body, 8, y);
+      if (cfg.color) {
+        const x0 = 8;
+        ctx.fillStyle = `rgba(240,198,82,${a})`;
+        for (const m of body.matchAll(KW)) ctx.fillText(m[0], x0 + ctx.measureText(body.slice(0, m.index)).width, y);
+        if (body !== t) { ctx.fillStyle = `rgba(125,134,144,${a * 0.8})`; ctx.fillText(t.slice(cm), x0 + ctx.measureText(body).width, y); }
+      }
+    }
+    // 真ん中の題字の所は暗く沈める
+    const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.45);
+    g.addColorStop(0, 'rgba(11,13,15,0.92)'); g.addColorStop(0.45, 'rgba(11,13,15,0.7)'); g.addColorStop(1, 'rgba(11,13,15,0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  }
+  return {
+    cfg,
+    start() { if (!raf) { last = 0; raf = requestAnimationFrame(step); } },
+    stop() { cancelAnimationFrame(raf); raf = 0; ctx.clearRect(0, 0, cv.width, cv.height); },
+  };
+})();
+window.__rain = rain;
+// 読み込み画面のロゴ（タイトル画面と同じ ROGUE と、その右下に水色の 3D）。罫線やブロックの字はフォントで幅が変わるので升目に縮めて描く
+function drawCoverLogo() {
+  const ROGUE = [
+    '██████╗  ██████╗  ██████╗ ██╗   ██╗███████╗',
+    '██╔══██╗██╔═══██╗██╔════╝ ██║   ██║██╔════╝',
+    '██████╔╝██║   ██║██║  ███╗██║   ██║█████╗  ',
+    '██╔══██╗██║   ██║██║   ██║██║   ██║██╔══╝  ',
+    '██║  ██║╚██████╔╝╚██████╔╝╚██████╔╝███████╗',
+    '╚═╝  ╚═╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝',
+  ];
+  const D3 = ['██████╗ ██████╗ ', '╚════██╗██╔══██╗', ' █████╔╝██║  ██║', ' ╚═══██╗██║  ██║', '██████╔╝██████╔╝', '╚═════╝ ╚═════╝ '];
+  const cols = 44, rows = 12, cv = $('coverLogo'), dpr = devicePixelRatio || 1;
+  const cw = Math.min(8, (innerWidth - 48) / cols), ch = cw * 2;
+  cv.style.width = cols * cw + 'px'; cv.style.height = rows * ch + 'px';
+  cv.width = Math.round(cols * cw * dpr); cv.height = Math.round(rows * ch * dpr);
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.font = `bold ${ch * 0.95}px ui-monospace, Menlo, Consolas, monospace`; ctx.textBaseline = 'middle';
+  const put = (lines, y0, x0, color) => {
+    ctx.fillStyle = color;
+    lines.forEach((line, y) => [...line].forEach((c, x) => {
+      if (c === ' ') return;
+      const px = (x0 + x) * cw, py = (y0 + y) * ch;
+      if (c === '█') ctx.fillRect(px, py + ch * 0.06, cw + 0.3, ch * 0.88);
+      else ctx.fillText(c, px, py + ch / 2, cw);
+    }));
+  };
+  put(ROGUE, 0, 0, PALETTE[3]);
+  put(D3, 6, 28, PALETTE[6]);
+}
+drawCoverLogo();
+addEventListener('resize', drawCoverLogo);
 let coverFn = null;
 tap($('coverBtn'), () => coverFn && coverFn());
 function cover(text, btnLabel, fn) {
@@ -679,7 +775,7 @@ function start() {
     const cfg = new TextEncoder().encode(JSON.stringify({ lang }));
     saveFile('rogue.cfg', cfg); files['rogue.cfg'] = loadFiles()['rogue.cfg'];
   }
-  cover(t().loading);
+  cover(t().loading); rain.start();
   if (!window.crossOriginIsolated) {
     // coi-serviceworker が登録後に読み込み直す。それでも駄目なら諦める
     setTimeout(() => cover(t().noIso, t().reload, () => location.reload()), 6000);
@@ -695,7 +791,7 @@ function start() {
     if (d.type === 'progress') cover(d.text === 'python' ? t().loadPy : t().loadGame);
     else if (d.type === 'draw') { for (const [y, chars, styles] of JSON.parse(d.rows)) putRow(y, chars, styles); requestDraw(); }
     else if (d.type === 'wait') {
-      $('cover').hidden = true;
+      $('cover').hidden = true; rain.stop();
       const changed = hint !== d.kind || valid !== d.valid;
       if (d.kind === 'more' || d.kind === 'any') moreSince = performance.now();   // メッセージが続くときも 1 つごとに数え直す
       hint = d.kind; valid = d.valid; waiting = true;
@@ -707,10 +803,11 @@ function start() {
     else if (d.type === 'effect') r3d.effect(d.data);
     else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
     else if (d.type === 'exit') {
+      rain.stop();
       const saved = 'rogue.sav' in loadFiles();
       cover(saved ? t().saved : t().over, saved ? t().resume : t().again, () => location.reload());
     }
-    else if (d.type === 'error') { console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
+    else if (d.type === 'error') { rain.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
 r3d.init($('v3'));
