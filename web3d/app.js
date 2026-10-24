@@ -10,7 +10,7 @@
 
 import * as r3d from './r3d.js';
 
-const VERSION = '3d-0.77';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-0.78';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -561,7 +561,7 @@ $('ver').textContent = 'v' + VERSION;
 // 落ちた跡を残す。iPhone の Safari はタブが落ちると黙って読み込み直すので、画面を見ている間に止まったら、次に開いたとき前回の様子を上に出す
 const ALIVE = 'rogue3d-alive';
 const lastRun = (() => { try { const o = JSON.parse(localStorage.getItem(ALIVE) || 'null'); return o && !o.clean ? o : null; } catch { return null; } })();
-const alive = { v: VERSION, t0: Date.now(), beat: Date.now(), err: '', clean: false };
+const alive = { v: VERSION, t0: Date.now(), beat: Date.now(), err: '', clean: false, last: [] };   // last: 止まる直前の出来事（演出の種類など）
 const saveAlive = () => { try { localStorage.setItem(ALIVE, JSON.stringify(alive)); } catch {} };
 saveAlive();
 setInterval(() => { alive.beat = Date.now(); saveAlive(); }, 5000);
@@ -572,7 +572,7 @@ addEventListener('unhandledrejection', e => { alive.err = String(e.reason).slice
 if (lastRun) {
   const min = Math.round((lastRun.beat - lastRun.t0) / 60000), el = document.createElement('div');
   el.style.cssText = 'position:fixed;left:8px;right:8px;top:8px;z-index:99;padding:8px 10px;background:#2a1c14;color:#f0d0b0;border:1px solid #6a4a30;border-radius:6px;font:13px/1.5 sans-serif';
-  el.textContent = (lang === 'ja' ? `前回は画面が途中で止まりました（v${lastRun.v}・開いてから約${min}分）` : `The page stopped last time (v${lastRun.v}, about ${min} min after opening)`) + (lastRun.err ? '\n' + lastRun.err : '');
+  el.textContent = (lang === 'ja' ? `前回は画面が途中で止まりました（v${lastRun.v}・開いてから約${min}分）` : `The page stopped last time (v${lastRun.v}, about ${min} min after opening)`) + (lastRun.err ? '\n' + lastRun.err : '') + (lastRun.last && lastRun.last.length ? '\n' + (lang === 'ja' ? '直前: ' : 'Last: ') + lastRun.last.join(' ') : '');
   el.style.whiteSpace = 'pre-wrap';
   document.body.appendChild(el);
   tap(el, () => el.remove());
@@ -689,6 +689,13 @@ const sources = {};   // ファイル名 → 行の配列
     try { sources[f] = (await (await fetch('../' + f)).text()).split('\n'); } catch { /* 読めなくてもゲームは続ける */ }
   }
 })();
+// 演出に出すのは英数字だけ（ユーザー指定）。日本語のコメントは削り、それでも日本語が残る行（説明文など）は null で飛ばす
+function asciiLine(l) {
+  if (!/[^\x00-\x7f]/.test(l)) return l;
+  const cm = l.indexOf('#');
+  if (cm >= 0 && !/[^\x00-\x7f]/.test(l.slice(0, cm)) && /\w/.test(l.slice(0, cm))) return l.slice(0, cm).replace(/\s+$/, '');   // 削って記号だけ残る行も飛ばす
+  return null;
+}
 const CODE_KW = /\b(def|class|return|if|elif|else|for|while|in|not|and|or|import|from|self|None|True|False|try|except|with|lambda|yield|break|continue|pass)\b/g;
 const CODE_FONT = 'ui-monospace, Menlo, Consolas, monospace';
 
@@ -711,7 +718,7 @@ const rain = (() => {
     const n = Object.keys(sources).length;
     if (n === fed) return;
     fed = n; src = [];
-    for (const f of SOURCE_FILES) if (sources[f]) src.push({ t: `$ python -c "import ${f.replace('.py', '')}"`, cmd: 1 }, ...sources[f].map(t => ({ t })));
+    for (const f of SOURCE_FILES) if (sources[f]) src.push({ t: `$ python -c "import ${f.replace('.py', '')}"`, cmd: 1 }, ...sources[f].map(asciiLine).filter(t => t !== null).map(t => ({ t })));
   }
   function step(now) {
     raf = requestAnimationFrame(step);
@@ -751,7 +758,7 @@ const rain = (() => {
   return {
     cfg,
     start() { if (!raf) { last = 0; raf = requestAnimationFrame(step); } },
-    stop() { cancelAnimationFrame(raf); raf = 0; ctx.clearRect(0, 0, cv.width, cv.height); },
+    stop() { cancelAnimationFrame(raf); raf = 0; cv.width = cv.height = 0; },   // 大きなキャンバスは手放す（iPhone はメモリが厳しい）
   };
 })();
 window.__rain = rain;
@@ -775,7 +782,7 @@ const termFx = (() => {
     if (now < until) { raf = requestAnimationFrame(step); return; }
     raf = 0;
     cv.style.transition = 'opacity .35s'; cv.style.opacity = 0;
-    fading = setTimeout(() => { cv.hidden = true; }, 400);
+    fading = setTimeout(() => { cv.hidden = true; cv.width = cv.height = 0; }, 400);
   }
   function draw(el, now) {
     const dpr = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
@@ -808,13 +815,13 @@ const termFx = (() => {
       const m = src[k].match(/^(\s*)def (\w+)/);
       if (m && m[1].length < ind) { fn = m[2]; break; }
     }
-    return [`  File "${file}", line ${i + 1}, in ${fn}`, '    ' + src[i].trim()];
+    return [`  File "${file}", line ${i + 1}, in ${fn}`, '    ' + (asciiLine(src[i]) || '').trim()];
   }
 
   return {
     // 新しい階: dungeon.py のどこかを流してから、出来た階の中身を出す
     level(d, ms) {
-      const src = sources['dungeon.py'] || [];
+      const src = (sources['dungeon.py'] || []).map(asciiLine).filter(t => t !== null);
       const defs = src.map((l, i) => /^def /.test(l) ? i : -1).filter(i => i >= 0);
       const s = defs.length ? defs[Math.floor(Math.random() * defs.length)] : 0;
       const list = [{ t: `>>> dungeon.new_level(${d.depth})`, at: 0, kind: 'cmd', type: 1 }];
@@ -920,8 +927,9 @@ function start() {
       requestDraw();
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
-    else if (d.type === 'missile') r3d.missile(d.data);
+    else if (d.type === 'missile') { alive.last.push('missile'); if (alive.last.length > 8) alive.last.shift(); r3d.missile(d.data); }
     else if (d.type === 'effect') {
+      alive.last.push(d.data.type); if (alive.last.length > 8) alive.last.shift();
       if (d.data.type === 'newlevel') termFx.level(d.data, d.data.dur);
       else if (d.data.type === 'died') termFx.died(d.data, d.data.dur);
       else r3d.effect(d.data);

@@ -1916,7 +1916,7 @@ export function missile(m) {
   let lastStreak = 0;
   let passed = 0;
   const frame = now => {
-    const k = Math.min(1, (now - t0) / dur) * (pts.length - 1);
+    const k = Math.max(0, Math.min(1, (now - t0) / dur)) * (pts.length - 1);   // 描く時刻は t0 より少し前のことがある（そのままだと -1 番目のマスを読んで落ちる）
     const i = Math.min(pts.length - 2, Math.floor(k)), f = k - i;
     if (bolt) while (passed <= i) { const [ty, tx] = pts[passed++ + 1] || []; if (ty != null) { fx.trail.push({ y: ty, x: tx, t0: now, col }); startFx(); } }
     const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f, x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f;
