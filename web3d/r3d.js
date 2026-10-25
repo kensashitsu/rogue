@@ -2058,7 +2058,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { breaths: [], burn: null, gaze: null, frost: null, hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
+const fx = { doorGlow: [], breaths: [], burn: null, gaze: null, frost: null, hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -2112,6 +2112,10 @@ export function effect(d) {
     fx.busyUntil = start + ms;
     fx.breaths.push({ from: [d.y, d.x], path: d.path, t0: start, ms });
     if (d.hit) { fx.burn = { t0: start + ms }; fx.hurtAt = { made: now, at: start + ms }; }
+  } else if (d.type === 'doorglow') {   // 暗い通路の先に見える、明るい部屋の扉の口の光
+    fx.doorGlow = d.cells || [];
+    draw();
+    return;
   } else if (d.type === 'gaze') {   // メデューサのにらみ: 目が光り、視線の輪がこちらへ押し寄せる
     const start = Math.max(now, Math.min(now + 700, fx.busyUntil));
     fx.busyUntil = start + GAZE_MS;
@@ -2320,6 +2324,35 @@ function jitterSprites(now, on) {
 
 // ダメージの数字と飛び散る字（どの見た目でも上に重ねて描く）
 const _v = new THREE.Vector3();
+// 暗い通路の先の、明るい部屋の扉の口の光: まだ分からない所越しにぼんやり見える暖かい光。遠いほど薄い。
+// ゲームが「本当に一直線に見通せる」と知らせた口だけ。間のマスがもう分かっていれば、ふつうの漏れる光（lamps）で見えるので描かない
+const GLOW_COLS = ['#ffe6a8', '#f0c070', '#c8873a'];
+function drawDoorGlow(now) {
+  if (!fx.doorGlow.length || !player || !lastGrid) return;
+  const [py, px] = player;
+  for (const [gy, gx, dist] of fx.doorGlow) {
+    let hidden = false;   // 間に、まだ分からない所（ふた）があるか
+    for (let i = 1; i < dist; i++) {
+      const y = py + Math.round((gy - py) * i / dist), x = px + Math.round((gx - px) * i / dist);
+      if (cellAt(lastGrid, y, x)[0] === ' ' && !rock.has(y * W + x)) { hidden = true; break; }
+    }
+    if (!hidden && cellAt(lastGrid, gy, gx)[0] !== ' ') continue;
+    const p = project(gx + 0.5, 0.45, gy + 0.5); if (!p) continue;
+    const s = Math.max(0.15, 1 - dist / 18), R = Math.max(6, Math.min(80, p.unit * 0.5));
+    const size = Math.max(9, Math.min(26, p.unit * 0.18));
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
+    for (let i = 0; i < 14; i++) {
+      const sd = Math.sin(i * 12.9898 + gx * 78.233 + gy * 37.719) * 43758.5, q = sd - Math.floor(sd);
+      const a = i * 2.39996, r = R * Math.sqrt((i + 0.5) / 14);
+      const fl = 0.75 + 0.25 * Math.sin(now / 180 + i * 1.7);   // 炎の揺らぎ
+      fxctx.globalAlpha = s * fl * (1 - r / (R * 1.1)) * 0.75;
+      fxctx.fillStyle = GLOW_COLS[Math.min(2, Math.floor(r / R * 3))];
+      fxctx.fillText(r < R * 0.35 ? '*' : q < 0.5 ? ':' : '.', p.px + Math.cos(a) * r, p.py + Math.sin(a) * r * 0.7);
+    }
+  }
+  fxctx.globalAlpha = 1;
+}
+
 // ドラゴンの炎: 口から伸びる炎の帯。先ほど太く明るく、根元から消えていく。字は揺らめくように入れ替わる
 function drawBreath(b, now) {
   const pts = [b.from, ...b.path], n = pts.length - 1, t = now - b.t0;
@@ -2694,6 +2727,7 @@ function drawFx(now) {
     fxctx.fillStyle = '#ffe08a'; fxctx.fillText(o.ch, p.px, p.py);
     fxctx.shadowBlur = 0;
   }
+  drawDoorGlow(now);
   for (const b of fx.breaths) drawBreath(b, now);
   if (fx.burn && now >= fx.burn.t0) drawBurn(now);
   if (fx.gaze && now >= fx.gaze.t0) drawGaze(now);
