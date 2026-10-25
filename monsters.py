@@ -668,7 +668,10 @@ def spawn_from_placed(placed, floor_level: int) -> Monster:
     dungeon.PlacedMonster から Monster を生成するヘルパー。
     placed は .ch / .y / .x を持つオブジェクト。
     """
-    return spawn_monster(placed.ch, floor_level, placed.y, placed.x)
+    m = spawn_monster(placed.ch, floor_level + getattr(placed, 'deeper', 0), placed.y, placed.x)
+    if getattr(placed, 'mean', False):
+        m.flags |= ISMEAN   # 宝物部屋のモンスター（同じ部屋に入ると目を覚ましやすい）
+    return m
 
 
 def rand_monster_letter(floor_level: int, wander: bool = False) -> str:
