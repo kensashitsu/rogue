@@ -123,6 +123,8 @@ class PlacedMonster:
     ch: str      # モンスター文字
     y: int
     x: int
+    deeper: int = 0      # この階より何階深い強さで作るか（宝物部屋は 1）
+    mean: bool = False   # 好戦的（ISMEAN。宝物部屋のモンスター）
 
 
 @dataclass
@@ -609,33 +611,52 @@ class Dungeon:
     def _place_monsters(self) -> None:
         """フロアレベルに応じた数のモンスターをランダムに配置する。"""
         n = min(MAXTHINGS, self._rnd(4) + self.floor_level // 4 + 2)
+        taken = {(m.y, m.x) for m in self.monsters}
         for _ in range(n):
-            pos = self._find_floor()
-            if pos is None:
+            for _ in range(10):   # 5.4 find_floor(..., TRUE): ほかのモンスターのいないマスに（同じマスに 2 匹重ねない）
+                pos = self._find_floor()
+                if pos is not None and (pos.y, pos.x) not in taken:
+                    break
+            else:
                 continue
+            taken.add((pos.y, pos.x))
             ch = self._rand_monster()
             self.monsters.append(PlacedMonster(ch, pos.y, pos.x))
 
     def _place_monster_closets(self) -> None:
-        """モンスタークローゼット: 1部屋をモンスターとアイテムで満たす。"""
-        if self.floor_level < 5 or self._rnd(5) != 0:
+        """
+        宝物部屋（5.4 things.c treas_room）: 1/TREAS_ROOM の確率で、部屋 1 つに宝物を MINTREAS〜MAXTREAS 個置き、
+        それより 2 匹以上多いモンスターで埋める。モンスターは 1 つ下の階の強さで、好戦的（ISMEAN）。
+        5.4 は迷路の部屋も選ぶが、ここでは床のある部屋だけから選ぶ。
+        """
+        TREAS_ROOM, MAXTREAS, MINTREAS = 20, 10, 2
+        if self._rnd(TREAS_ROOM) != 0:
             return
-        rooms = self._real_rooms()
+        rooms = [r for r in self._real_rooms() if not r.is_maze]
         if not rooms:
             return
         room = self.rng.choice(rooms)
-        for _ in range(3 + self._rnd(3)):
+        area = (room.height - 2) * (room.width - 2)
+        spots = min(area - MINTREAS, MAXTREAS - MINTREAS)
+        if spots <= 0:
+            return
+        num_items = self._rnd(spots) + MINTREAS
+        for _ in range(num_items):
             pos = self._find_floor_in(room)
             if pos is None:
-                break
-            self.monsters.append(PlacedMonster(self._rand_monster(), pos.y, pos.x))
-        for _ in range(1 + self._rnd(3)):
-            pos = self._find_floor_in(room)
-            if pos is None:
-                break
+                continue
             ch = _weighted_choice_tuples(_THING_PROBS)
             self._set(pos.y, pos.x, ch)
             self.objects.append(PlacedObject(ch, pos.y, pos.x, self._item_which(ch)))
+        nm = min(max(self._rnd(spots) + MINTREAS, num_items + 2), area)
+        taken = {(m.y, m.x) for m in self.monsters}
+        for _ in range(nm):
+            for _ in range(10):   # 5.4 MAXTRIES。宝物の上にも立てる
+                pos = room.random_floor(self.rng)
+                if (pos.y, pos.x) not in taken:
+                    taken.add((pos.y, pos.x))
+                    self.monsters.append(PlacedMonster(self._rand_monster(self.floor_level + 1), pos.y, pos.x, deeper=1, mean=True))
+                    break
 
     def _place_traps(self) -> None:
         """フロアにトラップをランダム配置する（隠し状態）。"""
@@ -657,12 +678,12 @@ class Dungeon:
         if ch == CH_FOOD:   return 1 if self.rng.randint(0, 9) == 0 else 0
         return 0
 
-    def _rand_monster(self) -> str:
+    def _rand_monster(self, level: int | None = None) -> str:
         """
         原作の randmonster() に準拠したモンスター選択。
         d = level + rnd(10) - 6、範囲外は端に丸める。
         """
-        d = self.floor_level + self._rnd(10) - 6
+        d = (self.floor_level if level is None else level) + self._rnd(10) - 6
         if d < 0:
             d = self._rnd(5)
         elif d > 25:
