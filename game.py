@@ -1498,8 +1498,12 @@ class Game:
                 if m.is_alive:
                     hp = self.player.hp
                     m.last_attack = None
+                    m.last_breath = None
                     msgs = m.do_turn(self.dungeon, self.player, self.monsters, self.floor_items)
                     attacked = getattr(m, 'last_attack', None)
+                    if m.last_breath and not self.player.status.blind:
+                        # 3D 版: ドラゴンの炎がこちらへ伸びてくる（当たれば炎に包まれる）
+                        ui.queue_effect('breath', y=m.y, x=m.x, path=m.last_breath, hit=self.player.hp < hp)
                     if self.player.hp < hp or attacked is not None:
                         # 殴りかかってくる・くらった演出。どこから殴られたかは、そのモンスターが見えているときだけ知らせる
                         st = self.player.status
