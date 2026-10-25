@@ -249,6 +249,7 @@ JA: dict[str, str] = {
     "Throw what?": "何を投げる？",
     "Throw in which direction? ": "どの方向に投げる？ ",
     "You hit the {vname} with {name} for {dmg} damage.": "{name}が{vname}に当たり、{dmg}のダメージを与えた。",
+    "Your {weapon} catches on the wall and misses the {vname}.": "{weapon}が壁につかえて、{vname}に当たらなかった。",
     "{name} misses the {vname}.": "{name}は{vname}に当たらなかった。",
     "{name} misses.": "{name}は外れた。",
     "Zap which wand/staff?": "どの杖を振る？",

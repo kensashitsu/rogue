@@ -20,6 +20,7 @@ from constants import (
     R_ADDSTR, R_ADDHIT, R_ADDDAM, R_PROTECT, R_DIGEST, R_TELEPORT,
     R_NOP, R_AGGR, R_SUSTARM,
     LEVEL_HP_BONUS, SEEDURATION, SIGHT_POTION_CUT, HUHDURATION, CONFUSE_CUT,
+    CH_WEAPON, TWOSWORD, TWOHAND_AC_PENALTY,
 )
 
 # ---------------------------------------------------------------------------
@@ -286,6 +287,9 @@ class Player:
         for ring in self.rings:
             if ring is not None and getattr(ring, 'o_which', -1) == R_PROTECT:
                 base -= getattr(ring, 'o_arm', 0)
+        w = self.weapon
+        if w is not None and w.o_type == CH_WEAPON and w.o_which == TWOSWORD:
+            base += TWOHAND_AC_PENALTY   # 両手剣は受け流せない（5.4 にはない）
         return base
 
     @property
