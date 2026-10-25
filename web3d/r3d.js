@@ -82,9 +82,10 @@ export function init(canvas) {
     ceils: instanced(ceil), traps: instanced(plane), secrets: instanced(box),   // secrets: 隠し扉の壁
     hintF: instanced(plane), hintC: instanced(plane),   // 見つけていない罠の床（部屋 / 通路）
     steps: instanced(box), pits: instanced(box),   // 下り階段の段と、穴の内側の壁
+    voids: instanced(box),   // まだ分からない所（部屋の外）: 何も描かないが、向こうを隠す
   };
   const kinds = { secrets: 2, hwalls: 1, vwalls: 1, rocks: 3, floors: 4, dirts: 5, doors: 6, ceils: 7, traps: 9, steps: 8, pits: 1, hintF: 10, hintC: 11 };
-  for (const [name, mesh] of Object.entries(meshes)) mesh.material = kindMat(kinds[name]);
+  for (const [name, mesh] of Object.entries(meshes)) mesh.material = name === 'voids' ? VOID_MAT : kindMat(kinds[name]);
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils } = meshes);
   scene.add(glyphGroup);
   resize();
@@ -312,6 +313,11 @@ function build(grid) {
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   const stairCells = [], doorCells = [];
   const aheadRocks = new Set();   // 1 マス先へ延ばした通路の脇の岩
+  // まだ分からない所（部屋の外）。何もないとして素通しにすると、通路の先の闇越しに遠くの明るい部屋が見えてしまった（2026-10-26）。
+  // 本当は岩の中なので、見えない「ふた」を置いて向こうを隠す。部屋の中（暗い部屋のまだ見ていない床）は今までどおり開けておく
+  const voidCells = [];
+  const inRoom = new Uint8Array(W * 24);
+  for (const r of rooms) for (let y = r.top; y <= r.bottom; y++) for (let x = r.left; x <= r.right; x++) inRoom[y * W + x] = 1;
   for (let y = MAP_TOP; y <= MAP_BOT; y++) {
     for (let x = 0; x < W; x++) {
       let [c, s] = cellAt(grid, y, x);
@@ -328,6 +334,7 @@ function build(grid) {
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
         if (!rock.has(y * W + x)) {
+          let ahead = false;
           // まだ分からない 1 マス先: 隣の歩いた床と同じ床・天井を暗く描き、通路なら両脇の岩も暗く延ばす。
           // 闇へうっすら続いて見せるだけで、本当の地形は使わない（行き止まりでも同じに見える）
           for (const [dy, dx] of [[-1, 0], [1, 0], [0, -1], [0, 1]]) {
@@ -335,12 +342,14 @@ function build(grid) {
             if (!(walk(n) || n === '@')) continue;
             if (n === '#') put(dirts, 'dirts', x, 0, y, DIM_AHEAD); else put(floors, 'floors', x, 0, y, DIM_AHEAD);
             put(ceils, 'ceils', x, 1, y, DIM_AHEAD);
+            ahead = true;
             for (const [py, px] of [[dx, dy], [-dx, -dy]]) {   // 進む向きの左右
               if (rock.has((y - dy + py) * W + (x - dx + px)) && ch(y + py, x + px) === ' ' && !rock.has((y + py) * W + (x + px)))
                 aheadRocks.add((y + py) * W + (x + px));
             }
             break;
           }
+          if (!ahead && !inRoom[y * W + x]) voidCells.push(y * W + x);
           continue;
         }
         let byRoom = false;
@@ -423,6 +432,7 @@ function build(grid) {
     const y = Math.floor(k / W), x = k % W;
     put(rocks, 'rocks', x, 0.5, y, DIM_AHEAD); solid[k] = DIM_AHEAD;
   }
+  for (const k of voidCells) if (!aheadRocks.has(k)) put(meshes.voids, 'voids', k % W, 0.5, Math.floor(k / W), 0);
   buildEdges(solid, stairCells, doorCells);
   buildSconces(grid);
   // 明るい部屋の扉の口から、通路へ光が漏れる（口の少し外に弱い光源を置く）
@@ -539,6 +549,22 @@ function lightAt(x, y, z) {
   return Math.min(1, k);
 }
 // 材質の色（インスタンスごと）: 赤 = 明るさ、緑 = 明るい部屋の中か、青 = 床の隣の壁（北 1・南 2・西 4・東 8 の和 / 16。隅の陰に使う）
+// まだ分からない所の「ふた」: 何も描かないが、奥行きは書き出すので向こうの物を隠す
+const VOID_MAT = new THREE.ShaderMaterial({
+  vertexShader: `
+    varying float vD;
+    void main() {
+      mat4 m = modelMatrix;
+      #ifdef USE_INSTANCING
+        m = m * instanceMatrix;
+      #endif
+      vec4 mv = viewMatrix * m * vec4(position, 1.0);
+      vD = -mv.z;
+      gl_Position = projectionMatrix * mv;
+    }`,
+  // 明るさ 0・種類 0（字を置かない）。奥行きは書くので、輪郭の線・燭台・モンスターの字もここで隠れる
+  fragmentShader: `varying float vD; void main() { gl_FragColor = vec4(0.0, 0.0, 0.0, max(clamp(vD / 16.0, 0.0, 1.0), 1.0 / 255.0)); }`,
+});
 function kindMat(kind) {
   return new THREE.ShaderMaterial({
     uniforms: { kind: { value: kind }, torch: TORCH_U, lights: LIGHTS_U, time: TIME_U, lt: LTUNE_U, beam: BEAM_U, lt2: LT2_U, wall: WALL_U, texr: TEXR_U },
