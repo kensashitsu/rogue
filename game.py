@@ -40,7 +40,7 @@ from items import (
 from combat import player_attacks_monster, calc_exp, roll_damage
 from i18n import tr, load_lang
 from constants import (
-    CH_FLOOR, CH_TRAP, F_SECRETDOOR,
+    CH_FLOOR, CH_TRAP, F_SECRETDOOR, CH_PASSAGE, CH_DOOR,
     CH_POTION, CH_SCROLL, CH_WEAPON, CH_ARMOR,
     CH_RING, CH_STICK, CH_FOOD, CH_GOLD, CH_AMULET,
     CH_STAIRS,
@@ -584,7 +584,11 @@ class Game:
             None,
         )
         if target:
-            result = player_attacks_monster(self.player, target)
+            # 通路・扉の口・迷路の中は狭い（長い刃が壁につかえる）
+            here = self.dungeon.get_tile(self.player.y, self.player.x)
+            room = self.dungeon.find_room_at(self.player.y, self.player.x)
+            narrow = here.ch in (CH_PASSAGE, CH_DOOR) or room is None or room.is_maze
+            result = player_attacks_monster(self.player, target, narrow=narrow)
             ui.add_messages(result.messages)
             weapon = self.player.weapon
             ui.effect('swing', w=weapon.o_which if weapon is not None and weapon.o_type == CH_WEAPON else -1, hit=result.hit)

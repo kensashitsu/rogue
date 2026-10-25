@@ -20,6 +20,7 @@ from constants import (
     VS_POISON, VS_PARALYZATION, VS_DEATH, VS_BREATH, VS_MAGIC,
     HUHDURATION, ISHELD, ISRUN, BOLT_LENGTH, ISCANC, BORE_LEVEL,
     R_SUSTSTR, R_SUSTARM, ISPROT, CH_AMULET, LEATHER,
+    CH_WEAPON, NARROW_HIT_PENALTY,
 )
 
 if TYPE_CHECKING:
@@ -125,14 +126,23 @@ def calc_exp(monster: "Monster") -> int:
 # 命中判定
 # ===========================================================================
 
-def _player_hits(player: "Player", monster: "Monster") -> bool:
+def _weapon_name(w) -> str:
+    """武器の種類の名前（強化値や冠詞を付けない。「両手剣」など）"""
+    from items import WEAPON_INFO
+    from i18n import name as tr_name
+    return tr_name('weapon', WEAPON_INFO[w.o_which].name)
+
+
+def _player_hits(player: "Player", monster: "Monster", penalty: int = 0) -> tuple[bool, bool]:
     """
     プレイヤーの命中判定。
-    hit if d20 + player.level + attack_bonus >= 21 - monster.ac
+    hit if d20 + player.level + attack_bonus - penalty >= 21 - monster.ac
+    返り値: (当たったか, 狭い所の penalty が無ければ当たっていたか)
     """
     need = 21 - monster.ac - player.level - player.attack_bonus
-    need = max(2, need)
-    return random.randint(1, 20) >= need
+    roll = random.randint(1, 20)
+    hit = roll >= max(2, need + penalty)
+    return hit, not hit and roll >= max(2, need)
 
 
 def _monster_hits(monster: "Monster", player: "Player") -> bool:
@@ -152,10 +162,12 @@ def _monster_hits(monster: "Monster", player: "Player") -> bool:
 def player_attacks_monster(
     player:  "Player",
     monster: "Monster",
+    narrow:  bool = False,
 ) -> CombatResult:
     """
     プレイヤーのモンスター攻撃を解決する。
     monster.hp を直接変更する。
+    narrow: 通路・扉の口・迷路で戦っている（長い刃は壁につかえて当たりにくい。5.4 にはない）
     """
     result = CombatResult(hit=False, damage=0)
     vname = monster.display_name(player.status.can_see_invisible)
@@ -165,8 +177,14 @@ def player_attacks_monster(
     monster.flags |= ISRUN
     player._heal_timer = 0   # 戦闘中は自然回復しない（5.4 quiet = 0）
 
-    if not _player_hits(player, monster):
-        result.messages.append(tr('You miss the {vname}.', vname=vname))
+    w = player.weapon
+    penalty = NARROW_HIT_PENALTY.get(w.o_which, 0) if narrow and w is not None and w.o_type == CH_WEAPON else 0
+    hit, snagged = _player_hits(player, monster, penalty)
+    if not hit:
+        if snagged:   # 広い所なら当たっていた: 壁につかえたと分かるように
+            result.messages.append(tr('Your {weapon} catches on the wall and misses the {vname}.', weapon=_weapon_name(w), vname=vname))
+        else:
+            result.messages.append(tr('You miss the {vname}.', vname=vname))
         return result
 
     result.hit = True
