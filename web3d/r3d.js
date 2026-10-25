@@ -1926,16 +1926,34 @@ function drawTerm() {
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
     const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
     uu.L = objLight(o, uu);
+    const amu = u.ch === ',' && !u.flying;   // イェンダーの魔除け: ほかの物と違って輝いて見える
     if (u.flying) o.size = Math.min(o.size, R * tch * 0.14);   // 飛んでいる物は字 1 つで、手元でも大きくなりすぎないように
-    else if (drawArt(o, uu)) continue;
+    else if (drawArt(o, uu)) { if (amu) amuletGlow(o, performance.now()); continue; }
     tctx.font = `700 ${fpx(o.size)}px "BIZ UDGothic", monospace`;
     tctx.fillStyle = '#000';
     const w = tctx.measureText(u.ch).width;
     if (!o.ghost) tctx.fillRect(o.px - w / 2 - 1, o.py - o.size / 2, w + 2, o.size);   // 後ろの字を消して読みやすく
     tctx.fillStyle = uu.L ? litCol(uu.col || '#c8ccd1', uu.L, 0) : (uu.col || '#c8ccd1');
     tctx.fillText(u.ch, o.px, o.py + o.size * 0.04);
+    if (amu) amuletGlow(o, performance.now());
   }
   tctx.globalAlpha = 1;
+}
+
+// 魔除けの輝き: 周りに光の粒（. + *）がまたたき、消えては別の所に現れる（宝石が光を受けてきらめくように）。
+// 2026-10-25 に 3 案（きらめき・光の柱・後光）から、現実の光り方に近いきらめきを選んだ
+const AMU_COLS = ['#fff6d0', '#ffe08a', '#f0c652'];
+function amuletGlow(o, now) {
+  const a0 = tctx.globalAlpha, S = Math.max(8, o.size), cx = o.px, cy = o.py;
+  for (let i = 0; i < 9; i++) {
+    const ph = (now / 900 + i * 0.37) % 1, tw = Math.sin(ph * Math.PI);
+    const ang = i * 2.4 + Math.floor(now / 900 + i * 0.37) * 1.7, rad = S * (0.45 + 0.4 * ((i * 0.618) % 1));
+    tctx.globalAlpha = a0 * tw;
+    tctx.font = `700 ${fpx(S * (0.18 + 0.14 * tw))}px "BIZ UDGothic", monospace`;
+    tctx.fillStyle = AMU_COLS[i % 3];
+    tctx.fillText(tw > 0.7 ? '*' : tw > 0.35 ? '+' : '.', cx + Math.cos(ang) * rad, cy + Math.sin(ang) * rad * 0.8);
+  }
+  tctx.globalAlpha = a0;
 }
 
 // ---------------------------------------------------------------------------
