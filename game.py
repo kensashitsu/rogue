@@ -1453,8 +1453,20 @@ class Game:
             m.flags |= ISRUN | ISFOUND
         self.monsters.append(m)
 
+    def _tell_treasure_room(self, ui: UI) -> None:
+        """宝物部屋に初めて入ったら一度だけ知らせる（トルネコのモンスターハウスに合わせた。5.4 は何も出ない）。
+        暗い部屋や目が見えないときは、中の様子が分からないので知らせない。"""
+        d, p = self.dungeon, self.player
+        room = getattr(d, 'treasure_room', None)
+        if room is None or d.treasure_told or room.is_dark or p.status.blind:
+            return
+        if room.top < p.y < room.bottom and room.left < p.x < room.right:
+            d.treasure_told = True
+            ui.add_message(tr('This room is full of treasure and monsters!'))
+
     def _end_turn(self, ui: UI) -> None:
         """プレイヤーターン終了: 食料消費・状態異常 → モンスター AI。死因を記録する。"""
+        self._tell_treasure_room(ui)
         # 加速中の2回目の行動は同じターン内なので、時間経過の処理もモンスターAIも行わない
         if self._in_extra_turn:
             return
