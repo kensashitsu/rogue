@@ -1453,6 +1453,44 @@ class Game:
             m.flags |= ISRUN | ISFOUND
         self.monsters.append(m)
 
+    GLOW_RANGE = 16   # 明るい部屋の扉の口の光が、暗い通路の先に見える遠さ（マス）
+
+    def _send_door_glows(self, ui: UI) -> None:
+        """3D 版: 明るい部屋の扉の口から自分まで、本当の通路を一直線に見通せるなら、その口を知らせる。
+        知らない通路の奥でも、明るい部屋があれば光がぼんやり見える（現実の見え方に寄せた。ユーザー指定）。
+        見通せるかはゲーム側で調べ、扉の場所と遠さだけを渡す（地図の中身は渡さない）"""
+        d, p = self.dungeon, self.player
+        glows = []
+        if not p.status.blind:
+            for room in d.rooms:
+                if room.is_gone or room.is_dark or room.is_maze:
+                    continue
+                if room.top <= p.y <= room.bottom and room.left <= p.x <= room.right:
+                    continue   # 自分がいる部屋（見えている）
+                for y in range(room.top, room.bottom + 1):
+                    for x in range(room.left, room.right + 1):
+                        if y not in (room.top, room.bottom) and x not in (room.left, room.right):
+                            continue
+                        t = d.get_tile(y, x)
+                        if t.ch != CH_DOOR or t.flags & F_SECRETDOOR:
+                            continue
+                        dist = max(abs(y - p.y), abs(x - p.x))
+                        if 0 < dist <= self.GLOW_RANGE and self._clear_line(p.y, p.x, y, x):
+                            glows.append([y, x, dist])
+        if glows != getattr(self, '_last_glows', None):
+            self._last_glows = glows
+            ui.effect('doorglow', cells=glows)
+
+    def _clear_line(self, y0: int, x0: int, y1: int, x1: int) -> bool:
+        """(y0,x0) から (y1,x1) まで、間のマスがすべて通路か扉なら True（一直線に見通せる）"""
+        n = max(abs(y1 - y0), abs(x1 - x0))
+        for i in range(1, n):
+            y = y0 + round((y1 - y0) * i / n)
+            x = x0 + round((x1 - x0) * i / n)
+            if self.dungeon.get_tile(y, x).ch not in (CH_PASSAGE, CH_DOOR):
+                return False
+        return True
+
     def _tell_treasure_room(self, ui: UI) -> None:
         """宝物部屋に初めて入ったら一度だけ知らせる（トルネコのモンスターハウスに合わせた。5.4 は何も出ない）。
         暗い部屋や目が見えないときは、中の様子が分からないので知らせない。"""
@@ -1467,6 +1505,7 @@ class Game:
     def _end_turn(self, ui: UI) -> None:
         """プレイヤーターン終了: 食料消費・状態異常 → モンスター AI。死因を記録する。"""
         self._tell_treasure_room(ui)
+        self._send_door_glows(ui)
         # 加速中の2回目の行動は同じターン内なので、時間経過の処理もモンスターAIも行わない
         if self._in_extra_turn:
             return
