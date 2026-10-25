@@ -170,6 +170,8 @@ class Dungeon:
         self.traps:        list[PlacedTrap]    = []
         self.player_start: Coord | None        = None
         self.sense_monsters = False   # 魔物検知の薬を飲んだ階（この階にいる間は敵の居場所が分かる）
+        self.treasure_room: Room | None = None   # 宝物部屋（無ければ None）
+        self.treasure_told = False                # 宝物部屋に入ったと知らせたか
 
         self._generate()
 
@@ -636,6 +638,7 @@ class Dungeon:
         if not rooms:
             return
         room = self.rng.choice(rooms)
+        self.treasure_room = room
         area = (room.height - 2) * (room.width - 2)
         spots = min(area - MINTREAS, MAXTREAS - MINTREAS)
         if spots <= 0:
