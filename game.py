@@ -1499,7 +1499,13 @@ class Game:
                     hp = self.player.hp
                     m.last_attack = None
                     m.last_breath = None
+                    m.last_gaze = False
                     msgs = m.do_turn(self.dungeon, self.player, self.monsters, self.floor_items)
+                    if m.last_gaze:
+                        ui.queue_effect('gaze', y=m.y, x=m.x)   # 3D 版: メデューサににらまれた
+                    if getattr(self.player, 'just_frozen', False):
+                        self.player.just_frozen = False
+                        ui.queue_effect('freeze')   # 3D 版: 画面のふちから凍りつく（動けるようになると割れて落ちる）
                     attacked = getattr(m, 'last_attack', None)
                     if m.last_breath and not self.player.status.blind:
                         # 3D 版: ドラゴンの炎がこちらへ伸びてくる（当たれば炎に包まれる）

@@ -297,6 +297,7 @@ def _apply_special(
             return msgs, teleport
         if player.status.paralyzed == 0:
             msgs.append(tr('You are frozen by the Ice Monster!'))
+        player.just_frozen = True   # 3D 版の演出用（game.py が読んで消す）
         player.status.paralyzed += random.randint(0, 1) + 2
         if player.status.paralyzed > BORE_LEVEL and not player.godmode:
             player.hp = 0
