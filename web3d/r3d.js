@@ -2014,7 +2014,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
+const fx = { breaths: [], burn: null, hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -2031,6 +2031,8 @@ const SWING_ART = {
   8: '=------------<>',        // 槍
 };
 const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900, TRAIL_MS = 450;
+const BREATH_STEP = 55, BREATH_FADE = 450, BURN_MS = 750;   // 炎が 1 マス伸びる間・伸びきってから消えるまで・燃え上がる炎
+const FLAME_COLS = ['#fff1a8', '#ffd25a', '#ff9a3a', '#ff5a2a', '#d8321e'];   // 芯（明るい黄）から外（赤）へ
 
 function initFx(canvas) {
   fxcv = document.createElement('canvas');
@@ -2061,6 +2063,11 @@ export function effect(d) {
     fx.hurtAt = { made: now, at: start + LUNGE_HIT };
     fx.lunges.push({ y: d.y, x: d.x, t0: start, hit: !!d.hit });
     if (d.hit && ATTACK_KIND[d.ch] !== 'none') fx.claws.push({ t0: start + LUNGE_HIT, seed: Math.random(), kind: ATTACK_KIND[d.ch] || 'claw', ch: d.ch });
+  } else if (d.type === 'breath') {   // ドラゴンの炎: 口からこちらへ炎が伸びてくる。当たったら画面の下から炎が燃え上がる
+    const start = Math.max(now, Math.min(now + 700, fx.busyUntil)), ms = BREATH_STEP * d.path.length;
+    fx.busyUntil = start + ms;
+    fx.breaths.push({ from: [d.y, d.x], path: d.path, t0: start, ms });
+    if (d.hit) { fx.burn = { t0: start + ms }; fx.hurtAt = { made: now, at: start + ms }; }
   } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
@@ -2205,7 +2212,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || fx.lunges.length || fx.claws.length || moodActive();
+const fxActive = now => fx.breaths.length || !!fx.burn || transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || fx.lunges.length || fx.claws.length || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -2215,6 +2222,8 @@ function startFx() {
     fx.debris = fx.debris.filter(p => now - p.t0 < DEBRIS_MS);
     fx.pops = fx.pops.filter(p => now - p.t0 < POP_MS);
     fx.trail = fx.trail.filter(p => now - p.t0 < (p.ms || TRAIL_MS));
+    fx.breaths = fx.breaths.filter(b => now - b.t0 < b.ms + BREATH_FADE);
+    if (fx.burn && now - fx.burn.t0 > BURN_MS) fx.burn = null;
     if (fx.toss && now - fx.toss.t0 > TOSS_MS) fx.toss = null;
     fx.lunges = fx.lunges.filter(l => now - l.t0 < LUNGE_MS);
     fx.claws = fx.claws.filter(c => now - c.t0 < CLAW_MS);
@@ -2252,6 +2261,51 @@ function jitterSprites(now, on) {
 
 // ダメージの数字と飛び散る字（どの見た目でも上に重ねて描く）
 const _v = new THREE.Vector3();
+// ドラゴンの炎: 口から伸びる炎の帯。先ほど太く明るく、根元から消えていく。字は揺らめくように入れ替わる
+function drawBreath(b, now) {
+  const pts = [b.from, ...b.path], n = pts.length - 1, t = now - b.t0;
+  if (t < 0) return;
+  const head = Math.min(1, t / b.ms) * n, fade = Math.max(0, (t - b.ms) / BREATH_FADE);
+  const end = Math.min(head, n - 0.7);   // 自分のすぐ手前は字が大きくなりすぎるので描かない（当たれば下から燃え上がる）
+  for (let s = 0.4; s <= end; s += 0.1) for (let j = 0; j < 2; j++) {
+    const near = s / Math.max(1, n), lead = 1 - (head - s) / Math.max(1, n);   // near: 口から離れるほど 1、lead: 炎の先に近いほど 1
+    const a = Math.max(0, 1 - fade * 1.4 - (1 - lead) * 0.35);
+    if (a <= 0) continue;
+    const i = Math.min(n - 1, Math.floor(s)), f = s - i;
+    const seed = Math.sin(s * 91.7 + j * 17.3 + Math.floor(now / 60) * 13.1) * 43758.5, r = seed - Math.floor(seed);
+    const seed2 = Math.sin(s * 53.1 + j * 29.9 + Math.floor(now / 60) * 7.7) * 43758.5, r2 = seed2 - Math.floor(seed2);
+    const spread = 0.08 + 0.4 * near;   // 口から離れるほど広がる
+    const y = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f + (r - 0.5) * spread;
+    const x = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f + (r2 - 0.5) * spread;
+    const p = project(x + 0.5, 0.5 + (r2 - r) * spread, y + 0.5); if (!p) continue;
+    const size = Math.max(9, Math.min(30, p.unit * (0.09 + 0.08 * near)));
+    fxctx.globalAlpha = a;
+    fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
+    fxctx.fillStyle = FLAME_COLS[Math.min(4, Math.floor(Math.abs(r - 0.5) * 4 + near * 2.2))];   // 芯は明るく、外と先は赤く
+    fxctx.fillText('*#&%^~'[Math.floor(r2 * 6)], p.px, p.py);
+  }
+  fxctx.globalAlpha = 1;
+}
+// 炎に包まれた: 画面の下から炎の字が燃え上がって消える
+function drawBurn(now) {
+  const k = (now - fx.burn.t0) / BURN_MS, Wc = fxcv.clientWidth || fxcv.width, Hc = fxcv.clientHeight || fxcv.height;
+  const size = Math.round(Math.min(Wc, Hc) * 0.06), cw = size * 0.6;
+  const rise = Math.sin(Math.min(1, k * 2.2) * Math.PI / 2) * (1 - Math.max(0, k - 0.55) / 0.45 * 0.6);
+  fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
+  for (let c = 0; c * cw < Wc + cw; c++) {
+    const hgt = Hc * rise * (0.28 + 0.14 * Math.sin(c * 1.7 + now / 90) + 0.08 * Math.sin(c * 0.6 - now / 130));
+    const rows = Math.ceil(hgt / size);
+    for (let r = 0; r < rows; r++) {
+      const up = r / Math.max(1, rows);   // 0 = 下の端
+      const seed = Math.sin(c * 12.9 + r * 78.2 + Math.floor(now / 70)) * 43758.5, q = seed - Math.floor(seed);
+      fxctx.globalAlpha = Math.max(0, (1 - up) * 0.85 * (1 - Math.max(0, k - 0.6) / 0.4));
+      fxctx.fillStyle = FLAME_COLS[Math.min(4, Math.floor(up * 4 + q * 1.2))];
+      fxctx.fillText(r === rows - 1 ? '^' : '*#&%^~'[Math.floor(q * 6)], c * cw + cw / 2, Hc - r * size - size / 2);
+    }
+  }
+  fxctx.globalAlpha = 1;
+}
+
 function project(x, y, z) {
   _v.set(x, y, z).applyMatrix4(camera.matrixWorldInverse);
   const dist = -_v.z;
@@ -2527,6 +2581,8 @@ function drawFx(now) {
     fxctx.fillStyle = '#ffe08a'; fxctx.fillText(o.ch, p.px, p.py);
     fxctx.shadowBlur = 0;
   }
+  for (const b of fx.breaths) drawBreath(b, now);
+  if (fx.burn && now >= fx.burn.t0) drawBurn(now);
   if (fx.swing) drawSwing(now);
   if (fx.toss) drawToss(now);
   for (const c of fx.claws) drawClaw(c, now);

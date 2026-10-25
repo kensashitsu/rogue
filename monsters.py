@@ -376,6 +376,11 @@ class Monster:
         if self.letter == 'D' and self._can_breathe(dungeon, player, monsters) \
                 and random.randint(0, 4) == 0:
             msgs.append(tr('The Dragon breathes fire!'))
+            # 炎の通り道（3D 版の演出用。game.py が読む）: 自分の隣から相手のマスまでの一直線
+            sy = (player.y > self.y) - (player.y < self.y)
+            sx = (player.x > self.x) - (player.x < self.x)
+            n = max(abs(player.y - self.y), abs(player.x - self.x))
+            self.last_breath = [[self.y + sy * i, self.x + sx * i] for i in range(1, n + 1)]
             msgs.extend(dragon_breath(player))
             return msgs
 
