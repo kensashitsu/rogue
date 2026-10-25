@@ -354,6 +354,7 @@ class Monster:
         from constants import VS_MAGIC, HUHDURATION, CONFUSE_CUT
         if not save_throw(player.level, VS_MAGIC, player.protect_bonus):
             player.apply_confusion(HUHDURATION - CONFUSE_CUT)   # 5.4: HUHDURATION
+            self.last_gaze = True   # 3D 版の演出用（game.py が読む）
             return [
                 tr("You are confused by the Medusa's hideous visage!")
             ]

@@ -2014,7 +2014,7 @@ export function missile(m) {
 // 演出: 敵に当てた（白く点滅して震え、ダメージの数字が浮かぶ。倒したら字が飛び散る）、
 // 自分がくらった（画面が揺れ、殴ってきた方向の端が赤く光る）。ゲームから rogue_effect で届く
 // ---------------------------------------------------------------------------
-const fx = { breaths: [], burn: null, hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
+const fx = { breaths: [], burn: null, gaze: null, frost: null, hits: [], nums: [], debris: [], pops: [], trail: [], shakeT0: -1e9, lastHp: null, swing: null, toss: null, lunges: [], claws: [], busyUntil: 0, hurtAt: null, hurtSoon: 0 };
 let fxcv, fxctx, hurtEl, blindEl, fxRunning = false;
 // 武器を振る: 手元（右下）から、握り→刃先の順の字を棒のように並べて振り下ろす。w は 5.4 の武器の番号（-1 は素手）
 const SWING_MS = 420, SWING_HIT = 150;   // SWING_HIT: 振り始めから敵に届くまで（当たりの演出はここから）
@@ -2031,7 +2031,7 @@ const SWING_ART = {
   8: '=------------<>',        // 槍
 };
 const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900, TRAIL_MS = 450;
-const BREATH_STEP = 55, BREATH_FADE = 450, BURN_MS = 750;   // 炎が 1 マス伸びる間・伸びきってから消えるまで・燃え上がる炎
+const BREATH_STEP = 55, BREATH_FADE = 450, BURN_MS = 750, GAZE_MS = 900, FROST_IN = 450, THAW_MS = 700;   // 炎が 1 マス伸びる間・伸びきってから消えるまで・燃え上がる炎
 const FLAME_COLS = ['#fff1a8', '#ffd25a', '#ff9a3a', '#ff5a2a', '#d8321e'];   // 芯（明るい黄）から外（赤）へ
 
 function initFx(canvas) {
@@ -2068,6 +2068,13 @@ export function effect(d) {
     fx.busyUntil = start + ms;
     fx.breaths.push({ from: [d.y, d.x], path: d.path, t0: start, ms });
     if (d.hit) { fx.burn = { t0: start + ms }; fx.hurtAt = { made: now, at: start + ms }; }
+  } else if (d.type === 'gaze') {   // メデューサのにらみ: 目が光り、視線の輪がこちらへ押し寄せる
+    const start = Math.max(now, Math.min(now + 700, fx.busyUntil));
+    fx.busyUntil = start + GAZE_MS;
+    fx.gaze = { y: d.y, x: d.x, t0: start };
+  } else if (d.type === 'freeze') {   // 凍らされた: 殴られた所から、画面のふちに霜が張る
+    const start = fx.hurtAt && now - fx.hurtAt.made < 60 ? fx.hurtAt.at : now;
+    if (!fx.frost || fx.frost.thaw) fx.frost = { t0: start, para: false, thaw: null };
   } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
@@ -2197,6 +2204,12 @@ function watchStatus(grid) {
   const was = moodActive();
   mood.halu = /幻覚|Halu/.test(t); mood.conf = /混乱|Conf/.test(t); mood.blind = /盲目|Blind/.test(t);
   mood.lev = /浮遊|Lev/.test(t); mood.haste = /加速|Haste/.test(t); mood.slow = /減速|Slow/.test(t);
+  // 凍っている間は状態行に「麻痺」が出る。消えたら（一度も見えないまましばらく経ったときも）霜が割れて落ちる
+  if (fx.frost && !fx.frost.thaw) {
+    const now = performance.now();
+    if (/麻痺|Para/.test(t)) fx.frost.para = true;
+    else if (fx.frost.para || now - fx.frost.t0 > 1500) { fx.frost.thaw = Math.max(now, fx.frost.t0 + FROST_IN); startFx(); }
+  }
   if (blindEl) blindEl.classList.toggle('on', mood.blind);
   if (moodActive() && !was) startFx();
 }
@@ -2212,7 +2225,7 @@ function watchHp(grid) {
   fx.lastHp = hp;
 }
 
-const fxActive = now => fx.breaths.length || !!fx.burn || transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || fx.lunges.length || fx.claws.length || moodActive();
+const fxActive = now => fx.breaths.length || !!fx.burn || !!fx.gaze || !!fx.frost || transActive(now) || now - fx.shakeT0 < SHAKE_MS || fx.hits.length || fx.nums.length || fx.debris.length || fx.pops.length || fx.trail.length || !!fx.swing || !!fx.toss || fx.lunges.length || fx.claws.length || moodActive();
 function startFx() {
   if (fxRunning) return;
   fxRunning = true;
@@ -2224,6 +2237,8 @@ function startFx() {
     fx.trail = fx.trail.filter(p => now - p.t0 < (p.ms || TRAIL_MS));
     fx.breaths = fx.breaths.filter(b => now - b.t0 < b.ms + BREATH_FADE);
     if (fx.burn && now - fx.burn.t0 > BURN_MS) fx.burn = null;
+    if (fx.gaze && now - fx.gaze.t0 > GAZE_MS) fx.gaze = null;
+    if (fx.frost && (fx.frost.thaw ? now - fx.frost.thaw > THAW_MS : now - fx.frost.t0 > 60000)) fx.frost = null;
     if (fx.toss && now - fx.toss.t0 > TOSS_MS) fx.toss = null;
     fx.lunges = fx.lunges.filter(l => now - l.t0 < LUNGE_MS);
     fx.claws = fx.claws.filter(c => now - c.t0 < CLAW_MS);
@@ -2283,6 +2298,60 @@ function drawBreath(b, now) {
     fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
     fxctx.fillStyle = FLAME_COLS[Math.min(4, Math.floor(Math.abs(r - 0.5) * 4 + near * 2.2))];   // 芯は明るく、外と先は赤く
     fxctx.fillText('*#&%^~'[Math.floor(r2 * 6)], p.px, p.py);
+  }
+  fxctx.globalAlpha = 1;
+}
+// メデューサのにらみ: 頭の所に 2 つの目が光り、緑の視線の輪（o O 0）が広がりながらこちらへ押し寄せる
+const GAZE_COLS = ['#eaffc8', '#b6f06a', '#6fcf4a', '#3c9a3a'];
+function drawGaze(now) {
+  const k = (now - fx.gaze.t0) / GAZE_MS;
+  const p = project(fx.gaze.x + 0.5, 0.78, fx.gaze.y + 0.5);
+  const Wc = fxcv.clientWidth || fxcv.width, Hc = fxcv.clientHeight || fxcv.height;
+  const cx = p ? p.px : Wc / 2, cy = p ? p.py : Hc * 0.4;
+  const eye = Math.max(10, Math.min(48, (p ? p.unit : 60) * 0.14)) * (1 + 0.6 * Math.sin(Math.min(1, k * 3) * Math.PI));
+  fxctx.globalAlpha = Math.max(0, 1 - Math.max(0, k - 0.7) / 0.3);
+  fxctx.font = `700 ${fpx(eye)}px "BIZ UDGothic", monospace`;
+  fxctx.fillStyle = '#eaffc8';
+  fxctx.fillText('*', cx - eye * 0.45, cy); fxctx.fillText('*', cx + eye * 0.45, cy);
+  // 輪: 目から順に生まれ、広がって画面を覆いながら薄れる
+  const size = Math.round(Math.min(Wc, Hc) * 0.045);
+  fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
+  for (let ring = 0; ring < 4; ring++) {
+    const rk = k * 1.6 - ring * 0.18;
+    if (rk <= 0 || rk >= 1) continue;
+    const rad = rk * Math.hypot(Wc, Hc) * 0.7, n = Math.max(8, Math.round(rad * 2 * Math.PI / (size * 1.1)));
+    fxctx.globalAlpha = (1 - rk) * 0.8;
+    fxctx.fillStyle = GAZE_COLS[ring];
+    for (let i = 0; i < n; i++) {
+      const a = i / n * 2 * Math.PI + ring * 0.4;
+      fxctx.fillText('oO0o'[(i + ring) % 4], cx + Math.cos(a) * rad, cy + Math.sin(a) * rad * 0.8);
+    }
+  }
+  fxctx.globalAlpha = 1;
+}
+// 凍らされた: 画面のふちから霜の字（* + x # / \）が内へ伸び、青白く曇る。解けると割れて下へ落ちる
+const FROST_CH = '*+x#/\\', SHARD_CH = '/\\.,';
+function drawFrost(now) {
+  const f = fx.frost, Wc = fxcv.clientWidth || fxcv.width, Hc = fxcv.clientHeight || fxcv.height;
+  const grow = Math.min(1, (now - f.t0) / FROST_IN), th = f.thaw ? Math.min(1, Math.max(0, now - f.thaw) / THAW_MS) : 0;
+  const size = Math.round(Math.min(Wc, Hc) * 0.05), cw = size * 0.62, cols = Math.ceil(Wc / cw), rows = Math.ceil(Hc / size);
+  fxctx.globalAlpha = 0.16 * grow * (1 - th);
+  fxctx.fillStyle = '#9fd4ff'; fxctx.fillRect(0, 0, Wc, Hc);   // 青白い曇り
+  fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
+  const reach = 0.24 * (1 - Math.pow(1 - grow, 3));   // ふちから内へ（画面の短い辺に対する割合）
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const x = c * cw + cw / 2, y = r * size + size / 2;
+    const d = Math.min(x, Wc - x, y, Hc - y) / Math.min(Wc, Hc);   // ふちからの近さ
+    const sd = Math.sin(c * 12.9898 + r * 78.233) * 43758.5, q = sd - Math.floor(sd);
+    const lim = reach * (0.55 + 0.45 * q);
+    if (d > lim) continue;
+    const edge = 1 - d / Math.max(0.001, lim);   // ふちほど 1
+    if (edge < 0.35 && q < 0.5) continue;   // 内側の先はまばらに
+    let fy = y, fa = 0.15 + 0.6 * edge;
+    if (th > 0) { fy += th * th * size * (2 + 4 * q); fa *= Math.max(0, 1 - th * 1.4); }   // 割れて少し落ち、すぐ消える
+    fxctx.globalAlpha = fa;
+    fxctx.fillStyle = edge > 0.6 ? '#f2fbff' : edge > 0.3 ? '#bfe6ff' : '#7fbfea';
+    fxctx.fillText(th > 0 ? SHARD_CH[Math.floor(q * 4)] : FROST_CH[Math.floor(q * 6)], x + (th > 0 ? (q - 0.5) * th * size : 0), fy);
   }
   fxctx.globalAlpha = 1;
 }
@@ -2583,6 +2652,8 @@ function drawFx(now) {
   }
   for (const b of fx.breaths) drawBreath(b, now);
   if (fx.burn && now >= fx.burn.t0) drawBurn(now);
+  if (fx.gaze && now >= fx.gaze.t0) drawGaze(now);
+  if (fx.frost && now >= fx.frost.t0) drawFrost(now);
   if (fx.swing) drawSwing(now);
   if (fx.toss) drawToss(now);
   for (const c of fx.claws) drawClaw(c, now);
