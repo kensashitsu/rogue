@@ -228,7 +228,7 @@ class Dungeon:
         if self.floor_level >= AMULETLEVEL:
             self._place_amulet()
         self._place_monsters()
-        self._place_monster_closets()
+        self._place_treasure_room()
         self._place_traps()
         self._choose_player_start()
 
@@ -623,7 +623,7 @@ class Dungeon:
             ch = self._rand_monster()
             self.monsters.append(PlacedMonster(ch, pos.y, pos.x))
 
-    def _place_monster_closets(self) -> None:
+    def _place_treasure_room(self) -> None:
         """
         宝物部屋（5.4 things.c treas_room）: 1/TREAS_ROOM の確率で、部屋 1 つに宝物を MINTREAS〜MAXTREAS 個置き、
         それより 2 匹以上多いモンスターで埋める。モンスターは 1 つ下の階の強さで、好戦的（ISMEAN）。
