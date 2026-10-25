@@ -1099,12 +1099,12 @@ const ART = {
     '  X    ',
     ' X     ',
   ],
-  ':': [   // 食料: 上に切れ目の入った山形のパン
-    '   XXXXXXXX   ',
-    ' XXX.XXX.XXXX ',
-    'XXXXXXXXXXXXXX',
-    'XXXXXXXXXXXXXX',
-    ' XXXXXXXXXXXX ',
+  ':': [   // 食料: 骨付き肉（b の升は骨。2026-10-25 にパンから 3 案で選んだ）
+    ' XXX   ',
+    'XXXXX  ',
+    'XXXXX  ',
+    ' XXXbb ',
+    '     bb',
   ],
   '*': [   // 金貨: 小山
     '   X   ',
@@ -1485,13 +1485,15 @@ function artFor(o, u) {
   const right = (fx * Math.cos(camera.rotation.y) - fy * Math.sin(camera.rotation.y)) > 0;   // 画面の右を向いている
   return right ? v.sideR : v.side;
 }
+// 形ごとの大きさ・色の手直し（食料は升が少ないぶん大きく描かれるので小さめに。色は肉の赤茶、骨は白っぽく）
+const ART_SCALE = { ':': 0.8 }, ART_COL = { ':': '#c0653c' }, BONE_COL = '#e8e0cc';
 // 形で描けたら true（近くて、1 升が画面の升の 0.75 倍以上になるとき）
 function drawArt(o, u) {
   const art = artFor(o, u);
   if (!art) return false;
   const rows = art.length, cols = art[0].length;
   // 形の 1 升の高さ（縦に長い形ほど背が高くなる。ただし画面の 9 割まで）
-  const h = Math.min(o.size * 1.15 / Math.min(rows, 9), trows * tch * 0.9 / rows);
+  const h = Math.min(o.size * 1.15 / Math.min(rows, 9), trows * tch * 0.9 / rows) * (ART_SCALE[u.ch] || 1);
   const bottom = o.py + o.size / 2.3;   // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
   if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px);
   const w = h / 2, x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
@@ -1505,7 +1507,8 @@ function drawArt(o, u) {
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
     if (m === '.') continue;
     const eye = m === 'e', shut = eye && st && st.sleep;
-    tctx.fillStyle = eye && !shut ? '#ffe08a' : u.L ? litCol(u.col || '#c8ccd1', u.L, (c + 0.5) / cols * 2 - 1) : (u.col || '#c8ccd1');
+    const base = m === 'b' ? BONE_COL : ART_COL[u.ch] || u.col || '#c8ccd1';
+    tctx.fillStyle = eye && !shut ? '#ffe08a' : u.L ? litCol(base, u.L, (c + 0.5) / cols * 2 - 1) : base;
     tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
   if (st && st.sleep) drawZzz(x0 + cols * w * 0.75, y0, h);
@@ -1631,14 +1634,15 @@ function drawArtSmall(art, u, h, bottom, cx) {
   for (let r = 0; r < tr; r++) for (let c = 0; c < tc; c++) {
     const r0 = Math.floor(r * rows / tr), r1 = Math.max(r0 + 1, Math.floor((r + 1) * rows / tr));
     const c0 = Math.floor(c * cols / tc), c1 = Math.max(c0 + 1, Math.floor((c + 1) * cols / tc));
-    let n = 0, eye = false;
-    for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ' && m !== '.') n++; if (m === 'e') eye = true; }
+    let n = 0, eye = false, bone = 0;
+    for (let y = r0; y < r1; y++) for (let x = c0; x < c1; x++) { const m = art[y][x]; if (m !== ' ' && m !== '.') n++; if (m === 'e') eye = true; if (m === 'b') bone++; }
     if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
     if (u.st && !(eye && tr >= 3) && wounded(u.st.hp, r, c)) continue;
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch); }
     const shut = u.st && u.st.sleep;
-    tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : u.L ? litCol(u.col || '#c8ccd1', u.L, (c + 0.5) / tc * 2 - 1) : (u.col || '#c8ccd1');
+    const base = bone * 2 > n ? BONE_COL : ART_COL[u.ch] || u.col || '#c8ccd1';
+    tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : u.L ? litCol(base, u.L, (c + 0.5) / tc * 2 - 1) : base;
     tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
     drawn++;
   }
