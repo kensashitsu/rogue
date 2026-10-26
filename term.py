@@ -162,6 +162,15 @@ def flash() -> None:
     _out.flush()
 
 
+def login_time() -> str:
+    """いまの時刻を Unix の Last login の書式で（'Mon Oct 26 11:40:12'）。ブラウザ版は端末の地域の時刻"""
+    if _WEB:
+        d = js.Date.new()
+        return f"{str(d.toDateString())[:10]} {str(d.toTimeString())[:8]}"
+    import time
+    return time.strftime('%a %b %d %H:%M:%S')
+
+
 def is_web() -> bool:
     """ブラウザ版（2D・3D）で遊んでいるか"""
     return bool(_WEB)

@@ -8,9 +8,9 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.28';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.29';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-const VERSION = '3d-1.28';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.29';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -161,6 +161,30 @@ function typeMsg(text, from) {
   if (n < text.length) typeRaf = requestAnimationFrame(step);
 }
 
+// 名前入力: 入力欄に打った名前を、画面の「Enter your name:」の後ろに映し、末尾でカーソル ▌ を点滅させる（端末に打ち込んでいるように）。
+// 映した字は印（8192）を付けて画面の升に書き、ゲームが書いた字と区別する
+let typedName = '', caretOn = true;
+setInterval(() => { if (hint === 'name') { caretOn = !caretOn; requestDraw(); } }, 530);
+function applyTyped() {
+  let y = -1;
+  for (let r = 0; r < H; r++) if (/Enter your name:|名前を入力/.test(rowText(r))) { y = r; break; }
+  if (y < 0) return;
+  const row = grid[y];
+  let end = 0;
+  for (let x = 0; x < W; x++) { const c = row[x]; if (c && !(c[1] & 8192) && c[0] !== ' ') end = x + (c[1] & 4096 ? 2 : 1); }
+  const start = end + 1;
+  for (let x = start; x < W; x++) if (!row[x] || row[x][1] & 8192 || row[x][0] === ' ') row[x] = [' ', 0];
+  let x = start;
+  for (const ch of typedName) {
+    const wide = ch.codePointAt(0) >= 0x1100;
+    if (x + (wide ? 2 : 1) > W - 1) break;
+    row[x] = [ch, 8192 | (wide ? 4096 : 0)];
+    if (wide) row[x + 1] = null;
+    x += wide ? 2 : 1;
+  }
+  if (caretOn && x < W) row[x] = ['▌', 8192];
+}
+
 function render() {
   ensureGlyphs();
   mode = isMap() ? 'map' : 'text';
@@ -243,6 +267,7 @@ function render() {
     cv.width = Math.floor(wpx * dpr); cv.height = Math.floor(hpx * dpr);
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (mode === 'text' && hint === 'name') applyTyped();
   drawCells(mode === 'text' ? rowMap : Array.from({ length: rows }, (_, r) => y0 + r));
   if (mode === 'map') drawFacing();
   updateMoreHints();
@@ -540,6 +565,7 @@ function textEntry(c, T, keep) {
   inp.value = keep;
   // iOS はキーボードを閉じた後、ページが上にずれたまま残ることがあるので戻す
   inp.addEventListener('blur', () => setTimeout(() => window.scrollTo(0, 0), 50));
+  if (name) { typedName = keep; inp.addEventListener('input', () => { typedName = inp.value; caretOn = true; requestDraw(); }); }
   f.append(inp);
   const r = document.createElement('div'); r.className = 'row'; f.append(r);
   const ok = makeKey(T.ok, '↵', r);   // submit にすると tap と既定の送信で 2 回送られる。Enter キーは入力欄 1 つのフォームなので送信される

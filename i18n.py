@@ -48,6 +48,22 @@ def get_lang() -> str:
     return _lang
 
 
+def cfg_get(key: str):
+    """設定ファイル（rogue.cfg）の項目を読む"""
+    return _load_cfg().get(key)
+
+
+def cfg_set(key: str, value) -> None:
+    """設定ファイルの項目を書く（ほかの項目は残す）"""
+    cfg = _load_cfg()
+    cfg[key] = value
+    try:
+        with open(_CFG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(cfg, f, ensure_ascii=False)
+    except OSError:
+        pass
+
+
 def set_lang(lang: str) -> None:
     """言語を切り替えて設定ファイルに保存する。"""
     global _lang
