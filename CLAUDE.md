@@ -15,7 +15,7 @@ web/（ブラウザ版: index.html / app.js / worker.js / coi-serviceworker.js�
 - term.py は sys.platform == 'emscripten' のとき画面を rogue_draw に渡し、キーを rogue_getch で待つ（Atomics.wait。COOP/COEP が要るので coi-serviceworker を使う）
 - ui.py の getch は _getch(hint, keys) を通す。hint（command / direction / more / char / text / name / list / any）でスマホのボタンを出し分ける。新しい入力待ちを足すときは hint も付ける
 - 説明書は「その他 → 説明書」で manual.txt をそのまま読み込んで組む（app.js の buildManual。===== で挟んだ行が見出し、┌│└ で始まる図は横スクロール）。manual.txt を直せば exe 版と両方に反映される
-- web/ を直して公開するときは app.js の VERSION を上げる（画面右上に出る。iPhone に新しい版が届いたかの確認用）。実機の調査は URL 末尾に #debug を付けると操作の出来事が画面に出る
+- web/ を直して公開するときは app.js の VERSION を上げる（画面右上に出る。iPhone に新しい版が届いたかの確認用）。index.html の app.js?v= も同じ版に、web3d/ では app.js の import './r3d.js?v=' も同じ版に揃える（揃えないとブラウザが古い r3d.js を使い続け、版番号だけ新しくなる）。実機の調査は URL 末尾に #debug を付けると操作の出来事が画面に出る
 - web3d/ の作品のテーマは「ASCII 文字だけで、どこまで現実的な空間を表せるか」（2026-10-23 ユーザー指定）。見た目の判断に迷ったら、現実の光の届き方・見え方に近いほうを選ぶ
 - web3d/ は一人称 3D 表示の試作（https://kensashitsu.github.io/rogue/web3d/）。web/ の写しを元に、地図の画面を r3d.js（Three.js）で立体にし、ASCII（端末の字の升目）で描くもの。見た目は ASCII 一本（2026-10-22 に絞った。ほかの見た目は git 履歴にある）。ゲーム本体は同じ .py を使い、セーブは 2D 版と分けている（rogue3d-files）。web/ を直しても web3d/ には自動では入らない
 - 2D と 3D で .py は分けない（2026-10-24 ユーザー了承）。3D の演出が要るときは、.py には ui.effect("種類", ...) で「何が起きたか」を知らせる行だけを足し、見せ方は web3d/ 側に書く（端末版・2D 版では effect は何もしない）
