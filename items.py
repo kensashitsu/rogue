@@ -19,7 +19,7 @@ import re as _re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, NamedTuple
 
-from i18n import tr, name as tr_name, is_ja
+from i18n import tr, name as tr_name, is_ja, remember, ja_name
 from constants import (
     # オブジェクトフラグ
     ISCURSED, ISKNOW, ISMISL, ISMANY, OBJ_ISFOUND, ISPROT,
@@ -421,8 +421,11 @@ class GameKnowledge:
             if self.is_known(ot, ow):
                 return tr('a scroll of {name}', name=tr_name('scroll', SCROLL_INFO[ow].name))
             title = self.get_appearance(ot, ow)
-            if is_ja():   # 音節ごとにカタカナにする（セーブの中身は英字のまま）
-                title = '・'.join(tr_name('syllable', s) for s in title.split())
+            kana = '・'.join(ja_name('syllable', s) for s in title.split())   # 音節ごとにカタカナにする（セーブの中身は英字のまま）
+            if is_ja():
+                title = kana
+            else:
+                remember(title, kana)   # 英語＋日本語のとき、日本語訳の行ではカタカナに
             guess = self.get_guess(ot, ow)
             return (tr("a scroll titled '{title}' called {guess}", title=title, guess=guess) if guess
                     else tr("a scroll titled '{title}'", title=title))

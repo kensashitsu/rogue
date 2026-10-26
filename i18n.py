@@ -78,6 +78,26 @@ def _remember(en: str, ja: str) -> None:
     _pairs[en] = ja
 
 
+def remember(en: str, ja: str) -> None:
+    """英語＋日本語のとき、英語の語句とその日本語を覚える（tr・name を通らない語句。巻物の名前のカタカナなど）"""
+    if _lang == 'enja':
+        _remember(en, ja)
+
+
+def ja_name(kind: str, en: str) -> str:
+    """いまの言語に関係なく、固有名の日本語"""
+    from i18n_ja import NAMES
+    return NAMES.get(kind, {}).get(en, en)
+
+
+def _ja_part(v: str) -> str:
+    """差し込む語句の日本語（文頭で頭を大文字にした名前 'A scroll ...' も、小文字に戻して引く）"""
+    if v in _pairs:
+        return _pairs[v]
+    low = v[:1].lower() + v[1:]
+    return _pairs.get(low, v)
+
+
 def ja_of(text: str) -> str | None:
     """英語＋日本語のとき、英語の文の日本語訳（分からなければ None）"""
     return _pairs.get(text) if _lang == 'enja' else None
@@ -92,7 +112,7 @@ def tr(template: str, **kw) -> str:
         from i18n_ja import JA
         en = template.format(**kw) if kw else template
         ja_t = JA.get(template, template)
-        kj = {k: (_pairs.get(v, v) if isinstance(v, str) else v) for k, v in kw.items()}
+        kj = {k: (_ja_part(v) if isinstance(v, str) else v) for k, v in kw.items()}
         try:
             _remember(en, ja_t.format(**kj) if kj else ja_t)
         except (KeyError, IndexError, ValueError):
