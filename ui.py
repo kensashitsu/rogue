@@ -259,9 +259,9 @@ def _fit(s: str, width: int = 79) -> str:
 
 # 名前入力画面の Tab の案内（いまの言語 → 次の言語）。英語＋日本語はブラウザ版だけ（端末は 1 行に併記する余裕がない）
 _LANG_HINT = {   # いまの言語を先に書き、Tab で次に何になるかを添える
-    'en':   "  Language: English      Tab: 日本語で遊ぶ",
-    'ja':   "  言語: 日本語      Tab: 英語と日本語を併記する（English + 日本語）",
-    'enja': "  Language: English + 日本語      Tab: English only",
+    'en':   "  Language: English     Tab: 日本語",
+    'ja':   "  言語: 日本語     Tab: English + 日本語",
+    'enja': "  Language: English + 日本語     Tab: English",
 }
 
 
