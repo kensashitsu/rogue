@@ -2089,10 +2089,15 @@ const SWING_ART = {
   2: '==-)',                   // 弓
   3: '----->',                 // 矢
   4: '=+===>',                 // 短剣
-  5: '===+=============>',     // 両手剣
+  5: '===+#############>',     // 両手剣（振るときは SWING_WIDE の幅のある形）
   6: '=->',                    // ダーツ
   7: '=*',                     // 手裏剣
   8: '=------------<>',        // 槍
+};
+// 刃に幅のある武器（行が複数。上から順に、刃の向きに直角に並べる）。scale: 字の大きさ、gap: 行の間（字の大きさに対して）
+// 両手剣: 重い刃（#）の両脇に細い縁（-）を沿わせる。2026-10-26 に 6 案から選んだ（= 1 本だけでは弱々しく見えた）
+const SWING_WIDE = {
+  5: { rows: ['    -------------  ', '===+#############>', '    -------------  '], scale: 1.15, gap: 0.42 },
 };
 const HIT_MS = 260, NUM_MS = 800, DEBRIS_MS = 650, SHAKE_MS = 320, POP_MS = 900, TRAIL_MS = 450;
 const BREATH_STEP = 55, BREATH_FADE = 450, BURN_MS = 750, GAZE_MS = 900, FROST_IN = 450, THAW_MS = 700;   // 炎が 1 マス伸びる間・伸びきってから消えるまで・燃え上がる炎
@@ -2637,12 +2642,13 @@ function drawSwing(now) {
   const sw = fx.swing, k = (now - sw.t0) / SWING_MS;
   if (k < 0 || k > 1) return;
   const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr, M = Math.min(W2, H2);
-  const art = SWING_ART[sw.w];
+  const tv = SWING_WIDE[sw.w];
+  const rows = tv ? tv.rows : [SWING_ART[sw.w]], art = rows[Math.floor(rows.length / 2)];
   const [tx, ty] = swingTarget(sw, W2, H2);
   // 振る武器: 当たる角度（swingAngle の HIT）で刃先が (tx, ty) に来て、握りが画面の下の端に来る大きさにする（短い武器ほど手前に大きく構える）
   const HITA = -128 * Math.PI / 180, ux = Math.cos(HITA), uy = Math.sin(HITA);
   const reach = 0.9 + (art.length - 1) * 0.5 + 0.3;   // 握りの外から刃先まで（字の大きさを 1 として）
-  const size = Math.round(Math.max(M * 0.11, Math.min(M * 0.24, (H2 * 1.04 - ty) / -uy / reach)));   // 今までの大きさ（0.11）より小さくはしない。長い武器は握りが画面の下にはみ出す
+  const size = Math.round(Math.max(M * 0.11, Math.min(M * 0.24, (H2 * 1.04 - ty) / -uy / reach)) * (tv ? tv.scale : 1));   // 今までの大きさ（0.11）より小さくはしない。長い武器は握りが画面の下にはみ出す
   const fade = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
   fxctx.save();
   fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
@@ -2679,11 +2685,15 @@ function drawSwing(now) {
     fxctx.globalAlpha = fade * (gi ? 0.25 / gi : 1);
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     fxctx.translate(px, py); fxctx.rotate(a);
-    for (let i = 0; i < art.length; i++) {
-      const ch = art[i], grip = i < 2 && sw.w !== -1;
-      fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(ch, size * 0.9 + i * step, 0);
-      fxctx.fillStyle = sw.w === -1 ? '#d8b48a' : grip ? '#9a7a58' : '#d6dbe0';
-      fxctx.fillText(ch, size * 0.9 + i * step, 0);
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r], oy = (r - (rows.length - 1) / 2) * size * (tv && tv.gap || 0.55);
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i], grip = i < 3 && sw.w !== -1 && ch === '=';
+        if (ch === ' ') continue;
+        fxctx.lineWidth = 4; fxctx.strokeStyle = '#000'; fxctx.strokeText(ch, size * 0.9 + i * step, oy);
+        fxctx.fillStyle = sw.w === -1 ? '#d8b48a' : grip ? '#9a7a58' : '#d6dbe0';
+        fxctx.fillText(ch, size * 0.9 + i * step, oy);
+      }
     }
   }
   fxctx.restore();
