@@ -142,6 +142,13 @@ def cause(text: str) -> str:
     死因を訳す。死因はスコアファイルに英語のまま保存し、表示するときに訳す
     （"killed by a Hobgoblin" / "starved to death" / "quit" など）。
     """
+    if _lang == 'enja':   # 英語＋日本語: 英語のまま返し、日本語訳を覚える
+        from i18n_ja import JA, NAMES
+        pre = "killed by a "
+        ja = (JA.get("killed by a {name}", "killed by a {name}").format(name=NAMES.get('monster', {}).get(text[len(pre):], text[len(pre):]))
+              if text.startswith(pre) else JA.get(text, text))
+        _remember(text, ja)
+        return text
     if _lang != 'ja':
         return text
     prefix = "killed by a "
