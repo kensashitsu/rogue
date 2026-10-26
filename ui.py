@@ -450,7 +450,7 @@ class UI:
         if col + 2 + text_width(ja) > self._JA_MAX_COL:
             return
         try:
-            self.stdscr.addstr(row, col + 2, ja, self._cp(_CP_SEEN) | curses.A_SMALL)
+            self.stdscr.addstr(row, col + 2, ja, self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
         except curses.error:
             pass
 
@@ -1331,7 +1331,7 @@ class UI:
                     self.stdscr.addstr(row, 0, line, curses.A_BOLD)
                     ja = ja_of(line)
                     if ja:
-                        self.stdscr.addstr(row + 1, 0, ja, self._cp(_CP_SEEN) | curses.A_SMALL)
+                        self.stdscr.addstr(row + 1, 0, ja, self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
                 except curses.error:
                     pass
                 row += 2
