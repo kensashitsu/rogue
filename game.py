@@ -1453,7 +1453,7 @@ class Game:
             m.flags |= ISRUN | ISFOUND
         self.monsters.append(m)
 
-    PEEK_RANGE = 16   # 明るい所が、暗い通路の先から見える遠さ（マス）
+    PEEK_RANGE = 40   # 明るい所が、暗い通路の先から見える遠さ（マス。3D の画面が描ける遠さと同じ。16 では広い部屋の奥が切れて真っ暗だった）
     PEEK_DOOR = 3     # 明るい部屋の扉の口から漏れる光が照らす通路の広さ（マス）
 
     def _send_peek(self, ui: UI) -> None:
