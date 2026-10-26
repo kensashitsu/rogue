@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.6';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.7';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -140,6 +140,17 @@ function ensureGlyphs() {
 // 映した字は印（8192）を付けて画面の升に書き、ゲームが書いた字と区別する
 let typedName = '', caretOn = true;
 setInterval(() => { if (hint === 'name') { caretOn = !caretOn; requestDraw(); } }, 530);
+// タイトル（名前入力）を開いたときは、上の行から一行ずつ出す（昔の遅い端末のように）。言語の切り替えで描き直すときはそのまま出す
+const REVEAL_MS = 70;
+let revealT0 = 0, prevTextHint = '';
+function revealRows(rm) {
+  if (hint !== 'name') return rm;
+  if (prevTextHint !== 'name') revealT0 = performance.now();
+  const n = Math.floor((performance.now() - revealT0) / REVEAL_MS) + 1;
+  if (n >= rm.length) return rm;
+  setTimeout(requestDraw, REVEAL_MS);
+  return rm.slice(0, n);
+}
 function applyTyped() {
   let y = -1;
   for (let r = 0; r < H; r++) if (/Enter your name:|名前を入力/.test(rowText(r))) { y = r; break; }
@@ -228,7 +239,8 @@ function render() {
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (mode === 'text' && hint === 'name') applyTyped();
-  drawCells(mode === 'text' ? rowMap : Array.from({ length: rows }, (_, r) => (mode === 'map' && view === 'follow' ? y0 : 0) + r));
+  drawCells(mode === 'text' ? revealRows(rowMap) : Array.from({ length: rows }, (_, r) => (mode === 'map' && view === 'follow' ? y0 : 0) + r));
+  prevTextHint = mode === 'text' ? hint : '';
   updateMoreHints();
 }
 
