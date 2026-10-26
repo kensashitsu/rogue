@@ -675,14 +675,19 @@ function kindMat(kind) {
           else if (wall == 2.0) lit *= mix(1.0, 0.6 + 0.6 * vnoise(vec3(u, vW.y, 0.0) * 7.0), near);
           else { vec2 st = stones(vec2(u * 3.2, vW.y * 4.2)); lit *= mix(1.0, (st.x < 0.12 ? 0.3 : 0.8 + 0.35 * st.y), near * lt2.y); }   // 石ごとに少し明るさを変える
         }
-        if (kind == 3.0) {   // 通路の岩はごつごつ: 大きな出っ張りと細かいざらつきを重ね、少し奥まで見せる（2026-10-26 に 4 案から選んだ。前の細かいまだらは平らに見えた）
-          float nr = 1.0 - smoothstep(texr * 0.7, texr * 1.8, dd);
-          float n = 0.6 * vnoise(vW * 1.7) + 0.4 * vnoise(vW * 5.3);
-          lit *= mix(1.0, 0.25 + 1.25 * n, lt2.y * nr);
-        }
-        // 床の敷石（lt2.z）: 半マスの石を、列ごとにずらして敷く（見つけていない罠の床も同じに）
-        if (kind == 4.0 || kind == 10.0) {
-          if (fract(vW.z * 2.0) < 0.14 || fract(vW.x * 2.0 + 0.5 * mod(floor(vW.z * 2.0), 2.0)) < 0.12) lit *= 1.0 - 0.85 * lt2.z * near;
+        if (kind == 3.0) {   // 通路の岩はごつごつ: 凸凹で面の向きを揺らし、手元・燭台の明かりの当たり方で岩のこぶを見せる（遠くまで）。
+          // 2026-10-26 に 6 案から選んだ（明暗の模様だけでは、特にパソコンの細かい升目で平らに見えた）
+          float fr = 1.0 - smoothstep(6.0, 14.0, dd);
+          vec3 q = vW * 1.4; float e = 0.12;
+          float h0 = vnoise(q) + 0.5 * vnoise(q * 2.3);
+          float hx = vnoise(q + vec3(e, 0.0, 0.0)) + 0.5 * vnoise((q + vec3(e, 0.0, 0.0)) * 2.3);
+          float hy = vnoise(q + vec3(0.0, e, 0.0)) + 0.5 * vnoise((q + vec3(0.0, e, 0.0)) * 2.3);
+          float hz = vnoise(q + vec3(0.0, 0.0, e)) + 0.5 * vnoise((q + vec3(0.0, 0.0, e)) * 2.3);
+          vec3 g = vec3(hx - h0, hy - h0, hz - h0) / e;
+          vec3 nb = normalize(vN - 0.8 * (g - dot(g, vN) * vN));
+          vec3 tc = toCam / dc;
+          float lb = 0.08 + 0.92 * max(0.0, dot(nb, tc)), l0 = 0.08 + 0.92 * max(0.0, dot(vN, tc));
+          lit *= mix(1.0, clamp(lb / max(l0, 0.05), 0.15, 1.9) * (0.7 + 0.4 * h0), lt2.y * fr);
         }
         lit *= 1.0 - soot * lt2.w;
         lit *= face;
