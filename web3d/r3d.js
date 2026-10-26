@@ -183,7 +183,7 @@ function withPeek(grid) {
     if (ch === ' ') { if (g[y] && !(g[y][x] && g[y][x][0] !== ' ')) peekRock.add(y * W + x); continue; }
     if (g[y] && !(g[y][x] && g[y][x][0] !== ' ')) {
       if (g[y] === grid[y]) g[y] = grid[y].slice();
-      g[y][x] = [ch, 0];
+      g[y][x] = [ch, ch === '#' ? 512 : 0];   // 通路は「覚えている所」と同じ描き方（明るさは手元・燭台・扉から漏れる光で決まる。0 だと光源に関係なく明るく、スポットのように浮いた）
     }
   }
   return g;
@@ -374,7 +374,7 @@ function build(grid) {
         }
         let byRoom = false;
         for (const [dy, dx] of DIRS) if (ch(y + dy, x + dx) === '.' && (dy === 0 || dx === 0)) byRoom = true;
-        if (!byRoom) { const pr = peekRock.has(y * W + x); put(rocks, 'rocks', x, 0.5, y, pr ? 1 : 0.8); solid[y * W + x] = pr ? 1 : 0.5; }   // 照らされて見えている岩は、見えている床と同じ明るさ
+        if (!byRoom) { put(rocks, 'rocks', x, 0.5, y, 0.8); solid[y * W + x] = 0.5; }
         continue;
       }
       if (!walk(c) && c !== '@') continue;
