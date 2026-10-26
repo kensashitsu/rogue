@@ -1868,7 +1868,7 @@ const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true,
   roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5, flame: 3, halo: 0.3 };   // halo: 燭台の周りの光の輪の揺らぎ（広さ ±halo・明るさ ±1.5halo）   // flame: 燭台の炎を部屋の光と同じ揺らぎで動かす（1 明るさ・2 先の伸び縮みと横揺れ・3 芯の膨らみ）   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; WALL_U.value = tune.wall; TEXR_U.value = tune.texr; if (lastGrid) build(lastGrid); draw(); }
-const ROCK_RAMP = ' .,:;';   // 岩の字（暗い→明るい）。. と : だけでは明暗が付かず凹凸が見えず、% まで使うと手前の壁が % で埋まってまぶしかった
+const ROCK_RAMP = ' .,::';   // 岩の字（暗い→明るい）。一番明るい所は : まで（; % まで使うと、すぐ横の岩が詰まった字で埋まってまぶしかった）。凹凸は暗いくぼみで見せる
 function drawTerm() {
   if (!rt) return;
   // 1. 面の種類・明るさ・距離を升目の粗さで描いて読み出す
@@ -1914,7 +1914,7 @@ function drawTerm() {
     } else if (kind === 1 || kind === 2) {
       ch = tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
     } else if (kind === 3) {
-      ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.65;
+      ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
     } else if (kind === 4) { ch = '.'; v = lit * tune.floorV; }
     else if (kind === 5) { ch = '#'; v = lit * tune.passV; }
     else if (kind === 10 || kind === 11) {   // 見つけていない罠の床: 近くでは , に、遠くでは普通の床
