@@ -460,7 +460,7 @@ function build(grid) {
   for (const [y, x, , wallEW, side] of doorCells) {
     if (!litRoom[y * W + x] && !rooms.some(r => !r.dark && y >= r.top && y <= r.bottom && x >= r.left && x <= r.right)) continue;
     const [nx, nz] = wallEW ? [0, side] : [side, 0];
-    lamps.push({ x: x + 0.5 - nx * 0.45, y: 0.45, z: y + 0.5 - nz * 0.45, w: 0.75 });
+    lamps.push({ x: x + 0.5 - nx * 0.45, y: 0.45, z: y + 0.5 - nz * 0.45, w: 0.75, dir: [nx, nz] });   // dir: 部屋の奥の向き（モンスターを照らす光はこちらから来る）
   }
   setLights();
   for (const [name, mesh] of Object.entries(meshes)) {
@@ -546,6 +546,7 @@ const TEXR_U = { value: 2.5 };   // 壁・床の模様が見える距離（こ�
 const LT2_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 燭台の光の色・壁の石組み・床の敷石・燭台の上のすす   // 天井の梁の間隔（マス。0 でなし）
 const TIME_U = { value: 0 }, LTUNE_U = { value: new THREE.Vector4(0, 0, 0, 0) };   // 部屋の光・手元の明かり・揺らぎ・隅の陰
 let lamps = [];   // 明るい部屋の扉の口から漏れる光
+const LIGHT_DIR = [];   // LIGHTS_U と同じ並びで、扉の口の光なら部屋の奥の向き（燭台は null）
 // 燭台の光の強さ（d は燭台からの距離）。シェーダーと drawLines で同じ式
 const sconceLit = d => d < LIGHT_R ? 0.9 * (1 - d / LIGHT_R) ** 2 : 0;
 function setLights() {
@@ -553,7 +554,7 @@ function setLights() {
   const ls = [...sconces.filter(s => !s.dark).map(s => ({ x: s.x, y: 0.62, z: s.z, w: 1 })), ...(tune.doorLight ? lamps : [])]
     .map(l => ({ l, d: Math.hypot(l.x - px - 0.5, l.z - py - 0.5) }));
   ls.sort((a, b) => a.d - b.d);
-  LIGHTS_U.value.forEach((v, i) => { const l = ls[i]?.l; if (l) v.set(l.x, l.y, l.z, l.w); else v.set(0, 0, 0, 0); });
+  LIGHTS_U.value.forEach((v, i) => { const l = ls[i]?.l; if (l) v.set(l.x, l.y, l.z, l.w); else v.set(0, 0, 0, 0); LIGHT_DIR[i] = l?.dir || null; });
   LTUNE_U.value.set(tune.roomLight, tune.hand, tune.flicker, tune.ao);
   LT2_U.value.set(tune.warm, tune.masonry, tune.flag, tune.soot);
 }
@@ -1714,13 +1715,16 @@ function objLight(o, u) {
   const y = Math.floor(u.cell / W), x = u.cell % W;
   const amb = tune.roomLight && rooms.some(r => !r.dark && y > r.top && y < r.bottom && x > r.left && x < r.right) ? 0.08 : 0;
   const ls = [];
-  for (const L of LIGHTS_U.value) {
+  for (let i = 0; i < LIGHTS_U.value.length; i++) {
+    const L = LIGHTS_U.value[i];
     if (!L.w) break;
     _ol.set(L.x - P.x, L.y - P.y, L.z - P.z);
     const d = _ol.length();
     if (d > 7) continue;
     const f = L.w * (1 + 7 * tune.flicker * (0.6 * Math.sin(t * 11.1 + L.x * 3 + L.z * 7) + 0.4 * Math.sin(t * 27 + L.x * 5)));   // 揺れは壁の 7 倍（形は小さく、色の差も出にくいので、同じ揺れでは見えない）
-    const hx = _ol.x / d, hz = _ol.z / d;
+    // 扉の口の光は、口の外に置いた光源ではなく部屋の奥から来る（通路から見ると、口に立つ敵は逆光になる）
+    const dir = LIGHT_DIR[i];
+    const hx = dir ? dir[0] : _ol.x / d, hz = dir ? dir[1] : _ol.z / d;
     ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
   }
   ls.push({ c: 2.3 * handFlick(t) / (1 + tune.torch * o.dist * o.dist), s: 0, fr: 1, warm: 0 });   // 手元の明かり（正面から）
@@ -1730,7 +1734,11 @@ function objLight(o, u) {
 function litCol(hex, L, cx) {
   const n = Math.sqrt(Math.max(0, 1 - cx * cx));
   let e = L.amb, w = 0;   // e: 当たる光の強さ、w: そのうち燭台の分（橙に寄せる）
-  for (const l of L.ls) { const k = Math.max(0, cx * l.s + n * l.fr), q = k * k * l.c * (l.warm ? 3.4 : 1); e += q; if (l.warm) w += q; }
+  for (const l of L.ls) {
+    let k = Math.max(0, cx * l.s + n * l.fr);
+    if (l.fr < 0) k = Math.max(k, -l.fr * Math.abs(cx) ** 3 * 0.8);   // 後ろからの光は輪郭の縁だけを照らす（逆光）
+    const q = k * k * l.c * (l.warm ? 3.4 : 1); e += q; if (l.warm) w += q;
+  }
   // 頭打ちにしない（明るい所でも、炎の揺らぎがいつも色に出る）。光の当たらない側は暗く沈む
   const v = e / (e + 0.5), wv = w / (e + 0.5), sc = 0.14 + 0.95 * v;   // 光の正面でも元の色の 8〜9 割ほど（元の色が明るい赤などでも、揺れが頭打ちにならない）
   const c = parseInt(hex.slice(1), 16), r = c >> 16 & 255, g = c >> 8 & 255, bl = c & 255;
