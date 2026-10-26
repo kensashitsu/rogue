@@ -687,7 +687,7 @@ function kindMat(kind) {
           vec3 nb = normalize(vN - 0.8 * (g - dot(g, vN) * vN));
           vec3 tc = toCam / dc;
           float lb = 0.08 + 0.92 * max(0.0, dot(nb, tc)), l0 = 0.08 + 0.92 * max(0.0, dot(vN, tc));
-          lit *= mix(1.0, clamp(lb / max(l0, 0.05), 0.15, 1.9) * (0.7 + 0.4 * h0), lt2.y * fr);
+          lit *= mix(1.0, min(1.15, clamp(lb / max(l0, 0.05), 0.15, 1.3) * (0.75 + 0.3 * h0)), lt2.y * fr);   // 明るい側は控えめに（1.9 倍まで上げると、こぶが白く飛んで % の塊になった）
         }
         lit *= 1.0 - soot * lt2.w;
         lit *= face;
