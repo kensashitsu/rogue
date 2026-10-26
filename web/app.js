@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.3';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -61,6 +61,13 @@ const L = {
   },
 };
 let lang = 'ja';
+// ゲームの言語（rogue.cfg の lang）: en / ja / enja（英語で遊び、メッセージの下に日本語訳を併記）。画面のボタンは enja でも日本語
+let gameLang = 'ja';
+const jaMap = new Map();   // 英語のメッセージ → 日本語訳（ゲームが msgja で知らせる）
+const msgJa = document.createElement('div'); msgJa.className = 'ja';
+const nextLangLabel = () => gameLang === 'en' ? '日本語' : gameLang === 'ja' ? 'English＋日本語' : 'English';
+// いま出ているメッセージの日本語訳（--More-- などの続きの印は外して引く）
+const jaFor = text => gameLang === 'enja' ? jaMap.get(text.replace(/\s*--More--\s*$/, '').trim()) || '' : '';
 const t = () => L[lang];
 
 // ---------------------------------------------------------------------------
@@ -78,7 +85,7 @@ function saveFile(name, data) {
 }
 const decode = b64 => Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 function readLang(files) {
-  try { lang = JSON.parse(new TextDecoder().decode(decode(files['rogue.cfg']))).lang === 'en' ? 'en' : 'ja'; }
+  try { gameLang = JSON.parse(new TextDecoder().decode(decode(files['rogue.cfg']))).lang; lang = gameLang === 'en' ? 'en' : 'ja'; }
   catch { lang = (navigator.language || '').startsWith('ja') ? 'ja' : 'en'; }
   buildButtons();
 }
@@ -138,9 +145,10 @@ function render() {
   $('zoomSeg').style.visibility = view === 'follow' ? '' : 'hidden';
 
   if (mode === 'map') {
-    const msg = $('msg'), text = rowText(0).trim();
-    if (msg.textContent !== text) {
-      msg.textContent = text; msg.style.fontSize = '';
+    const msg = $('msg'), text = rowText(0).trim(), ja = text ? jaFor(text) : '';
+    if (msg.dataset.text !== text || msg.dataset.ja !== ja) {
+      msg.dataset.text = text; msg.dataset.ja = ja; msgJa.textContent = ja;
+      msg.replaceChildren(text, ...(ja ? [msgJa] : [])); msg.style.fontSize = '';
       for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
         msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする
     }
@@ -412,7 +420,7 @@ function textEntry(c, T, keep) {
   const r = document.createElement('div'); r.className = 'row'; f.append(r);
   const ok = makeKey(T.ok, '↵', r);   // submit にすると tap と既定の送信で 2 回送られる。Enter キーは入力欄 1 つのフォームなので送信される
   tap(ok, () => f.requestSubmit());
-  if (name) tap(makeKey(T.lang, 'Tab', r), () => answer(9));
+  if (name) tap(makeKey(nextLangLabel(), 'Tab', r), () => answer(9));
   else tap(makeKey(T.cancel, 'ESC', r), () => answer(27));
   f.addEventListener('submit', e => {
     e.preventDefault();
@@ -575,7 +583,7 @@ function buildManual(body, text) {
 $('manualBody').addEventListener('scroll', e => { $('manualTop').hidden = e.target.scrollTop < 400; }, { passive: true });
 tap($('manualTop'), () => $('manualBody').scrollTo({ top: 0, behavior: 'smooth' }));
 tap($('manualClose'), () => { $('manual').hidden = true; });
-addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').textContent = ''; requestDraw(); });   // 幅が変わったら詰め直す
+addEventListener('resize', () => { $('status').dataset.text = ''; $('msg').dataset.text = ' '; requestDraw(); });   // 幅が変わったら詰め直す
 
 // ---------------------------------------------------------------------------
 // 起動
@@ -636,6 +644,10 @@ function start() {
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
     else if (d.type === 'missile') animateMissile(d.data);
+    else if (d.type === 'effect' && d.data.type === 'msgja') {   // 英語＋日本語: メッセージの日本語訳
+      if (jaMap.size > 300) jaMap.clear();
+      jaMap.set(d.data.en.trim(), d.data.ja); requestDraw();
+    }
     else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
     else if (d.type === 'exit') {
       const saved = 'rogue.sav' in loadFiles();

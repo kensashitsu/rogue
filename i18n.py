@@ -17,7 +17,7 @@ import json
 import os
 import sys
 
-LANGS = ('en', 'ja')
+LANGS = ('en', 'ja', 'enja')   # enja: 英語で遊び、メッセージの下に日本語訳を併記する（ブラウザ版だけ。英語の勉強用）
 
 _HERE = (os.path.dirname(sys.executable) if getattr(sys, 'frozen', False)
          else os.path.dirname(os.path.abspath(__file__)))
@@ -67,11 +67,37 @@ def is_ja() -> bool:
     return _lang == 'ja'
 
 
+# 英語＋日本語（enja）のとき: 作った英語の文 → その日本語訳。メッセージを出すときに ja_of() で引いて併記する。
+# 差し込む名前（{name} など）も、先に作った英語の名前から日本語の名前を引いて埋める
+_pairs: dict[str, str] = {}
+
+
+def _remember(en: str, ja: str) -> None:
+    if len(_pairs) > 20000:
+        _pairs.clear()
+    _pairs[en] = ja
+
+
+def ja_of(text: str) -> str | None:
+    """英語＋日本語のとき、英語の文の日本語訳（分からなければ None）"""
+    return _pairs.get(text) if _lang == 'enja' else None
+
+
 def tr(template: str, **kw) -> str:
     """文面を現在の言語に訳し、{name} などを埋める。"""
     if _lang == 'ja':
         from i18n_ja import JA
         template = JA.get(template, template)
+    elif _lang == 'enja':
+        from i18n_ja import JA
+        en = template.format(**kw) if kw else template
+        ja_t = JA.get(template, template)
+        kj = {k: (_pairs.get(v, v) if isinstance(v, str) else v) for k, v in kw.items()}
+        try:
+            _remember(en, ja_t.format(**kj) if kj else ja_t)
+        except (KeyError, IndexError, ValueError):
+            pass
+        return en
     return template.format(**kw) if kw else template
 
 
@@ -93,4 +119,7 @@ def name(kind: str, en: str) -> str:
     if _lang == 'ja':
         from i18n_ja import NAMES
         return NAMES.get(kind, {}).get(en, en)
+    if _lang == 'enja':
+        from i18n_ja import NAMES
+        _remember(en, NAMES.get(kind, {}).get(en, en))
     return en

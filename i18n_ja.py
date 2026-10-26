@@ -459,6 +459,7 @@ JA: dict[str, str] = {
     "Do you really want to quit? (y/n) ": "本当にやめる？ (y/n) ",
     "Save and quit? (y/n) ": "セーブして終了する？ (y/n) ",
     "Language: (e)nglish or (j)apanese? ": "表示言語： (e)English / (j)日本語 ",
+    "Language: (e)nglish, (j)apanese or (b)oth? ": "表示言語： (e)English / (j)日本語 / (b)English＋日本語 ",
 
     # ---- 記号の説明 ----
     "The hero (you)": "主人公（あなた）",

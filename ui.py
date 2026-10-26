@@ -16,7 +16,7 @@ import term as curses
 import random
 from typing import TYPE_CHECKING, Optional
 
-from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause
+from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause, ja_of
 from term import text_width, char_width
 from constants import F_SEEN, CH_FLOOR, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
 from items import get_knowledge
@@ -257,6 +257,22 @@ def _fit(s: str, width: int = 79) -> str:
 # UI クラス
 # ===========================================================================
 
+# 名前入力画面の Tab の案内（いまの言語 → 次の言語）。英語＋日本語はブラウザ版だけ（端末は 1 行に併記する余裕がない）
+_LANG_HINT = {
+    'en':   "  Tab: 日本語で遊ぶ",
+    'ja':   "  Tab: 英語と日本語を併記して遊ぶ（English + 日本語）",
+    'enja': "  Tab: Play in English only",
+}
+
+
+def _next_lang(lang: str) -> str:
+    if lang == 'en':
+        return 'ja'
+    if lang == 'ja' and curses.is_web():
+        return 'enja'
+    return 'en'
+
+
 class UI:
     """
     curses ベースのゲーム UI。
@@ -385,6 +401,7 @@ class UI:
                 self.effect(msg[1], **msg[2])
                 continue
             self._last_msg = msg
+            self._send_ja(msg)
             if any(isinstance(m, str) for m in self._msgs):
                 self._raw_message(self._with_more(msg))
                 if self.stdscr:
@@ -421,8 +438,14 @@ class UI:
         except curses.error:
             pass
 
+    def _send_ja(self, msg: str) -> None:
+        """英語＋日本語のとき、メッセージの日本語訳をブラウザ版に知らせる（メッセージの下に併記する。端末では何もしない）"""
+        if get_lang() == 'enja':
+            curses.effect({'type': 'msgja', 'en': msg, 'ja': ja_of(msg) or ''})
+
     def show_message(self, msg: str) -> None:
         """即座に 1 件表示する（キュー経由しない）。"""
+        self._send_ja(msg)
         self._raw_message(msg)
         self._last_msg = msg
 
@@ -1164,7 +1187,7 @@ class UI:
                     row + 2, 0,
                     tr("  (Up to {n} characters  |  Enter to confirm)", n=_MAX_NAME),
                 )
-                self.stdscr.addstr(row + 4, 0, tr("  Tab: 日本語で遊ぶ"))
+                self.stdscr.addstr(row + 4, 0, _LANG_HINT[get_lang()])
             except curses.error:
                 pass
             try:   # 原作の著作権表示（ライセンスの条件。全文は LICENSE.txt と説明書）
@@ -1183,8 +1206,8 @@ class UI:
             ch = self._getch('name')
             if ch in (10, 13):          # Enter
                 break
-            if ch == 9:                 # Tab: 言語切り替え
-                set_lang('ja' if get_lang() == 'en' else 'en')
+            if ch == 9:                 # Tab: 言語切り替え（英語 → 日本語 → 英語＋日本語。英語＋日本語はブラウザ版だけ）
+                set_lang(_next_lang(get_lang()))
                 continue
             if ch in (8, 127, curses.KEY_BACKSPACE):
                 if buf:
@@ -1202,10 +1225,13 @@ class UI:
 
     def choose_language(self) -> bool:
         """'o' コマンド: 表示言語を切り替える。切り替えたら True。"""
-        c = self.prompt_char(tr("Language: (e)nglish or (j)apanese? "), "ej")
+        if curses.is_web():   # ブラウザ版: 英語＋日本語も選べる
+            c = self.prompt_char(tr("Language: (e)nglish, (j)apanese or (b)oth? "), "ejb")
+        else:
+            c = self.prompt_char(tr("Language: (e)nglish or (j)apanese? "), "ej")
         if not c:
             return False
-        set_lang('ja' if c == 'j' else 'en')
+        set_lang({'j': 'ja', 'b': 'enja'}.get(c, 'en'))
         return True
 
     def title_screen(self) -> None:
