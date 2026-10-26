@@ -48,6 +48,7 @@ A_BOLD      = 0x10000
 A_DIM       = 0x20000
 A_REVERSE   = 0x40000
 A_UNDERLINE = 0x80000
+A_SMALL     = 0x100000   # ブラウザ版で一回り小さく描く（英語＋日本語の添え書き）。端末では普通の大きさ
 
 COLOR_BLACK, COLOR_RED, COLOR_GREEN, COLOR_YELLOW = 0, 1, 2, 3
 COLOR_BLUE, COLOR_MAGENTA, COLOR_CYAN, COLOR_WHITE = 4, 5, 6, 7
@@ -236,6 +237,8 @@ def _web_style(attr: int) -> int:
         v |= 1024
     if attr & A_REVERSE:
         v |= 2048
+    if attr & A_SMALL:
+        v |= 16384
     return v
 
 

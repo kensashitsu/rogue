@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.9';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.10';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -298,7 +298,7 @@ function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
       if (s & 2048) [fg, bg] = [bg || DEFAULT_BG, fg || DEFAULT_FG];
       if (bg) { ctx.fillStyle = bg; ctx.fillRect(c * cw, r * ch, cw * w + 0.5, ch + 0.5); }
       if (g === ' ') continue;
-      ctx.font = `${s & 256 ? 700 : 400} ${size}px ${family}`;
+      ctx.font = `${s & 256 ? 700 : 400} ${s & 16384 ? Math.round(size * 0.8) : size}px ${family}`;   // 16384: 英語＋日本語の添え書きは一回り小さく
       ctx.fillStyle = fg || DEFAULT_FG;
       ctx.globalAlpha = s & 512 ? 0.6 : 1;
       // 罫線やブロック（█ ═ ┌ など）は Python では半角 1 マスだが、フォントでは全角幅のことがある。マスの幅に縮めて描く
@@ -369,7 +369,8 @@ function buildButtons() {
   const dp = $('dpad'); dp.textContent = '';
   for (const [k, arrow] of DPAD) {
     const rest = k === '.';
-    const b = makeKey(rest ? T.rest : arrow, rest ? '.' : '', dp, rest ? 'rest' : '');
+    const biR = gameLang === 'enja';   // 英語＋日本語: 休むも英語を大きく、日本語を小さく
+    const b = makeKey(rest ? (biR ? L.en.rest : T.rest) : arrow, rest ? (biR ? L.ja.rest : '.') : '', dp, rest ? 'rest' : '');
     if (rest) restKey = b;
     b.setAttribute('aria-label', rest ? T.rest : k);
     let timer = 0;
@@ -426,8 +427,9 @@ function updateControls() {
   const th = $('tapHint'); th.textContent = T.tapAnywhere; th.classList.toggle('on', hint === 'more' || hint === 'any');
   if (restKey) {   // 十字キーの真ん中: ふだんは「休む」、方向を聞かれている間は「やめる」
     const dir = hint === 'direction';
-    restKey.querySelector('b').textContent = dir ? T.cancel : T.rest;
-    restKey.querySelector('i').textContent = dir ? 'ESC' : '.';
+    const bi = gameLang === 'enja';   // 英語＋日本語: 大きな字を英語、小さな字を日本語に
+    restKey.querySelector('b').textContent = dir ? (bi ? L.en.cancel : T.cancel) : (bi ? L.en.rest : T.rest);
+    restKey.querySelector('i').textContent = dir ? (bi ? L.ja.cancel : 'ESC') : (bi ? L.ja.rest : '.');
   }
   const cmd = hint === 'command';
   $('acts').hidden = !cmd;
