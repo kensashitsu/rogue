@@ -669,26 +669,13 @@ function kindMat(kind) {
         lit *= mix(1.0, ao, lt.w);
         // 壁の石組み（lt2.y）: 4 段の石積み。段ごとに縦の継ぎ目をずらす。遠くでは升目より細かくなるので消していく
         float near = 1.0 - smoothstep(texr * 0.45, texr, dd);
-        if ((kind == 1.0 || kind == 2.0) && side != 0.0 && wall > 0.0) {
+        if ((kind == 1.0 || kind == 2.0 || kind == 3.0) && side != 0.0 && wall > 0.0) {
           float u = side == 1.0 ? vW.z : vW.x, row = floor(vW.y * 4.0);
           if (wall == 1.0) { if (fract(vW.y * 4.0) < 0.2 || fract(u * 2.0 + 0.5 * mod(row, 2.0)) < 0.12) lit *= 1.0 - 0.75 * lt2.y * near; }
           else if (wall == 2.0) lit *= mix(1.0, 0.6 + 0.6 * vnoise(vec3(u, vW.y, 0.0) * 7.0), near);
           else { vec2 st = stones(vec2(u * 3.2, vW.y * 4.2)); lit *= mix(1.0, (st.x < 0.12 ? 0.3 : 0.8 + 0.35 * st.y), near * lt2.y); }   // 石ごとに少し明るさを変える
         }
-        if (kind == 3.0) {   // 通路の岩はごつごつ: 凸凹で面の向きを揺らし、手元・燭台の明かりの当たり方で岩のこぶを見せる（遠くまで）。
-          // 2026-10-26 に 6 案から選んだ（明暗の模様だけでは、特にパソコンの細かい升目で平らに見えた）
-          float fr = 1.0 - smoothstep(6.0, 14.0, dd);
-          vec3 q = vW * 1.4; float e = 0.12;
-          float h0 = vnoise(q) + 0.5 * vnoise(q * 2.3);
-          float hx = vnoise(q + vec3(e, 0.0, 0.0)) + 0.5 * vnoise((q + vec3(e, 0.0, 0.0)) * 2.3);
-          float hy = vnoise(q + vec3(0.0, e, 0.0)) + 0.5 * vnoise((q + vec3(0.0, e, 0.0)) * 2.3);
-          float hz = vnoise(q + vec3(0.0, 0.0, e)) + 0.5 * vnoise((q + vec3(0.0, 0.0, e)) * 2.3);
-          vec3 g = vec3(hx - h0, hy - h0, hz - h0) / e;
-          vec3 nb = normalize(vN - 0.8 * (g - dot(g, vN) * vN));
-          vec3 tc = toCam / dc;
-          float lb = 0.08 + 0.92 * max(0.0, dot(nb, tc)), l0 = 0.08 + 0.92 * max(0.0, dot(vN, tc));
-          lit *= mix(1.0, min(1.15, clamp(lb / max(l0, 0.05), 0.15, 1.3) * (0.75 + 0.3 * h0)), lt2.y * fr);   // 明るい側は控えめに（1.9 倍まで上げると、こぶが白く飛んで % の塊になった）
-        }
+        // 通路の岩（kind 3）も部屋の壁と同じ石積みにする（2026-10-26。トルネコも部屋と通路の壁は同じ。岩の凸凹は字の升目では伝わらなかった）
         lit *= 1.0 - soot * lt2.w;
         lit *= face;
         // 燭台の光の色（lt2.x）: 燭台の光が当たる分だけ暖かい色に。青の下位 6 bit に入れる（上位は面の向き）
@@ -1868,7 +1855,6 @@ const tune = { ramp: ' ...::::', wallV: 1, floorV: 0.45, passV: 0.4, ceil: true,
   roomLight: 1, doorLight: 1, hand: 1, flicker: 0.15, ao: 1, monView: 1, objLight: 1, fadeDark: 1, shadow: 1, ceilDither: 1, beam: 3, warm: 0.35, masonry: 1, flag: 1, soot: 1, bob: 1, warmHue: 1, wall: 3, texr: 2.5, flame: 3, halo: 0.3 };   // halo: 燭台の周りの光の輪の揺らぎ（広さ ±halo・明るさ ±1.5halo）   // flame: 燭台の炎を部屋の光と同じ揺らぎで動かす（1 明るさ・2 先の伸び縮みと横揺れ・3 芯の膨らみ）   // wall・masonry・flag・soot・texr: 壁や床の模様は遠くまで出すとうるさく、無いと物足りないので、手前 texr マスだけに出す（2026-10-23）   // fadeDark: 暗がりでは床・天井の字も消える、shadow: 足元の陰と燭台の影、ceilDither: 天井の点を明るい所だけに、beam: 天井の梁の間隔（2026-10-23 に 3 案から選んだ）、warm: 燭台の光の色（1.0・0.6 の赤橙は赤すぎたので、warmHue の琥珀で 0.35）、masonry: 壁の石組みと岩のざらつき、flag: 床の敷石、soot: 燭台の上のすす、bob: 歩くときの頭の上下   // objLight: モンスター・アイテムにも光の陰影   // monView: モンスターを見る向きで描き分ける
 export function lights() { return LIGHTS_U.value.filter(v => v.w).map(v => [v.x, v.y, v.z, v.w]); }   // 確かめ用: 光源の場所
 export function setTune(o) { Object.assign(tune, o); TORCH_U.value = tune.torch; BEAM_U.value = tune.beam; WALL_U.value = tune.wall; TEXR_U.value = tune.texr; if (lastGrid) build(lastGrid); draw(); }
-const ROCK_RAMP = ' .,::';   // 岩の字（暗い→明るい）。一番明るい所は : まで（; % まで使うと、すぐ横の岩が詰まった字で埋まってまぶしかった）。凹凸は暗いくぼみで見せる
 function drawTerm() {
   if (!rt) return;
   // 1. 面の種類・明るさ・距離を升目の粗さで描いて読み出す
@@ -1911,10 +1897,8 @@ function drawTerm() {
       ch = ln; v = Math.min(1, lineV[y * C + x] * 1.2 + 0.12);
     } else if (kind === 2 && tbuf[i + 3] / 255 * 16 < SECRET_NEAR) {
       ch = (x * 7 + y * 3) % 4 === 0 ? ',' : tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
-    } else if (kind === 1 || kind === 2) {
+    } else if (kind === 1 || kind === 2 || kind === 3) {   // 通路の岩も部屋の壁と同じ字・明るさ
       ch = tune.ramp[Math.min(tune.ramp.length - 1, Math.floor(lit * tune.ramp.length))]; v = lit * tune.wallV;
-    } else if (kind === 3) {
-      ch = ROCK_RAMP[Math.min(ROCK_RAMP.length - 1, Math.floor(lit * ROCK_RAMP.length))]; v = lit * 0.6;
     } else if (kind === 4) { ch = '.'; v = lit * tune.floorV; }
     else if (kind === 5) { ch = '#'; v = lit * tune.passV; }
     else if (kind === 10 || kind === 11) {   // 見つけていない罠の床: 近くでは , に、遠くでは普通の床
