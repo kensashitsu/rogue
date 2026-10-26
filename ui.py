@@ -456,6 +456,16 @@ class UI:
         except curses.error:
             pass
 
+    def _ja_below(self, col: int, en: str, below_col: int) -> str | None:
+        """英語＋日本語のとき、英語の後ろ（col から）には収まらないが次の行（below_col から）なら収まる日本語。
+        未識別の巻物（『フリ・ジャン』と書かれた巻物）など、名前が長い品の訳を一覧の次の行に添えるのに使う"""
+        if get_lang() != 'enja':
+            return None
+        ja = ja_of(en.strip())
+        if not ja or ja == en.strip() or col + 2 + text_width(ja) <= self._JA_MAX_COL:
+            return None
+        return ja if below_col + text_width(ja) <= self._JA_MAX_COL + 4 else None   # 長い 4 音節の巻物（まれ）も省かない
+
     def _send_ja(self, msg: str) -> None:
         """英語＋日本語のとき、メッセージの日本語訳をブラウザ版に知らせる（メッセージの下に併記する。端末では何もしない）"""
         if get_lang() == 'enja':
@@ -949,7 +959,9 @@ class UI:
                 row += 1
 
             # パック内アイテム一覧 (スクロール対応)
+            # 英語＋日本語で訳を次の行に添える品は 2 行使うので、ページに入る数は行で数える（shown）
             visible = items[offset:offset + page_size]
+            shown = 0
             for ch, item in visible:
                 name = getattr(item, 'name', None) or getattr(item, 'ch', '?')
                 flags = getattr(item, 'o_flags', 0)
@@ -960,13 +972,22 @@ class UI:
                     unid = not bool(flags & ISKNOW)
                 else:
                     unid = not get_knowledge().is_known(o_type, getattr(item, 'o_which', 0))
+                below = self._ja_below(6 + text_width(name), name, 6)
+                if below and shown and row + 2 > 21:   # 訳の行まで入らなければ次のページへ
+                    break
                 try:
                     self.stdscr.addstr(row, 0, f"  {ch})  ")
                     self.stdscr.addstr(name, self._cp(_CP_GOLD) if unid else 0)
-                    self._add_ja(row, 6 + text_width(name), name)
+                    if below:
+                        self.stdscr.addstr(row + 1, 6, below, self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
+                    else:
+                        self._add_ja(row, 6 + text_width(name), name)
                 except curses.error:
                     pass
-                row += 1
+                row += 2 if below else 1
+                shown += 1
+                if row >= 21:
+                    break
 
             # スクロールインジケータ（左寄せ。右に置くとスマホ版で一覧の幅が広がり字が小さくなる）
             if offset > 0:
@@ -974,7 +995,7 @@ class UI:
                     self.stdscr.addstr(21, 4, tr("(↑ more)"))
                 except curses.error:
                     pass
-            if offset + page_size < len(items):
+            if offset + shown < len(items):
                 try:
                     self.stdscr.addstr(21, 16, tr("(↓ more)"))
                 except curses.error:
@@ -992,14 +1013,14 @@ class UI:
             if inp == curses.KEY_UP and offset > 0:
                 offset -= 1
                 continue
-            if inp == curses.KEY_DOWN and offset + page_size < len(items):
+            if inp == curses.KEY_DOWN and offset + shown < len(items):
                 offset += 1
                 continue
             if inp == curses.KEY_PPAGE:
                 offset = max(0, offset - page_size)
                 continue
             if inp == curses.KEY_NPAGE:
-                offset = min(max(0, len(items) - page_size), offset + page_size)
+                offset = min(max(0, len(items) - 1), offset + max(1, shown)) if offset + shown < len(items) else offset
                 continue
 
             if display_only:
