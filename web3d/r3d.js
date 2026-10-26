@@ -2146,7 +2146,7 @@ export function effect(d) {
   } else if (d.type === 'throw') {
     fx.toss = { t0: now, w: d.w, ch: d.ch || ')', fired: !!d.fired };
   } else if (d.type === 'swing') {
-    fx.swing = { t0: now, w: d.w in SWING_ART ? d.w : -1, hit: !!d.hit };
+    fx.swing = { t0: now, w: d.w in SWING_ART ? d.w : -1, hit: !!d.hit, y: d.y, x: d.x };
     fx.busyUntil = Math.max(fx.busyUntil, now + 320);   // 敵の反撃は、こちらの刃が届いて止まってから
   } else if (d.type === 'hit') {
     const delay = fx.swing && now - fx.swing.t0 < 60 ? SWING_HIT : 0;   // 振った刃が届いてから当たりを見せる
@@ -2626,19 +2626,34 @@ function swingAngle(sw, k) {
   const k2 = sw.hit ? kh + 0.18 : kh, q = Math.min(1, (k - k2) / (1 - k2));
   return HIT - 4 * (sw.hit ? 1 : 0) + (END - HIT) * (1 - (1 - q) * (1 - q));   // 振り抜く（だんだん遅く）
 }
+// 振る・突く先（殴った相手が映っている所）。画面の幅に関係なく、当たる瞬間に刃先・拳がそこへ届くように手元の位置を決める
+// （以前は手元を画面の右下の角に決めていたので、横長の画面や短い武器では、敵からかなり離れた所で振っているように見えた）
+function swingTarget(sw, W2, H2) {
+  const p = sw.y != null ? project(sw.x + 0.5, 0.45, sw.y + 0.5) : null;
+  const tx = p ? Math.min(W2 * 0.8, Math.max(W2 * 0.2, p.px)) : W2 * 0.5, ty = p ? Math.min(H2 * 0.75, Math.max(H2 * 0.25, p.py)) : H2 * 0.55;
+  return [tx, ty];
+}
 function drawSwing(now) {
   const sw = fx.swing, k = (now - sw.t0) / SWING_MS;
   if (k < 0 || k > 1) return;
-  const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr;
-  const art = SWING_ART[sw.w], size = Math.round(Math.min(W2, H2) * 0.11 * (sw.w === 2 ? 1.5 : 1));
+  const dpr = Math.min(devicePixelRatio || 1, 2), W2 = fxcv.width / dpr, H2 = fxcv.height / dpr, M = Math.min(W2, H2);
+  const art = SWING_ART[sw.w];
+  const [tx, ty] = swingTarget(sw, W2, H2);
+  // 振る武器: 当たる角度（swingAngle の HIT）で刃先が (tx, ty) に来て、握りが画面の下の端に来る大きさにする（短い武器ほど手前に大きく構える）
+  const HITA = -128 * Math.PI / 180, ux = Math.cos(HITA), uy = Math.sin(HITA);
+  const reach = 0.9 + (art.length - 1) * 0.5 + 0.3;   // 握りの外から刃先まで（字の大きさを 1 として）
+  const size = Math.round(Math.max(M * 0.11, Math.min(M * 0.24, (H2 * 1.04 - ty) / -uy / reach)));   // 今までの大きさ（0.11）より小さくはしない。長い武器は握りが画面の下にはみ出す
   const fade = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
   fxctx.save();
   fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
   fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
-  const px = W2 * 0.9, py = H2 * 1.04, step = size * 0.5;   // 字を詰めて、刃が一続きに見えるように
+  const px = tx - ux * reach * size, py = ty - uy * reach * size, step = size * 0.5;   // 字を詰めて、刃が一続きに見えるように
+  // 突く: 右下（目の高さから見下ろした手元）から (tx, ty) へまっすぐ
+  const sx = tx + (H2 * 1.02 - ty) * 0.68, sy = H2 * 1.02;
+  const tsize = Math.round(M * 0.11);
   if (sw.w === -1) {   // 素手: 右下から敵へ突き出して戻す
     const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
-    const x = W2 * (0.82 - 0.3 * q), y = H2 * (1.0 - 0.45 * q), sz = size * (1.6 - 0.5 * q);
+    const x = sx + (tx - sx) * q, y = sy + (ty - sy) * q, sz = tsize * (1.6 - 0.5 * q);
     fxctx.font = `700 ${fpx(sz)}px "BIZ UDGothic", monospace`; fxctx.globalAlpha = fade;
     fxctx.lineWidth = 5; fxctx.strokeStyle = '#000'; fxctx.strokeText(art, x, y);
     fxctx.fillStyle = '#d8b48a'; fxctx.fillText(art, x, y);
@@ -2646,8 +2661,8 @@ function drawSwing(now) {
   }
   if (sw.w === 3 || sw.w === 6 || sw.w === 7 || sw.w === 8) {   // 槍は突く。矢・ダーツ・手裏剣は短いので振らずに、大きく持って突き刺す（手裏剣は回しながら）
     const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
-    const x = W2 * (0.86 - 0.32 * q), y = H2 * (1.02 - 0.47 * q), sz = size * (sw.w === 8 ? 1.15 - 0.2 * q : 1.8 - 0.5 * q);   // 槍は長いので字は大きくしない
-    const a = sw.w === 7 ? k * 14 : Math.atan2(-0.57 * H2, -0.36 * W2), txt = sw.w === 7 ? '*' : art;
+    const x = sx + (tx - sx) * q, y = sy + (ty - sy) * q, sz = tsize * (sw.w === 8 ? 1.15 - 0.2 * q : 1.8 - 0.5 * q);   // 槍は長いので字は大きくしない
+    const a = sw.w === 7 ? k * 14 : Math.atan2(ty - sy, tx - sx), txt = sw.w === 7 ? '*' : art;
     fxctx.globalAlpha = fade;
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
     fxctx.font = `700 ${fpx(sz * (sw.w === 7 ? 1.6 : 1))}px "BIZ UDGothic", monospace`;
