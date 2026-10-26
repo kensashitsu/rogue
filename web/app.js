@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.4';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.5';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -181,6 +181,7 @@ function render() {
     }
     while (rowMap.length && !rowText(rowMap[rowMap.length - 1]).trim()) rowMap.pop();
     cols = Math.min(W, used); rows = Math.max(1, rowMap.length);
+    if (hint === 'name') cols = Math.max(cols, 48);   // 名前入力（タイトル）は幅を決めておく。言語で案内の行の長さが変わると字の大きさが変わった
     // 幅と高さの両方に収める。ただし字が小さくなりすぎるとき（1 マス 6px 未満）は収めずにスクロールさせる。
     // 短い画面で字が大きくなりすぎないよう、地図の「大」（32 桁）より大きくはしない
     cw = Math.min(bw / cols, bh / (rows * RATIO), bw / 32);
