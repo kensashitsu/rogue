@@ -43,6 +43,9 @@ body {
   -webkit-user-select: none; user-select: none;
   -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
 }
+/* キーボードが出ている間（名前の入力など）は、方向の操作盤・状態行・メッセージ欄を畳んで、画面に場所を回す */
+#app.kb .dpad, #app.kb.text #msg, #app.kb.text #status, #app.kb.text #tapHint { display: none; }
+#app.kb #pad { min-height: 0; }
 #app {
   height: 100%; box-sizing: border-box;
   display: grid; gap: 6px;
@@ -236,6 +239,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script src="app.js?v=10-26.7"></script><!-- ?v= は app.js の VERSION と揃える -->
+<script src="app.js?v=10-26.8"></script><!-- ?v= は app.js の VERSION と揃える -->
 </body>
 </html>

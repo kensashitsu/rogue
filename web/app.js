@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.7';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.8';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -38,7 +38,7 @@ const L = {
            ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる']],
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
     next: '次へ', tapAnywhere: 'タップして次へ進む', cancel: 'やめる', ok: '決定', lang: 'English',
-    dir: '方向を選んでください', list: '一覧の行をタップして選びます', listMore: '（↓ で続き）', name: '名前', text: '文字を入力',
+    dir: '方向を選んでください', list: '一覧の行をタップして選びます', listMore: '（↓ で続き）', name: '冒険者', text: '文字を入力',
     char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
@@ -52,7 +52,7 @@ const L = {
            ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual (ja)'], ['S', 'Save & quit'], ['Q', 'Quit']],
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
     next: 'Next', tapAnywhere: 'Tap to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
-    dir: 'Choose a direction', list: 'Tap a line to choose', listMore: ' (↓ for more)', name: 'Name', text: 'Type here',
+    dir: 'Choose a direction', list: 'Tap a line to choose', listMore: ' (↓ for more)', name: 'Adventurer', text: 'Type here',
     char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
@@ -171,11 +171,25 @@ function applyTyped() {
   if (caretOn && x < W) row[x] = ['▌', 8192];
 }
 
+// スマホのキーボードが出ている間は、見えている範囲（visualViewport）に画面を合わせる。
+// 合わせないと、iPhone はページを上へずらして入力欄を見せるので、タイトルの画面が見える範囲の外へ出て真っ黒に見えた（2026-10-26）
+let kbOpen = false;
+function fitViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const open = vv.height < innerHeight * 0.8;
+  app.style.height = open ? vv.height + 'px' : '';
+  app.style.transform = open ? `translateY(${vv.offsetTop}px)` : '';
+  if (open !== kbOpen) { kbOpen = open; app.classList.toggle('kb', open); }
+  requestDraw();
+}
+if (window.visualViewport) { visualViewport.addEventListener('resize', fitViewport); visualViewport.addEventListener('scroll', fitViewport); }
+
 function render() {
   ensureGlyphs();
   mode = isMap() ? 'map' : 'text';
   const land = innerWidth > innerHeight;
-  app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}`;
+  app.className = `${land ? 'landscape' : 'portrait'} ${mode === 'text' ? 'text' : view}${kbOpen ? ' kb' : ''}`;
   box.classList.toggle('text', mode === 'text');
   $('zoomSeg').style.visibility = view === 'follow' ? '' : 'hidden';
 
@@ -215,6 +229,10 @@ function render() {
       rowMap.push(y);
     }
     while (rowMap.length && !rowText(rowMap[rowMap.length - 1]).trim()) rowMap.pop();
+    if (hint === 'name' && kbOpen) {   // キーボードが出ている間は、名前の行から言語の案内までだけ（狭い所でも読める大きさで）
+      const at = rowMap.findIndex(y => /Enter your name:|名前を入力/.test(rowText(y)));
+      if (at >= 0) rowMap = rowMap.slice(at, at + 5);
+    }
     cols = Math.min(W, used); rows = Math.max(1, rowMap.length);
     if (hint === 'name') cols = Math.max(cols, 48);   // 名前入力（タイトル）は幅を決めておく。言語で案内の行の長さが変わると字の大きさが変わった
     // 幅と高さの両方に収める。ただし字が小さくなりすぎるとき（1 マス 6px 未満）は収めずにスクロールさせる。
