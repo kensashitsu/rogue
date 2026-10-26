@@ -162,6 +162,11 @@ def flash() -> None:
     _out.flush()
 
 
+def is_web() -> bool:
+    """ブラウザ版（2D・3D）で遊んでいるか"""
+    return bool(_WEB)
+
+
 def variant() -> str:
     """どの画面で遊んでいるか（ブラウザの 3D 版なら '3d'。それ以外は ''）。タイトルの描き分けに使う。"""
     if _WEB:

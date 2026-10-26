@@ -84,6 +84,7 @@ body {
 /* メッセージ欄はいつも 2 行分の高さ（1 行と 2 行で地図の欄の大きさが変わると、地図がずれて見える）。
    2 行に収まらないときは app.js が字を小さくする */
 #msg { grid-area: msg; box-sizing: border-box; height: calc(2 * 1.45 * 15px + 4px); font-size: 15px; line-height: 1.45; padding: 2px 4px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+#msg .ja { font-size: 0.86em; color: var(--dim); line-height: 1.35; }   /* 英語＋日本語のときの日本語訳 */
 .landscape #msg { height: calc(2 * 1.45 * 13px + 4px); font-size: 13px; }
 /* 「次へ」待ちのときだけ文字を出す。行の高さはいつも取っておく（出し入れで地図がずれないように） */
 #tapHint { grid-area: taphint; height: 16px; margin-top: -4px; padding: 0 4px; font-size: 12px; line-height: 16px; color: var(--accent); white-space: nowrap; overflow: hidden; visibility: hidden; }
@@ -235,6 +236,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script src="app.js?v=10-26.2"></script><!-- ?v= は app.js の VERSION と揃える -->
+<script src="app.js?v=10-26.3"></script><!-- ?v= は app.js の VERSION と揃える -->
 </body>
 </html>
