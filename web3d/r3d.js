@@ -673,7 +673,10 @@ function kindMat(kind) {
           float u = side == 1.0 ? vW.z : vW.x, row = floor(vW.y * 4.0);
           if (wall == 1.0) { if (fract(vW.y * 4.0) < 0.2 || fract(u * 2.0 + 0.5 * mod(row, 2.0)) < 0.12) lit *= 1.0 - 0.75 * lt2.y * near; }
           else if (wall == 2.0) lit *= mix(1.0, 0.6 + 0.6 * vnoise(vec3(u, vW.y, 0.0) * 7.0), near);
-          else { vec2 st = stones(vec2(u * 3.2, vW.y * 4.2)); lit *= mix(1.0, (st.x < 0.12 ? 0.3 : 0.8 + 0.35 * st.y), near * lt2.y); }   // 石ごとに少し明るさを変える
+          else {   // 石ごとに少し明るさを変える。通路の壁（kind 3）は石を大きく、継ぎ目を薄く（両側に迫る狭い通路で、部屋と同じ目地だとうるさかった。2026-10-26 に 4 案から選んだ）
+            float big = kind == 3.0 ? 0.5 : 1.0, seam = kind == 3.0 ? 0.65 : 0.3;
+            vec2 st = stones(vec2(u * 3.2, vW.y * 4.2) * big); lit *= mix(1.0, (st.x < 0.12 ? seam : 0.8 + 0.35 * st.y), near * lt2.y);
+          }
         }
         // 通路の岩（kind 3）も部屋の壁と同じ石積みにする（2026-10-26。トルネコも部屋と通路の壁は同じ。岩の凸凹は字の升目では伝わらなかった）
         lit *= 1.0 - soot * lt2.w;
