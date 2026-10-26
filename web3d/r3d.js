@@ -2648,12 +2648,14 @@ function drawSwing(now) {
   // 振る武器: 当たる角度（swingAngle の HIT）で刃先が (tx, ty) に来て、握りが画面の下の端に来る大きさにする（短い武器ほど手前に大きく構える）
   const HITA = -128 * Math.PI / 180, ux = Math.cos(HITA), uy = Math.sin(HITA);
   const reach = 0.9 + (art.length - 1) * 0.5 + 0.3;   // 握りの外から刃先まで（字の大きさを 1 として）
-  const size = Math.round(Math.max(M * 0.11, Math.min(M * 0.24, (H2 * 1.04 - ty) / -uy / reach)) * (tv ? tv.scale : 1));   // 今までの大きさ（0.11）より小さくはしない。長い武器は握りが画面の下にはみ出す
+  // 刃先は敵の中心より先まで届かせ、刃が敵の体を斜めに貫いて見えるようにする（中心で止めると、刃のほとんどが敵の右下に残り、手前でかざしているように見えた）
+  const OVER = 0.3, toT = reach * (1 - OVER);   // 握りの外から、敵の中心に重なる所まで
+  const size = Math.round(Math.max(M * 0.11, Math.min(M * 0.24, (H2 * 1.04 - ty) / -uy / toT)) * (tv ? tv.scale : 1));   // 今までの大きさ（0.11）より小さくはしない。長い武器は握りが画面の下にはみ出す
   const fade = k > 0.75 ? 1 - (k - 0.75) / 0.25 : 1;
   fxctx.save();
   fxctx.font = `700 ${fpx(size)}px "BIZ UDGothic", monospace`;
   fxctx.textAlign = 'center'; fxctx.textBaseline = 'middle';
-  const px = tx - ux * reach * size, py = ty - uy * reach * size, step = size * 0.5;   // 字を詰めて、刃が一続きに見えるように
+  const px = tx - ux * toT * size, py = ty - uy * toT * size, step = size * 0.5;   // 字を詰めて、刃が一続きに見えるように
   // 突く: 右下（目の高さから見下ろした手元）から (tx, ty) へまっすぐ
   const sx = tx + (H2 * 1.02 - ty) * 0.68, sy = H2 * 1.02;
   const tsize = Math.round(M * 0.11);
@@ -2667,7 +2669,8 @@ function drawSwing(now) {
   }
   if (sw.w === 3 || sw.w === 6 || sw.w === 7 || sw.w === 8) {   // 槍は突く。矢・ダーツ・手裏剣は短いので振らずに、大きく持って突き刺す（手裏剣は回しながら）
     const kh = SWING_HIT / SWING_MS, q = k < kh ? (k / kh) ** 2 : sw.hit && k < kh + 0.15 ? 1 : Math.max(0, 1 - (k - kh - (sw.hit ? 0.15 : 0)) / 0.45);
-    const x = sx + (tx - sx) * q, y = sy + (ty - sy) * q, sz = tsize * (sw.w === 8 ? 1.15 - 0.2 * q : 1.8 - 0.5 * q);   // 槍は長いので字は大きくしない
+    const dl = Math.hypot(tx - sx, ty - sy) || 1, ex = tx + (tx - sx) / dl * M * 0.1, ey = ty + (ty - sy) / dl * M * 0.1;   // 突き抜ける先（敵の中心の少し向こう）
+    const x = sx + (ex - sx) * q, y = sy + (ey - sy) * q, sz = tsize * (sw.w === 8 ? 1.15 - 0.2 * q : 1.8 - 0.5 * q);   // 槍は長いので字は大きくしない
     const a = sw.w === 7 ? k * 14 : Math.atan2(ty - sy, tx - sx), txt = sw.w === 7 ? '*' : art;
     fxctx.globalAlpha = fade;
     fxctx.setTransform(dpr, 0, 0, dpr, 0, 0); fxctx.translate(x, y); fxctx.rotate(a);
