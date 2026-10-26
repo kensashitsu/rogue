@@ -1453,41 +1453,60 @@ class Game:
             m.flags |= ISRUN | ISFOUND
         self.monsters.append(m)
 
-    GLOW_RANGE = 16   # 明るい部屋の扉の口の光が、暗い通路の先に見える遠さ（マス）
+    PEEK_RANGE = 16   # 明るい所が、暗い通路の先から見える遠さ（マス）
+    PEEK_DOOR = 3     # 明るい部屋の扉の口から漏れる光が照らす通路の広さ（マス）
 
-    def _send_door_glows(self, ui: UI) -> None:
-        """3D 版: 明るい部屋の扉の口から自分まで、本当の通路を一直線に見通せるなら、その口を知らせる。
-        知らない通路の奥でも、明るい部屋があれば光がぼんやり見える（現実の見え方に寄せた。ユーザー指定）。
-        見通せるかはゲーム側で調べ、扉の場所と遠さだけを渡す（地図の中身は渡さない）"""
+    def _send_peek(self, ui: UI) -> None:
+        """3D 版: 明るい所（明るい部屋の中と、その扉の口のまわりの通路）のうち、自分から一直線に見通せるマスを知らせる。
+        知らない通路の奥でも明るい部屋が見え、扉の一歩手前から部屋の中がのぞける（現実の見え方に寄せた。ユーザー指定）。
+        3D の画面に映すだけで、ゲームの地図の記憶（5.4 は部屋に入るまで分からない）は変えない"""
         d, p = self.dungeon, self.player
-        glows = []
+        cells = []
         if not p.status.blind:
+            want = {}
             for room in d.rooms:
                 if room.is_gone or room.is_dark or room.is_maze:
                     continue
                 if room.top <= p.y <= room.bottom and room.left <= p.x <= room.right:
-                    continue   # 自分がいる部屋（見えている）
+                    continue   # 自分がいる部屋（もう見えている）
+                if room.bottom < p.y - self.PEEK_RANGE or room.top > p.y + self.PEEK_RANGE \
+                        or room.right < p.x - self.PEEK_RANGE or room.left > p.x + self.PEEK_RANGE:
+                    continue
                 for y in range(room.top, room.bottom + 1):
                     for x in range(room.left, room.right + 1):
-                        if y not in (room.top, room.bottom) and x not in (room.left, room.right):
-                            continue
+                        want[(y, x)] = True
                         t = d.get_tile(y, x)
-                        if t.ch != CH_DOOR or t.flags & F_SECRETDOOR:
-                            continue
-                        dist = max(abs(y - p.y), abs(x - p.x))
-                        if 0 < dist <= self.GLOW_RANGE and self._clear_line(p.y, p.x, y, x):
-                            glows.append([y, x, dist])
-        if glows != getattr(self, '_last_glows', None):
-            self._last_glows = glows
-            ui.effect('doorglow', cells=glows)
+                        if t.ch == CH_DOOR and not t.flags & F_SECRETDOOR:   # 扉の口から漏れる光が照らす通路
+                            for yy in range(y - self.PEEK_DOOR, y + self.PEEK_DOOR + 1):
+                                for xx in range(x - self.PEEK_DOOR, x + self.PEEK_DOOR + 1):
+                                    if 0 <= yy < 24 and 0 <= xx < 80 and d.get_tile(yy, xx).ch == CH_PASSAGE:
+                                        want[(yy, xx)] = True
+            mons = {(m.y, m.x): m for m in self.monsters if m.is_alive}
+            items = {(fi.y, fi.x): fi.item.o_type for fi in self.floor_items}
+            for (y, x) in want:
+                if max(abs(y - p.y), abs(x - p.x)) > self.PEEK_RANGE or (y, x) == (p.y, p.x):
+                    continue
+                if not self._see_through(p.y, p.x, y, x):
+                    continue
+                ch = d.get_tile(y, x).ch or ' '
+                if ch == ' ':
+                    continue
+                m = mons.get((y, x))
+                if m is not None and not (m.flags & ISINVIS and not p.status.can_see_invisible):
+                    ch = m.disguise_ch or m.letter
+                elif (y, x) in items:
+                    ch = items[(y, x)]
+                cells.append([y, x, ch])
+        if cells != getattr(self, '_last_peek', None):
+            self._last_peek = cells
+            ui.effect('peek', cells=cells)
 
-    def _clear_line(self, y0: int, x0: int, y1: int, x1: int) -> bool:
-        """(y0,x0) から (y1,x1) まで、間のマスがすべて通路か扉なら True（一直線に見通せる）"""
+    def _see_through(self, y0: int, x0: int, y1: int, x1: int) -> bool:
+        """(y0,x0) から (y1,x1) まで、間のマスに壁・岩が無ければ True（一直線に見通せる）"""
         n = max(abs(y1 - y0), abs(x1 - x0))
         for i in range(1, n):
-            y = y0 + round((y1 - y0) * i / n)
-            x = x0 + round((x1 - x0) * i / n)
-            if self.dungeon.get_tile(y, x).ch not in (CH_PASSAGE, CH_DOOR):
+            t = self.dungeon.get_tile(y0 + round((y1 - y0) * i / n), x0 + round((x1 - x0) * i / n))
+            if t.ch in ('-', '|', ' ', '') or t.flags & F_SECRETDOOR:
                 return False
         return True
 
@@ -1505,7 +1524,7 @@ class Game:
     def _end_turn(self, ui: UI) -> None:
         """プレイヤーターン終了: 食料消費・状態異常 → モンスター AI。死因を記録する。"""
         self._tell_treasure_room(ui)
-        self._send_door_glows(ui)
+        self._send_peek(ui)
         # 加速中の2回目の行動は同じターン内なので、時間経過の処理もモンスターAIも行わない
         if self._in_extra_turn:
             return
