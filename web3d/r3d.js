@@ -161,7 +161,7 @@ function learnRock(grid, pos) {
   if (lv !== rockLevel) { rockLevel = lv; rock.clear(); seen.clear(); saveSeen(); walked.clear(); changed = true; }
   const pk = pos[0] * W + pos[1];
   if (!walked.has(pk)) { walked.add(pk); saveWalked(); if (tune.corrGap) changed = true; }
-  if (/盲目|Blind/.test(status)) return changed;   // 目が見えないときは隣も見えない
+  if (/盲目|\bBlind\b/.test(status)) return changed;   // 目が見えないときは隣も見えない
   for (const [dy, dx] of DIRS) {
     const y = pos[0] + dy, x = pos[1] + dx, k = y * W + x;
     if (cellAt(grid, y, x)[0] === ' ' && !rock.has(k)) { rock.add(k); changed = true; }
@@ -2273,12 +2273,13 @@ let eye = EYE;
 function watchStatus(grid) {
   const t = (grid[23] || []).filter(Boolean).map(c => c[0]).join('');
   const was = moodActive();
-  mood.halu = /幻覚|Halu/.test(t); mood.conf = /混乱|Conf/.test(t); mood.blind = /盲目|Blind/.test(t);
-  mood.lev = /浮遊|Lev/.test(t); mood.haste = /加速|Haste/.test(t); mood.slow = /減速|Slow/.test(t);
+  // 英語の印は語として探す（\b）。/Lev/ のままだと英語表示の状態行の「Level:2」に当たり、浮遊中と取り違えて視点が上がっていた（2026-10-26）
+  mood.halu = /幻覚|\bHalu\b/.test(t); mood.conf = /混乱|\bConf\b/.test(t); mood.blind = /盲目|\bBlind\b/.test(t);
+  mood.lev = /浮遊|\bLev\b/.test(t); mood.haste = /加速|\bHaste\b/.test(t); mood.slow = /減速|\bSlow\b/.test(t);
   // 凍っている間は状態行に「麻痺」が出る。消えたら（一度も見えないまましばらく経ったときも）霜が割れて落ちる
   if (fx.frost && !fx.frost.thaw) {
     const now = performance.now();
-    if (/麻痺|Para/.test(t)) fx.frost.para = true;
+    if (/麻痺|\bPara\b/.test(t)) fx.frost.para = true;
     else if (fx.frost.para || now - fx.frost.t0 > 1500) { fx.frost.thaw = Math.max(now, fx.frost.t0 + FROST_IN); startFx(); }
   }
   if (blindEl) blindEl.classList.toggle('on', mood.blind);
