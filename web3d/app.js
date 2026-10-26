@@ -8,9 +8,9 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.31';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.32';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-const VERSION = '3d-1.31';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.32';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -507,13 +507,15 @@ function buildButtons() {
   }
 
   const acts = $('acts'); acts.textContent = '';
-  for (const [k, label] of T.acts) {
-    const b = makeKey(label, k === 'more' ? '…' : k, acts);
+  // 英語＋日本語のときは、ボタンの大きな字を英語に、小さな字（ふだんは元のキー）を日本語にする（英語の勉強用）
+  const bi = gameLang === 'enja', jaOf = (list, k) => (L.ja[list].find(a => a[0] === k) || [])[1] || '';
+  for (const [k, label] of bi ? L.en.acts : T.acts) {
+    const b = makeKey(label, bi ? jaOf('acts', k) : k === 'more' ? '…' : k, acts);
     tap(b, () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') answer(k); });
   }
   const mg = $('moreGrid'); mg.textContent = '';
-  for (const [k, label] of T.more) {
-    const b = makeKey(label, ['manual', 'export', 'import'].includes(k) ? '' : k, mg);
+  for (const [k, label] of bi ? L.en.more : T.more) {
+    const b = makeKey(label, bi ? jaOf('more', k) : ['manual', 'export', 'import'].includes(k) ? '' : k, mg);
     tap(b, () => {
       $('more').hidden = true;
       if (k === 'manual') openManual();

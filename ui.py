@@ -438,6 +438,22 @@ class UI:
         except curses.error:
             pass
 
+    _JA_MAX_COL = 54   # 一覧の行に日本語を添えるのは、ここまでに収まるときだけ（長いとスマホで字が小さくなる）
+
+    def _add_ja(self, row: int, col: int, en: str) -> None:
+        """英語＋日本語のとき、英語の語句の後ろに日本語を灰色で添える（持ち物の一覧など）"""
+        if get_lang() != 'enja':
+            return
+        ja = ja_of(en.strip())
+        if not ja or ja == en.strip():
+            return
+        if col + 2 + text_width(ja) > self._JA_MAX_COL:
+            return
+        try:
+            self.stdscr.addstr(row, col + 2, ja, self._cp(_CP_SEEN))
+        except curses.error:
+            pass
+
     def _send_ja(self, msg: str) -> None:
         """英語＋日本語のとき、メッセージの日本語訳をブラウザ版に知らせる（メッセージの下に併記する。端末では何もしない）"""
         if get_lang() == 'enja':
@@ -903,6 +919,7 @@ class UI:
             # タイトル
             try:
                 self.stdscr.addstr(row, 0, f" {title}", curses.A_BOLD)
+                self._add_ja(row, 1 + text_width(title), title)
             except curses.error:
                 pass
             row += 1
@@ -916,6 +933,7 @@ class UI:
             for key, label in equip_slots:
                 try:
                     self.stdscr.addstr(row, 0, f"  {key}) " + label)
+                    self._add_ja(row, 5 + text_width(label), label)
                 except curses.error:
                     pass
                 row += 1
@@ -941,6 +959,7 @@ class UI:
                 try:
                     self.stdscr.addstr(row, 0, f"  {ch})  ")
                     self.stdscr.addstr(name, self._cp(_CP_GOLD) if unid else 0)
+                    self._add_ja(row, 6 + text_width(name), name)
                 except curses.error:
                     pass
                 row += 1
@@ -1303,13 +1322,27 @@ class UI:
             "",
             tr("  Press any key to continue..."),
         ]
-        for i, line in enumerate(lines, 5):
-            if i >= 23:
-                break
-            try:
-                self.stdscr.addstr(i, 0, line, curses.A_BOLD)
-            except curses.error:
-                pass
+        if get_lang() == 'enja':   # 英語＋日本語: 行ごとに日本語訳を下に添える（空行は詰めて 1 行目から）
+            row = 1
+            for line in lines:
+                if not line:
+                    continue
+                try:
+                    self.stdscr.addstr(row, 0, line, curses.A_BOLD)
+                    ja = ja_of(line)
+                    if ja:
+                        self.stdscr.addstr(row + 1, 0, ja, self._cp(_CP_SEEN))
+                except curses.error:
+                    pass
+                row += 2
+        else:
+            for i, line in enumerate(lines, 5):
+                if i >= 23:
+                    break
+                try:
+                    self.stdscr.addstr(i, 0, line, curses.A_BOLD)
+                except curses.error:
+                    pass
         self.stdscr.refresh()
         self._wait_advance()
 

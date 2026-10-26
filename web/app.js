@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.8';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.9';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -404,13 +404,15 @@ function buildButtons() {
   }
 
   const acts = $('acts'); acts.textContent = '';
-  for (const [k, label] of T.acts) {
-    const b = makeKey(label, k === 'more' ? '…' : k, acts);
+  // 英語＋日本語のときは、ボタンの大きな字を英語に、小さな字（ふだんは元のキー）を日本語にする（英語の勉強用）
+  const bi = gameLang === 'enja', jaOf = (list, k) => (L.ja[list].find(a => a[0] === k) || [])[1] || '';
+  for (const [k, label] of bi ? L.en.acts : T.acts) {
+    const b = makeKey(label, bi ? jaOf('acts', k) : k === 'more' ? '…' : k, acts);
     tap(b, () => { if (k === 'more') $('more').hidden = false; else if (hint === 'command') answer(k); });
   }
   const mg = $('moreGrid'); mg.textContent = '';
-  for (const [k, label] of T.more) {
-    const b = makeKey(label, k === 'manual' ? '' : k, mg);
+  for (const [k, label] of bi ? L.en.more : T.more) {
+    const b = makeKey(label, bi ? jaOf('more', k) : k === 'manual' ? '' : k, mg);
     tap(b, () => { $('more').hidden = true; if (k === 'manual') openManual(); else if (hint === 'command') answer(keyCode(k)); });
   }
   $('moreTitle').textContent = T.moreTitle; $('moreClose').textContent = T.close;

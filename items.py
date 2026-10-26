@@ -19,7 +19,7 @@ import re as _re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional, NamedTuple
 
-from i18n import tr, name as tr_name, is_ja, remember, ja_name
+from i18n import tr, name as tr_name, is_ja, remember, ja_name, ja_of
 from constants import (
     # オブジェクトフラグ
     ISCURSED, ISKNOW, ISMISL, ISMANY, OBJ_ISFOUND, ISPROT,
@@ -491,9 +491,11 @@ def _weapon_display_name(item: 'Item') -> str:
         wname = tr_name('weapon', info.name)
         count = tr_name('counter', info.name).format(n=cnt) if cnt > 1 else ""
         return f"{count}{cursed}{bonus.strip()}{'の' if bonus else ''}{wname}"
-    if cnt > 1:
-        return f"{cnt} {cursed}{bonus}{info.name}s"
-    return f"a {cursed}{bonus}{info.name}"
+    en = f"{cnt} {cursed}{bonus}{info.name}s" if cnt > 1 else f"a {cursed}{bonus}{info.name}"
+    # 英語＋日本語のとき、日本語の名前（日本語表示と同じ組み立て）を覚えて、一覧やメッセージの訳に使う
+    count_ja = ja_name('counter', info.name).format(n=cnt) if cnt > 1 else ""
+    remember(en, f"{count_ja}{(ja_of(cursed) or '') if cursed else ''}{bonus.strip()}{'の' if bonus else ''}{ja_name('weapon', info.name)}")
+    return en
 
 
 def _armor_display_name(item: 'Item') -> str:
@@ -504,7 +506,9 @@ def _armor_display_name(item: 'Item') -> str:
         return tr_name('armor', info.name)
     cursed = tr("cursed ") if (item.o_flags & ISCURSED) else ""
     prot   = tr("protected ") if (item.o_flags & ISPROT) else ""
-    return f"{cursed}{prot}{tr_name('armor', info.name)} [{item.o_arm}]"
+    en = f"{cursed}{prot}{tr_name('armor', info.name)} [{item.o_arm}]"
+    remember(en, f"{(ja_of(cursed) or '') if cursed else ''}{(ja_of(prot) or '') if prot else ''}{ja_name('armor', info.name)} [{item.o_arm}]")   # 英語＋日本語のときの訳
+    return en
 
 
 # ===========================================================================
