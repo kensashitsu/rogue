@@ -16,7 +16,7 @@ import term as curses
 import random
 from typing import TYPE_CHECKING, Optional
 
-from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause, ja_of
+from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause, ja_of, cfg_get, cfg_set
 from term import text_width, char_width
 from constants import F_SEEN, CH_FLOOR, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
 from items import get_knowledge
@@ -1159,6 +1159,14 @@ class UI:
 
         _MAX_NAME = 23
         buf: list[str] = []
+        # ブラウザ版: 端末でゲームを起動したように、前回開いた日時（Last login）と「$ rogue」を上に出す。初めてのときは Last login を出さない
+        boot: list[str] = []
+        if curses.is_web():
+            last = cfg_get('last_login')
+            if isinstance(last, str) and last:
+                boot.append(f"Last login: {last} on ttys000")
+            boot.append("$ rogue")
+            cfg_set('last_login', curses.login_time())
 
         try:
             curses.curs_set(1)
@@ -1169,7 +1177,12 @@ class UI:
             self.stdscr.clear()
             # 3D 版はロゴの下に水色の「3D」を添え、ロゴを上に、入力欄を下に寄せる（右に並べるとスマホの幅に収まらない）
             is3d = curses.variant() == '3d'
-            top, row = (1, 14) if is3d else (3, 12)
+            top, row = ((2, 15) if boot else (1, 14)) if is3d else (3, 12)
+            for i, line in enumerate(boot):
+                try:
+                    self.stdscr.addstr(top - len(boot) + i if is3d else i, 0, line, self._cp(_CP_SEEN))
+                except curses.error:
+                    pass
             for i, line in enumerate(_TITLE_BANNER):
                 try:
                     self.stdscr.addstr(i + top, 0, line, self._cp(_CP_PLAYER) | curses.A_BOLD)
