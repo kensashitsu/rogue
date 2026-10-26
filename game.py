@@ -1497,6 +1497,17 @@ class Game:
                 elif (y, x) in items:
                     ch = items[(y, x)]
                 cells.append([y, x, ch])
+            # 照らされた通路の両脇の岩も同じ光で見える（床だけだと宙に浮いた段々に見えた）。' ' は岩として知らせる
+            shown = {(c[0], c[1]) for c in cells}
+            for y, x, ch in list(cells):
+                if ch != CH_PASSAGE:
+                    continue
+                for dy in (-1, 0, 1):
+                    for dx in (-1, 0, 1):
+                        yy, xx = y + dy, x + dx
+                        if (yy, xx) not in shown and 0 <= yy < 24 and 0 <= xx < 80 and (d.get_tile(yy, xx).ch or ' ') == ' ':
+                            shown.add((yy, xx))
+                            cells.append([yy, xx, ' '])
         if cells != getattr(self, '_last_peek', None):
             self._last_peek = cells
             ui.effect('peek', cells=cells)

@@ -173,10 +173,14 @@ function learnRock(grid, pos) {
 // 見通せる明るい所（ゲームが知らせる）: 明るい部屋の中や、その扉の口のまわりの通路は、地図に無くても見通せれば映す（現実の見え方に寄せた）。
 // ゲームの画面の空いたマスにだけ重ね、地図の記憶は変えない
 let peek = [], rawGrid = null;
+const peekRock = new Set();   // 照らされた通路の両脇の岩（ゲームが ' ' で知らせる）。見えている間だけ岩として描く
+const isRock = k => rock.has(k) || peekRock.has(k);
 function withPeek(grid) {
+  peekRock.clear();
   if (!peek.length) return grid;
   const g = grid.slice();
   for (const [y, x, ch] of peek) {
+    if (ch === ' ') { if (g[y] && !(g[y][x] && g[y][x][0] !== ' ')) peekRock.add(y * W + x); continue; }
     if (g[y] && !(g[y][x] && g[y][x][0] !== ' ')) {
       if (g[y] === grid[y]) g[y] = grid[y].slice();
       g[y][x] = [ch, 0];
@@ -324,7 +328,7 @@ function build(grid) {
   // 明るい部屋のマス（壁・扉も含む）
   const litRoom = new Uint8Array(W * 24);
   if (tune.roomLight) for (const r of rooms) if (!r.dark) for (let y = r.top; y <= r.bottom; y++) for (let x = r.left; x <= r.right; x++) litRoom[y * W + x] = 1;
-  const isWall = (y, x) => { const c = ch(y, x); return c === '-' || c === '|' || (c === ' ' && rock.has(y * W + x)); };
+  const isWall = (y, x) => { const c = ch(y, x); return c === '-' || c === '|' || (c === ' ' && isRock(y * W + x)); };
   glyphGroup.clear();
   const solid = new Float32Array(W * 24);   // 壁・岩のマス（値は明るさ）。輪郭線を引くのに使う
   const stairCells = [], doorCells = [];
@@ -349,7 +353,7 @@ function build(grid) {
       if (c === '|') { put(vwalls, 'vwalls', x, 0.5, y, bright); solid[y * W + x] = bright; continue; }
       if (c === ' ') {
         // 何もない所: 隣に立って確かめた岩だけを岩にする（通路の壁）。まだ分からない所や、暗い部屋のまだ見ていない床は闇のまま
-        if (!rock.has(y * W + x)) {
+        if (!isRock(y * W + x)) {
           let ahead = false;
           // まだ分からない 1 マス先: 隣の歩いた床と同じ床・天井を暗く描き、通路なら両脇の岩も暗く延ばす。
           // 闇へうっすら続いて見せるだけで、本当の地形は使わない（行き止まりでも同じに見える）
@@ -360,7 +364,7 @@ function build(grid) {
             put(ceils, 'ceils', x, 1, y, DIM_AHEAD);
             ahead = true;
             for (const [py, px] of [[dx, dy], [-dx, -dy]]) {   // 進む向きの左右
-              if (rock.has((y - dy + py) * W + (x - dx + px)) && ch(y + py, x + px) === ' ' && !rock.has((y + py) * W + (x + px)))
+              if (isRock((y - dy + py) * W + (x - dx + px)) && ch(y + py, x + px) === ' ' && !isRock((y + py) * W + (x + px)))
                 aheadRocks.add((y + py) * W + (x + px));
             }
             break;
@@ -370,7 +374,7 @@ function build(grid) {
         }
         let byRoom = false;
         for (const [dy, dx] of DIRS) if (ch(y + dy, x + dx) === '.' && (dy === 0 || dx === 0)) byRoom = true;
-        if (!byRoom) { put(rocks, 'rocks', x, 0.5, y, 0.8); solid[y * W + x] = 0.5; }
+        if (!byRoom) { const pr = peekRock.has(y * W + x); put(rocks, 'rocks', x, 0.5, y, pr ? 1 : 0.8); solid[y * W + x] = pr ? 1 : 0.5; }   // 照らされて見えている岩は、見えている床と同じ明るさ
         continue;
       }
       if (!walk(c) && c !== '@') continue;
