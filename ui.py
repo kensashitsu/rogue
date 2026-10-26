@@ -413,6 +413,8 @@ class UI:
         """メッセージ行に直接書き込む（フラッシュなし）。"""
         if self.stdscr is None:
             return
+        # 英語＋日本語: 問いかけ（保存して終了しますか？ など）や前の文も、日本語訳を知らせる。続きの印（--More--）は外して引く
+        self._send_ja(msg.split("  " + tr("--More--"))[0].strip())
         attr = self._cp(_CP_MESSAGE)
         try:
             self.stdscr.move(self.MSG_ROW, 0)
@@ -457,7 +459,9 @@ class UI:
     def _send_ja(self, msg: str) -> None:
         """英語＋日本語のとき、メッセージの日本語訳をブラウザ版に知らせる（メッセージの下に併記する。端末では何もしない）"""
         if get_lang() == 'enja':
-            curses.effect({'type': 'msgja', 'en': msg, 'ja': ja_of(msg) or ''})
+            s = msg.strip()   # 問いかけは末尾に空白があり（'Save and quit? (y/n) '）、--More-- を外すと空白が消えるので、両方で引く
+            ja = ja_of(msg) or ja_of(s) or ja_of(s + ' ') or ja_of('  ' + s) or ''
+            curses.effect({'type': 'msgja', 'en': msg, 'ja': ja.strip()})
 
     def show_message(self, msg: str) -> None:
         """即座に 1 件表示する（キュー経由しない）。"""
@@ -1044,6 +1048,7 @@ class UI:
         title_msg = title_msg or tr("You sense the presence of objects.")
         if not floor_items:
             title_msg = tr("You sense no objects nearby.")
+        self._send_ja(title_msg)
         try:
             self.stdscr.addstr(
                 self.MSG_ROW, 0, _fit(self._with_more(title_msg)), curses.A_BOLD,
@@ -1083,6 +1088,7 @@ class UI:
                 )
             except curses.error:
                 pass
+        self._send_ja(tr("You can sense the presence of monsters."))
         try:
             self.stdscr.addstr(
                 self.MSG_ROW, 0,
