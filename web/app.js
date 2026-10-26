@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-26.3';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '10-26.4';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -39,7 +39,7 @@ const L = {
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
     next: '次へ', tapAnywhere: 'タップして次へ進む', cancel: 'やめる', ok: '決定', lang: 'English',
     dir: '方向を選んでください', list: '一覧の行をタップして選びます', listMore: '（↓ で続き）', name: '名前', text: '文字を入力',
-    char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語' },
+    char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
     noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
@@ -53,7 +53,7 @@ const L = {
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
     next: 'Next', tapAnywhere: 'Tap to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
     dir: 'Choose a direction', list: 'Tap a line to choose', listMore: ' (↓ for more)', name: 'Name', text: 'Type here',
-    char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語' },
+    char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
     noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
