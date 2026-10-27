@@ -1723,6 +1723,11 @@ function objLight(o, u) {
   const cl = Math.hypot(cx, cz) || 1; cx /= cl; cz /= cl;   // こちら向き
   const y = Math.floor(u.cell / W), x = u.cell % W;
   const amb = tune.roomLight && rooms.some(r => !r.dark && y > r.top && y < r.bottom && x > r.left && x < r.right) ? 0.08 : 0;
+  // 暗い所（通路など）から明るい部屋の中・扉の口の物を見るときは、部屋の光はみな向こうから来るものとし、影絵にする（縁だけ光る）。
+  // 扉の左右の燭台が横から当たって、背景の部屋より明るく見えていた（2026-10-27 ユーザー判断: 部屋より暗い影に）
+  const [ppy, ppx] = player || [-1, -1];
+  const sil = !rooms.some(r => !r.dark && ppy > r.top && ppy < r.bottom && ppx > r.left && ppx < r.right)
+    && rooms.some(r => !r.dark && y >= r.top && y <= r.bottom && x >= r.left && x <= r.right);
   const ls = [];
   for (let i = 0; i < LIGHTS_U.value.length; i++) {
     const L = LIGHTS_U.value[i];
@@ -1734,7 +1739,7 @@ function objLight(o, u) {
     // 扉の口の光は、口の外に置いた光源ではなく部屋の奥から来る（通路から見ると、口に立つ敵は逆光になる）
     const dir = LIGHT_DIR[i];
     const hx = dir ? dir[0] : _ol.x / d, hz = dir ? dir[1] : _ol.z / d;
-    ls.push({ c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
+    ls.push(sil ? { c: f / (1 + 0.6 * d * d * d), s: 0, fr: -1, warm: 1 } : { c: f / (1 + 0.6 * d * d * d), s: hx * rx + hz * rz, fr: hx * cx + hz * cz, warm: 1 });
   }
   ls.push({ c: 2.3 * handFlick(t) / (1 + tune.torch * o.dist * o.dist), s: 0, fr: 1, warm: 0 });   // 手元の明かり（正面から）
   return { amb, ls };
