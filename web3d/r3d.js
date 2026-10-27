@@ -1555,6 +1555,7 @@ function drawArt(o, u) {
     if (m === ' ') continue;
     if (st && m !== 'e' && wounded(st.hp, r, c)) continue;   // 傷: 欠けた升は描かない（後ろが透ける）
     const x = x0 + c * w, y = y0 + r * h;
+    if (artHidden(x + w / 2, y + h / 2)) continue;
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
     if (m === '.') continue;
     const eye = m === 'e', shut = eye && st && st.sleep;
@@ -1562,7 +1563,7 @@ function drawArt(o, u) {
     tctx.fillStyle = eye && !shut ? '#ffe08a' : u.L ? litCol(base, u.L, (c + 0.5) / cols * 2 - 1) : base;
     tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
-  if (st && st.sleep) drawZzz(x0 + cols * w * 0.75, y0, h);
+  if (st && st.sleep && !artHidden(x0 + cols * w * 0.75, y0)) drawZzz(x0 + cols * w * 0.75, y0, h);
   return true;
 }
 
@@ -1658,6 +1659,10 @@ function drawSconces(C, R, depthOf) {
   }
 }
 
+// 字で編んだ形の升（画面の位置 px, py）が、手前の物（扉の上の横木・壁）に隠れるか。描く物ごとに drawTerm が決める。
+// 形は札 1 枚の重なりでしか隠せないので、背の高い形が扉の向こうにいると頭が横木の手前に出ていた。
+// 目の高さより下は手前の床と見分けられないので、上半分だけで見る
+let artHidden = () => false;
 // 傷ついたモンスターの欠ける升: 体力が半分を切ると、残りが少ないほど多く欠ける（升ごとに決まった順で）
 function wounded(hp, r, c) {
   if (hp >= 0.5) return false;
@@ -1690,6 +1695,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
     if (n < (r1 - r0) * (c1 - c0) * 0.3) continue;
     if (u.st && !(eye && tr >= 3) && wounded(u.st.hp, r, c)) continue;
     const x = (gx0 + c) * tcw, y = (gy0 + r) * tch;
+    if (artHidden(x + tcw / 2, y + tch / 2)) continue;
     if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x, y, tcw, tch); }
     const shut = u.st && u.st.sleep;
     const base = bone * 2 > n ? BONE_COL : ART_COL[u.ch] || u.col || '#c8ccd1';
@@ -1697,7 +1703,7 @@ function drawArtSmall(art, u, h, bottom, cx) {
     tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
     drawn++;
   }
-  if (drawn && u.st && u.st.sleep) {   // 小さいときの z は 1 升だけ
+  if (drawn && u.st && u.st.sleep && !artHidden((gx0 + tc) * tcw + tcw / 2, (gy0 - 1) * tch + tch / 2)) {   // 小さいときの z は 1 升だけ
     tctx.fillStyle = '#6cc6d6'; tctx.fillText('z', (gx0 + tc) * tcw + tcw / 2, (gy0 - 1) * tch + tch / 2);
   }
   return drawn > 0;
@@ -1981,6 +1987,7 @@ function drawTerm() {
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
     const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
     uu.L = objLight(o, uu);
+    artHidden = o.ghost ? () => false : (px, py) => py < R * tch / 2 && depthOf(Math.floor(px / tcw), Math.floor(py / tch)) < o.dist - 0.3;
     const amu = u.ch === ',' && !u.flying;   // イェンダーの魔除け: ほかの物と違って輝いて見える
     if (u.flying) o.size = Math.min(o.size, R * tch * 0.14);   // 飛んでいる物は字 1 つで、手元でも大きくなりすぎないように
     else if (drawArt(o, uu)) { if (amu) amuletGlow(o, performance.now()); continue; }
