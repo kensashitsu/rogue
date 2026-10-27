@@ -417,7 +417,10 @@ function build(grid) {
         put(floors, 'floors', x, 0, y, bright);
         const wallEW = '-|'.includes(ch(y, x - 1)) || '-|'.includes(ch(y, x + 1));   // 壁が東西に続く（通り抜けは南北）
         const out = (c2) => c2 === '#' || c2 === ' ';   // 部屋の外（通路・闇）
-        const side = wallEW ? (out(ch(y + 1, x)) ? -1 : 1) : (out(ch(y, x + 1)) ? -1 : 1);   // 部屋のある側
+        // 部屋のある側。部屋の範囲で決める（隣の字で決めると、通路側に @ や敵が立ったとき逆になり、扉の口の光が手前から当たった）
+        const [ay, ax] = wallEW ? [y + 1, x] : [y, x + 1], [by, bx] = wallEW ? [y - 1, x] : [y, x - 1];
+        const ra = inRoom[ay * W + ax], rb = inRoom[by * W + bx];
+        const side = ra !== rb ? (ra ? 1 : -1) : out(ch(ay, ax)) || '.' === ch(by, bx) ? -1 : 1;
         doorCells.push([y, x, bright, wallEW, side]);
         const [ux, uz] = wallEW ? [1, 0] : [0, 1];   // 戸口の幅の向き
         const [nx, nz] = wallEW ? [0, side] : [side, 0];   // 部屋へ向かう向き
