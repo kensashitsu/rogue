@@ -89,6 +89,9 @@ export function init(canvas) {
   ({ hwalls, vwalls, rocks, floors, dirts, doors, ceils } = meshes);
   scene.add(glyphGroup);
   resize();
+  // 触ったら炎の揺らぎを再び動かす（止まっていれば描き直して再開）
+  const wake = () => { const idle = !flickTimer; activeAt = performance.now(); if (idle) draw(); };
+  for (const ev of ['pointerdown', 'touchstart', 'keydown']) addEventListener(ev, wake, { capture: true, passive: true });
 }
 
 export function resize() {
@@ -189,6 +192,7 @@ function withPeek(grid) {
   return g;
 }
 export function update(grid, pos) {
+  activeAt = performance.now();
   if (!renderer) return;
   rawGrid = grid;
   grid = withPeek(grid);
@@ -2740,12 +2744,16 @@ function drawFx(now) {
 }
 
 let flickTimer = 0;
+// 操作が止まって FLICK_IDLE_MS たったら炎の揺らぎ（110ms ごとの描き直し）を止める。
+// 放っておくと 1 秒に約 9 回、3D を描いて読み出し続け、スマホの電池を食っていた（2026-10-27）
+const FLICK_IDLE_MS = 5000;
+let activeAt = 0;
 function draw() {
   if (!renderer || !cam) return;
   const now = performance.now();
   TIME_U.value = now / 1000;
   // 炎の揺らぎ: 止まっていても少しずつ描き直す
-  if (tune.flicker && !flickTimer && !document.hidden) {
+  if (tune.flicker && !flickTimer && !document.hidden && now - activeAt < FLICK_IDLE_MS) {
     flickTimer = setTimeout(() => { flickTimer = 0; draw(); }, 110);   // 手元の明かりはいつも揺れる
   }
   // 自分のマスの少し後ろから見る（真ん中からだと両脇の壁しか見えず窮屈）
