@@ -1663,6 +1663,7 @@ function drawSconces(C, R, depthOf) {
 // 形は札 1 枚の重なりでしか隠せないので、背の高い形が扉の向こうにいると頭が横木の手前に出ていた。
 // 目の高さより下は手前の床と見分けられないので、上半分だけで見る
 let artHidden = () => false;
+const _ah = new THREE.Vector3();
 // 傷ついたモンスターの欠ける升: 体力が半分を切ると、残りが少ないほど多く欠ける（升ごとに決まった順で）
 function wounded(hp, r, c) {
   if (hp >= 0.5) return false;
@@ -1992,7 +1993,19 @@ function drawTerm() {
     const st = u.cell != null && u.ch >= 'A' && u.ch <= 'Z' ? monState.get(u.cell) : null;
     const uu = { ...u, st, ghost: o.ghost, ...(u.flash ? { col: '#ffffff' } : {}) };
     uu.L = objLight(o, uu);
-    artHidden = o.ghost ? () => false : (px, py) => py < R * tch / 2 && depthOf(Math.floor(px / tcw), Math.floor(py / tch)) < o.dist - 0.3;
+    artHidden = o.ghost ? () => false : (px, py) => {
+      // 天井（高さ 1）では隠さない。形は天井より少し背が高いことがあり、部屋の中で頭が天井に切られていた（2026-10-27）。
+      // その代わり、升の真下から目の高さまでに手前の横木・壁があれば隠す（扉の向こうの頭は、横木の上の天井越しにも見えない）。
+      // 手前の物の高さは、その升の奥行きから戻して求める
+      const gx = Math.floor(px / tcw), hor = R / 2, tanH = Math.tan(camera.fov * Math.PI / 360);
+      for (let gy = Math.floor(py / tch); gy < hor; gy++) {
+        const d = depthOf(gx, gy);
+        if (d >= o.dist - 0.3) continue;
+        _ah.set(((gx + 0.5) / C * 2 - 1) * d * tanH * camera.aspect, (1 - (gy + 0.5) / R * 2) * d * tanH, -d).applyMatrix4(camera.matrixWorld);
+        if (_ah.y < 0.95) return true;
+      }
+      return false;
+    };
     const amu = u.ch === ',' && !u.flying;   // イェンダーの魔除け: ほかの物と違って輝いて見える
     if (u.flying) o.size = Math.min(o.size, R * tch * 0.14);   // 飛んでいる物は字 1 つで、手元でも大きくなりすぎないように
     else if (drawArt(o, uu)) { if (amu) amuletGlow(o, performance.now()); continue; }
