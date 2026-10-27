@@ -2748,9 +2748,18 @@ let flickTimer = 0;
 // 放っておくと 1 秒に約 9 回、3D を描いて読み出し続け、スマホの電池を食っていた（2026-10-27）
 const FLICK_IDLE_MS = 5000;
 let activeAt = 0;
+// 描き直しは 1 秒に FPS 回まで（歩く・演出の動きは毎フレーム draw を呼ぶが、間引く）。
+// 毎回 3D を描いて読み出すので重く、60 回では電池を食う（2026-10-27）。URL に ?fps=60 を付けると前の動きで見比べられる
+const FPS = +new URLSearchParams(location.search).get('fps') || 30;
+let drawnAt = -1e9, drawLater = false;
 function draw() {
   if (!renderer || !cam) return;
   const now = performance.now();
+  if (now - drawnAt < 1000 / FPS - 4) {   // まだ早い: 次のフレームで描く（動きの最後の形を描き漏らさないように）
+    if (!drawLater) { drawLater = true; requestAnimationFrame(() => { drawLater = false; draw(); }); }
+    return;
+  }
+  drawnAt = now;
   TIME_U.value = now / 1000;
   // 炎の揺らぎ: 止まっていても少しずつ描き直す
   if (tune.flicker && !flickTimer && !document.hidden && now - activeAt < FLICK_IDLE_MS) {
