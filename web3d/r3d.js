@@ -1487,16 +1487,37 @@ function artFor(o, u) {
 }
 // 形ごとの大きさ・色の手直し（食料は升が少ないぶん大きく描かれるので小さめに。色は肉の赤茶、骨は白っぽく）
 const ART_SCALE = { ':': 0.8 }, ART_COL = { ':': '#c0653c' }, BONE_COL = '#e8e0cc';
+// 細長いアイテム（武器・杖）の札は、置いた場所ごとに決まった向きを持つ（2026-11-04 ユーザーが 3 案から選択）。
+// 札の面と見る向きの角度で、字の間だけを詰める（字の大きさはそのまま。端から見ると縦一列の細い棒）。裏から見ると形も字も左右が逆
+const TURN_ITEMS = new Set([')', '/']);
+function itemTurn(o, u) {
+  if (!TURN_ITEMS.has(u.ch) || u.cell == null || u.flying) return null;
+  const a = (Math.imul(u.cell + 1, 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
+  let cx = camera.position.x - o.sp.position.x, cz = camera.position.z - o.sp.position.z;
+  const l = Math.hypot(cx, cz) || 1;
+  const c = (Math.cos(a) * cx + Math.sin(a) * cz) / l;
+  return { k: Math.max(0.12, Math.abs(c)), flip: c < 0 };
+}
 // 形で描けたら true（近くて、1 升が画面の升の 0.75 倍以上になるとき）
 function drawArt(o, u) {
-  const art = artFor(o, u);
+  let art = artFor(o, u);
   if (!art) return false;
+  const turn = itemTurn(o, u);
+  if (turn && turn.flip) art = mirror(art);
   const rows = art.length, cols = art[0].length;
   // 形の 1 升の高さ（9 行までの形は同じ背丈に伸ばす。ただし画面の 9 割まで）
   const h = Math.min(o.size * 1.026 / Math.min(rows, 9), trows * tch * 0.9 / rows) * (ART_SCALE[u.ch] || 1);   // 9 行の形で頭が約 0.95（天井は 1）。10 行以上の形は天井を越えるので 9 行に描き直す
   const bottom = o.py + o.size / 2.3;   // 足元を床にそろえる（札の下の端 = 中心から札の高さの半分下）
-  if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px);
-  const w = h / 2, x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
+  if (h < tch * 0.75) return drawArtSmall(art, u, h, bottom, o.px, turn);
+  const gw = h / 2, w = gw * (turn ? turn.k : 1), x0 = o.px - cols * w / 2, y0 = bottom - rows * h;
+  if (turn && !u.ghost) {   // 字が重なるので、後ろを消すのは先にまとめて（字ごとに消すと前の字が欠ける）
+    tctx.fillStyle = '#000';
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (art[r][c] === ' ') continue;
+      const x = x0 + c * w, y = y0 + r * h;
+      if (!artHidden(x + w / 2, y + h / 2)) tctx.fillRect(x + w / 2 - gw / 2 - 0.5, y, gw + 1, h);
+    }
+  }
   const st = u.st;
   tctx.font = `700 ${fpx(h)}px "BIZ UDGothic", monospace`;
   for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
@@ -1505,12 +1526,13 @@ function drawArt(o, u) {
     if (st && m !== 'e' && wounded(st.hp, r, c)) continue;   // 傷: 欠けた升は描かない（後ろが透ける）
     const x = x0 + c * w, y = y0 + r * h;
     if (artHidden(x + w / 2, y + h / 2)) continue;
-    if (!u.ghost) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
+    if (!u.ghost && !turn) { tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, w + 1, h); }   // 後ろの壁の字を消す（壁越しの透けた形は消さない）
     if (m === '.') continue;
     const eye = m === 'e', shut = eye && st && st.sleep;
     const base = m === 'b' ? BONE_COL : ART_COL[u.ch] || u.col || '#c8ccd1';
     tctx.fillStyle = eye && !shut ? '#ffe08a' : u.L ? litCol(base, u.L, (c + 0.5) / cols * 2 - 1) : base;
-    tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
+    if (turn && turn.flip && !eye) { tctx.save(); tctx.translate(x + w / 2, 0); tctx.scale(-1, 1); tctx.fillText(u.ch, 0, y + h / 2 + h * 0.04); tctx.restore(); }
+    else tctx.fillText(shut ? '-' : eye ? '*' : u.ch, x + w / 2, y + h / 2 + h * 0.04);
   }
   if (st && st.sleep && !artHidden(x0 + cols * w * 0.75, y0)) drawZzz(x0 + cols * w * 0.75, y0, h);
   return true;
@@ -1630,9 +1652,9 @@ function drawZzz(x, y, h) {
 
 // 遠くて形の 1 升が画面の升より小さいとき: 形を画面の升目の粗さに縮めて、升目にそろえて描く。
 // 縮めた 1 升に当たる範囲の 3 割以上が埋まっていれば字を置く（細い所が消えないように、少なくとも 1 升は残す）
-function drawArtSmall(art, u, h, bottom, cx) {
+function drawArtSmall(art, u, h, bottom, cx, turn) {
   const rows = art.length, cols = art[0].length;
-  const tr = Math.max(1, Math.round(rows * h / tch)), tc = Math.max(1, Math.round(cols * h / 2 / tcw));
+  const tr = Math.max(1, Math.round(rows * h / tch)), tc = Math.max(1, Math.round(cols * h / 2 * (turn ? turn.k : 1) / tcw));
   if (tr * tc <= 1) return false;   // 1 升にしかならないなら 1 文字で
   const gx0 = Math.round(cx / tcw - tc / 2), gy0 = Math.round(bottom / tch - tr);
   tctx.font = `700 ${fpx(tch * 0.94)}px "BIZ UDGothic", monospace`;
@@ -1650,7 +1672,8 @@ function drawArtSmall(art, u, h, bottom, cx) {
     const shut = u.st && u.st.sleep;
     const base = bone * 2 > n ? BONE_COL : ART_COL[u.ch] || u.col || '#c8ccd1';
     tctx.fillStyle = eye && tr >= 3 && !shut ? '#ffe08a' : u.L ? litCol(base, u.L, (c + 0.5) / tc * 2 - 1) : base;
-    tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
+    if (turn && turn.flip && !(eye && tr >= 3)) { tctx.save(); tctx.translate(x + tcw / 2, 0); tctx.scale(-1, 1); tctx.fillText(u.ch, 0, y + tch / 2 + tch * 0.04); tctx.restore(); }
+    else tctx.fillText(eye && tr >= 3 ? (shut ? '-' : '*') : u.ch, x + tcw / 2, y + tch / 2 + tch * 0.04);
     drawn++;
   }
   if (drawn && u.st && u.st.sleep && !artHidden((gx0 + tc) * tcw + tcw / 2, (gy0 - 1) * tch + tch / 2)) {   // 小さいときの z は 1 升だけ
