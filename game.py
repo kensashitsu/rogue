@@ -220,7 +220,7 @@ class Game:
     # -------------------------------------------------------------------------
 
     def _load_floor(self) -> None:
-        self.dungeon = new_level(self.floor)
+        self.dungeon = new_level(self.floor, has_amulet=self.player.has_amulet)
         self.player.y     = self.dungeon.player_start.y
         self.player.x     = self.dungeon.player_start.x
         self.player.floor = self.floor

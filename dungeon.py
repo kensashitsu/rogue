@@ -153,8 +153,9 @@ class Dungeon:
       player_start  : Coord             ── プレイヤー初期位置
     """
 
-    def __init__(self, floor_level: int, seed: int | None = None) -> None:
+    def __init__(self, floor_level: int, seed: int | None = None, has_amulet: bool = False) -> None:
         self.floor_level = floor_level
+        self.has_amulet = has_amulet   # 魔除けを持っていれば、深い階にもう置かない（5.4 new_level: level >= AMULETLEVEL && !amulet）
         self.rng = random.Random(seed)
 
         # タイルマップ初期化
@@ -227,7 +228,7 @@ class Dungeon:
         self._place_stairs()
         self._place_gold()
         self._place_items()
-        if self.floor_level >= AMULETLEVEL:
+        if self.floor_level >= AMULETLEVEL and not self.has_amulet:
             self._place_amulet()
         self._place_monsters()
         self._place_treasure_room()
@@ -875,9 +876,9 @@ class Dungeon:
 # 公開ファクトリ関数
 # ===========================================================================
 
-def new_level(floor_level: int, seed: int | None = None) -> Dungeon:
+def new_level(floor_level: int, seed: int | None = None, has_amulet: bool = False) -> Dungeon:
     """指定フロアレベルのダンジョンを生成して返す。"""
-    return Dungeon(floor_level, seed)
+    return Dungeon(floor_level, seed, has_amulet)
 
 
 # ===========================================================================
