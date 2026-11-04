@@ -8,9 +8,9 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.47';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.48';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-const VERSION = '3d-1.47';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.48';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -226,11 +226,14 @@ function render() {
       const prev = msg.dataset.text || '', same = msg.dataset.text === text;
       msg.dataset.text = text; msg.dataset.ja = ja; msgJa.textContent = ja;
       msg.replaceChildren(text + (text ? '▌' : ''), ...(ja ? [msgJa] : [])); msg.style.fontSize = '';
-      const mbox = $('msgBox');
-      const fmin = parseFloat(getComputedStyle(msg).fontSize) - 1;   // 字は 1px までしか縮めない（小さいと読みにくい）
-      for (let fs = fmin + 1; msg.offsetHeight > mbox.clientHeight + 1 && fs > fmin; fs -= 1)
+      // 収まったかは、はみ出しが 1 行の半分を超えるかで見る。iPhone では英語・日本語・▌ で書体が混ざると行が数 px 高くなり、
+      // 2 行で足りる短い文（You feel hungry. と訳）まで「収まらない」とされて、いつも画面に重なっていた（2026-11-04）
+      const mbox = $('msgBox'), fs0 = parseFloat(getComputedStyle(msg).fontSize);
+      const over = () => msg.offsetHeight > mbox.clientHeight + parseFloat(getComputedStyle(msg).lineHeight) * 0.5;
+      for (let fs = fs0; over() && fs > fs0 - 1; fs -= 1)   // 字は 1px までしか縮めない（小さいと読みにくい）
         msg.style.fontSize = fs - 1 + 'px';
-      msg.classList.toggle('over', msg.offsetHeight > mbox.clientHeight + 1);   // それでも収まらなければ、上へ伸ばして画面に重ねる
+      msg.classList.toggle('over', over());
+      if (typeof debug === 'function') debug(`msg h=${msg.offsetHeight} box=${mbox.clientHeight} lh=${getComputedStyle(msg).lineHeight} over=${msg.classList.contains('over')}`);   // それでも収まらなければ、上へ伸ばして画面に重ねる
       typeMsg(text, same ? text.length : text.startsWith(prev) ? prev.length : 0);   // 続きが足されたときは足された所だけ打つ。訳だけ届いたときは打ち直さない
     }
     const st = $('status'), stText = rowText(H - 1).trim();
