@@ -8,9 +8,9 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.46';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.47';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-const VERSION = '3d-1.46';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.47';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -226,8 +226,11 @@ function render() {
       const prev = msg.dataset.text || '', same = msg.dataset.text === text;
       msg.dataset.text = text; msg.dataset.ja = ja; msgJa.textContent = ja;
       msg.replaceChildren(text + (text ? '▌' : ''), ...(ja ? [msgJa] : [])); msg.style.fontSize = '';
-      for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
-        msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする（日本語訳を併記するときは訳も含めて）
+      const mbox = $('msgBox');
+      const fmin = parseFloat(getComputedStyle(msg).fontSize) - 1;   // 字は 1px までしか縮めない（小さいと読みにくい）
+      for (let fs = fmin + 1; msg.offsetHeight > mbox.clientHeight + 1 && fs > fmin; fs -= 1)
+        msg.style.fontSize = fs - 1 + 'px';
+      msg.classList.toggle('over', msg.offsetHeight > mbox.clientHeight + 1);   // それでも収まらなければ、上へ伸ばして画面に重ねる
       typeMsg(text, same ? text.length : text.startsWith(prev) ? prev.length : 0);   // 続きが足されたときは足された所だけ打つ。訳だけ届いたときは打ち直さない
     }
     const st = $('status'), stText = rowText(H - 1).trim();
@@ -643,11 +646,12 @@ cv.addEventListener('click', e => {
     pageList(down < 0 || up >= 0 && Math.abs(col - up) < Math.abs(col - down) ? -1 : 1);
     return;
   }
-  const m = line.match(/^\s*(\S)\)/);
+  let m = line.match(/^\s*(\S)\)/), r = Math.floor(e.offsetY / ch), n = 1;
+  // 英語＋日本語の一覧では、品の訳が次の行にある。訳の行を押したら上の品を選ぶ
+  if (!m && line.trim() && r > 0 && (m = rowText(rowMap[r - 1]).match(/^\s*(\S)\)/))) { r--; n = 2; }
   if (!m || !valid.includes(m[1]) || !waiting) return;
   // 押した行を一瞬光らせてから答える（どれを選んだか目で分かるように）
-  const r = Math.floor(e.offsetY / ch);
-  ctx.fillStyle = 'rgba(240,198,82,0.28)'; ctx.fillRect(0, r * ch, cols * cw, ch);
+  ctx.fillStyle = 'rgba(240,198,82,0.28)'; ctx.fillRect(0, r * ch, cols * cw, ch * n);
   waiting = false;
   setTimeout(() => send(m[1]), 110);
 });
