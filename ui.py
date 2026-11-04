@@ -16,7 +16,7 @@ import term as curses
 import random
 from typing import TYPE_CHECKING, Optional
 
-from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause, ja_of, cfg_get, cfg_set
+from i18n import tr, name as tr_name, get_lang, set_lang, cause as tr_cause, ja_of, cfg_get, cfg_set, lang_as
 from term import text_width, char_width
 from constants import F_SEEN, CH_FLOOR, CH_DOOR, LAMPDIST, ISINVIS, ISKNOW, CH_FOOD, CH_GOLD, CH_AMULET, CH_WEAPON, CH_ARMOR
 from items import get_knowledge
@@ -457,14 +457,48 @@ class UI:
             pass
 
     def _ja_below(self, col: int, en: str, below_col: int) -> str | None:
-        """英語＋日本語のとき、英語の後ろ（col から）には収まらないが次の行（below_col から）なら収まる日本語。
-        未識別の巻物（『フリ・ジャン』と書かれた巻物）など、名前が長い品の訳を一覧の次の行に添えるのに使う"""
+        """英語＋日本語のとき、一覧の次の行（below_col から）に添える日本語。
+        英語の後ろに添えると行が長くなり、スマホで画面に収めるために字が小さくなるので、いつも次の行に置く（2026-11-04）"""
         if get_lang() != 'enja':
             return None
         ja = ja_of(en.strip())
-        if not ja or ja == en.strip() or col + 2 + text_width(ja) <= self._JA_MAX_COL:
+        if not ja or ja == en.strip():
             return None
         return ja if below_col + text_width(ja) <= self._JA_MAX_COL + 4 else None   # 長い 4 音節の巻物（まれ）も省かない
+
+    def _lines_ja(self, lines: list[str], attr: int = 0, wait=None) -> bool:
+        """英語＋日本語のとき、行ごとに日本語訳を下に添えて表示する（訳のない行・空行は 1 行だけ）。
+        23 行に入らなければページを分けて、ページごとにキーを待つ。最後のページの待ちは呼び出し側。英語＋日本語でなければ False"""
+        if get_lang() != 'enja':
+            return False
+        wait = wait or self._wait_advance
+        row = 0
+        self.stdscr.clear()
+        for i, line in enumerate(lines):
+            ja = ja_of(line) or ja_of(line.strip())
+            ja = ja if ja and ja.strip() != line.strip() else None
+            need = 2 if ja else 1
+            if row + need > 22 and any(l.strip() for l in lines[i:]):   # 次のページへ
+                try:
+                    self.stdscr.addstr(23, 0, tr(" Press any key..."), curses.A_DIM)
+                except curses.error:
+                    pass
+                self.stdscr.refresh()
+                wait()
+                self.stdscr.clear()
+                row = 0
+            if not line.strip() and row == 0:
+                continue
+            try:
+                self.stdscr.addstr(row, 0, _fit(line).rstrip(), attr)
+                if ja:
+                    indent = len(line) - len(line.lstrip(' '))
+                    self.stdscr.addstr(row + 1, indent, _fit(ja.strip(), 79 - indent).rstrip(), self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
+            except curses.error:
+                pass
+            row += need
+        self.stdscr.refresh()
+        return True
 
     def _send_ja(self, msg: str) -> None:
         """英語＋日本語のとき、メッセージの日本語訳をブラウザ版に知らせる（メッセージの下に併記する。端末では何もしない）"""
@@ -828,7 +862,9 @@ class UI:
         """Row 23 にステータスバーを描画する。"""
         if self.stdscr is None:
             return
-        line = _fit(player.status_line(), 80)
+        with lang_as('ja' if get_lang() == 'enja' else get_lang()):   # 英語＋日本語でも状態行は日本語（1 行に併記する余裕がない）
+            line = _fit(player.status_line(), 80)
+            hunger = tr(player.hunger_state) if player.hunger_state else ''
         attr = self._cp(_CP_STATUS) | curses.A_BOLD
         try:
             self.stdscr.addstr(self.STATUS_ROW, 0, line, attr)
@@ -837,7 +873,6 @@ class UI:
         # 空腹状態を目立つ色でハイライト描画（判定は英語のキー、表示は訳語）
         state = player.hunger_state
         if state:
-            hunger = tr(state)
             if state == "Faint":
                 h_attr = self._cp(_CP_MONSTER) | curses.A_BOLD | curses.A_REVERSE
             elif state == "Weak":
@@ -906,7 +941,7 @@ class UI:
         # ヘッダ行数: タイトル + セパレータ + 装備スロット行 + 装備セパレータ
         header_rows = 2
         if equip_slots:
-            header_rows += len(equip_slots) + 1
+            header_rows += len(equip_slots) * (2 if get_lang() == 'enja' else 1) + 1
 
         # 1ページに表示できるアイテム数
         # row 22 をフッタ、row 21 をスクロール表示に使い、残りをアイテム領域とする
@@ -945,12 +980,14 @@ class UI:
 
             # 装備スロット (include_equipped=True のみ)
             for key, label in equip_slots:
+                below = self._ja_below(5 + text_width(label), label, 5)
                 try:
                     self.stdscr.addstr(row, 0, f"  {key}) " + label)
-                    self._add_ja(row, 5 + text_width(label), label)
+                    if below:
+                        self.stdscr.addstr(row + 1, 5, below, self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
                 except curses.error:
                     pass
-                row += 1
+                row += 2 if below else 1
             if equip_slots:
                 try:
                     self.stdscr.addstr(row, 0, " " + "─" * 38)
@@ -1129,6 +1166,9 @@ class UI:
         """ヘルプ画面を表示し、キー待ちする。"""
         if self.stdscr is None:
             return
+        if self._lines_ja([tr(l) for l in _HELP_LINES], wait=self._getch):
+            self._getch()
+            return
         self.stdscr.clear()
         for i, line in enumerate(_HELP_LINES):
             if i >= 23:
@@ -1143,6 +1183,9 @@ class UI:
     def show_status(self, player: "Player") -> None:
         """プレイヤーのステータス詳細画面を表示する（'@' コマンド）。"""
         if self.stdscr is None:
+            return
+        if self._lines_ja([tr(" Character Status"), " " + "─" * 30, *player.detail_lines(), "", tr(" Press any key...")], wait=self._getch):
+            self._getch()
             return
         self.stdscr.clear()
         try:
@@ -1391,21 +1434,25 @@ class UI:
         hdr = (f"  {'#':>2}  {tr('Score'):>6}  {_fit(tr('Name'), 14)}  "
                f"{_fit(tr('Cause'), 26)}  {tr('Fl'):>2}  {tr('Gold'):>6}")
 
+        bi = get_lang() == 'enja'   # 英語＋日本語: 死因の訳を次の行に添える
         row = 0
+        title = tr(" Top 10 Rogues of the Dungeon of Doom")
         for text, attr in [
-            (tr(" Top 10 Rogues of the Dungeon of Doom"), curses.A_BOLD),
+            (title, curses.A_BOLD),
             (sep,  0),
             (hdr,  curses.A_UNDERLINE),
-            (sep,  0),
+            *([] if bi else [(sep, 0)]),
         ]:
             try:
                 self.stdscr.addstr(row, 0, _fit(text).rstrip(), attr)
             except curses.error:
                 pass
             row += 1
+        if bi:
+            self._add_ja(0, text_width(title), title)
 
         for i, e in enumerate(scores):
-            if row >= 22:
+            if row >= (23 if bi else 22):
                 break
             rank_n = i + 1
             line = (f"  {rank_n:>2}  {e.score:>6}  {_fit(e.name, 14)}  "
@@ -1419,10 +1466,17 @@ class UI:
             except curses.error:
                 pass
             row += 1
+            ja = ja_of(tr_cause(e.cause)) if bi else None
+            if ja and ja != tr_cause(e.cause) and row < 22:
+                try:
+                    self.stdscr.addstr(row, 30, _fit(ja, 26).rstrip(), self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
+                except curses.error:
+                    pass
+                row += 1
 
         try:
             self.stdscr.addstr(
-                min(row + 1, 23), 0,
+                min(row + (0 if bi else 1), 23), 0,
                 tr(" Press any key to exit..."),
                 curses.A_BOLD,
             )
@@ -1450,6 +1504,9 @@ class UI:
             "",
             tr("  Press any key to exit."),
         ]
+        if self._lines_ja(lines, self._cp(_CP_GOLD) | curses.A_BOLD, wait=self._getch):
+            self._getch()
+            return
         for i, line in enumerate(lines, 5):
             try:
                 self.stdscr.addstr(

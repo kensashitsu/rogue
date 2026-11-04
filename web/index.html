@@ -44,7 +44,7 @@ body {
   -webkit-touch-callout: none; -webkit-text-size-adjust: 100%;
 }
 /* キーボードが出ている間（名前の入力など）は、方向の操作盤・状態行・メッセージ欄を畳んで、画面に場所を回す */
-#app.kb .dpad, #app.kb.text #msg, #app.kb.text #status, #app.kb.text #tapHint { display: none; }
+#app.kb .dpad, #app.kb.text #msgBox, #app.kb.text #status, #app.kb.text #tapHint { display: none; }
 #app.kb #pad { min-height: 0; }
 #app {
   height: 100%; box-sizing: border-box;
@@ -72,7 +72,7 @@ body {
 }
 .landscape .bar { grid-area: 1 / 1 / 5 / 2; align-self: start; }
 .landscape #screenBox { grid-area: 1 / 2 / 2 / 3; }
-.landscape #msg { grid-area: 2 / 2 / 3 / 3; }
+.landscape #msgBox { grid-area: 2 / 2 / 3 / 3; }
 .landscape #tapHint { grid-area: 3 / 2 / 4 / 3; }
 .landscape #status { grid-area: 4 / 2 / 5 / 3; }
 .landscape .dpad { grid-area: 1 / 1 / 5 / 2; }
@@ -86,9 +86,14 @@ body {
 .seg button + button { border-left: 1px solid var(--line); }
 /* メッセージ欄はいつも 2 行分の高さ（1 行と 2 行で地図の欄の大きさが変わると、地図がずれて見える）。
    2 行に収まらないときは app.js が字を小さくする */
-#msg { grid-area: msg; box-sizing: border-box; height: calc(2 * 1.45 * 15px + 4px); font-size: 15px; line-height: 1.45; padding: 2px 4px; min-width: 0; overflow: hidden; overflow-wrap: anywhere; }
+/* 欄（#msgBox）の高さは 2 行分のまま。中身（#msg）が収まらないときは、欄の下端にそろえて上へ伸ばし、画面の下の端に重ねる
+   （英語＋日本語の長いメッセージで訳が切れていた。画面を小さくしないよう、まれな長い文のときだけ重ねる。2026-11-04） */
+#msgBox { grid-area: msg; position: relative; z-index: 4; height: calc(2 * 1.45 * 15px + 4px); min-width: 0; }
+#msg { position: absolute; left: 0; right: 0; top: 0; box-sizing: border-box; font-size: 15px; line-height: 1.45; padding: 2px 4px; overflow-wrap: anywhere; }
+#msg.over { top: auto; bottom: 0; background: rgba(11, 13, 15, var(--msgA, .85)); border-radius: 6px 6px 0 0; }
 #msg .ja { font-size: 0.86em; color: var(--dim); line-height: 1.35; }   /* 英語＋日本語のときの日本語訳 */
-.landscape #msg { height: calc(2 * 1.45 * 13px + 4px); font-size: 13px; }
+.landscape #msgBox { height: calc(2 * 1.45 * 13px + 4px); }
+.landscape #msg { font-size: 13px; }
 /* 「次へ」待ちのときだけ文字を出す。行の高さはいつも取っておく（出し入れで地図がずれないように） */
 #tapHint { grid-area: taphint; height: 16px; margin-top: -4px; padding: 0 4px; font-size: 12px; line-height: 16px; color: var(--accent); white-space: nowrap; overflow: hidden; visibility: hidden; }
 #tapHint.on { visibility: visible; }
@@ -109,7 +114,7 @@ canvas { display: block; flex: none; }
   font-variant-numeric: tabular-nums; border-radius: 3px;
 }
 .landscape #status { font-size: 12px; height: calc(12px * 1.4 + 8px); }
-#app.text #msg, #app.text #status, #app.full #msg, #app.full #status { visibility: hidden; }
+#app.text #msgBox, #app.text #status, #app.full #msgBox, #app.full #status { visibility: hidden; }
 
 /* 操作部 */
 #pad { grid-area: pad; display: flex; gap: 10px; justify-content: space-between; align-items: flex-end; min-height: calc(var(--dk) * 3 + 10px); }
@@ -205,7 +210,7 @@ canvas { display: block; flex: none; }
     </span>
     <span id="ver"></span>
   </div>
-  <div id="msg" aria-live="polite"></div>
+  <div id="msgBox"><div id="msg" aria-live="polite"></div></div>
   <div id="tapHint"></div>
   <div id="screenBox"><canvas id="cv" aria-label="画面"></canvas></div>
   <div id="moreRight" class="more-hint" hidden>›</div>
@@ -239,6 +244,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script src="app.js?v=10-27.1"></script><!-- ?v= は app.js の VERSION と揃える -->
+<script src="app.js?v=11-04.1"></script><!-- ?v= は app.js の VERSION と揃える -->
 </body>
 </html>

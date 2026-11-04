@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '10-27.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-04.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -198,8 +198,11 @@ function render() {
     if (msg.dataset.text !== text || msg.dataset.ja !== ja) {
       msg.dataset.text = text; msg.dataset.ja = ja; msgJa.textContent = ja;
       msg.replaceChildren(text, ...(ja ? [msgJa] : [])); msg.style.fontSize = '';
-      for (let fs = parseFloat(getComputedStyle(msg).fontSize); msg.scrollHeight > msg.clientHeight + 1 && fs > 10; fs -= 1)
-        msg.style.fontSize = fs - 1 + 'px';   // 2 行に収まるまで字を小さくする
+      const mbox = $('msgBox');
+      const fmin = parseFloat(getComputedStyle(msg).fontSize) - 1;   // 字は 1px までしか縮めない（小さいと読みにくい）
+      for (let fs = fmin + 1; msg.offsetHeight > mbox.clientHeight + 1 && fs > fmin; fs -= 1)
+        msg.style.fontSize = fs - 1 + 'px';
+      msg.classList.toggle('over', msg.offsetHeight > mbox.clientHeight + 1);   // それでも収まらなければ、上へ伸ばして画面に重ねる
     }
     const st = $('status'), stText = rowText(H - 1).trim();
     if (st.dataset.text !== stText) {
@@ -506,9 +509,10 @@ function textEntry(c, T, keep) {
 // 画面のタップ: 「次へ」待ちなら進める、一覧なら行の記号を選ぶ
 cv.addEventListener('click', e => {
   if (hint !== 'list') return;
-  const y = rowMap[Math.floor(e.offsetY / ch)];
+  const r = Math.floor(e.offsetY / ch), y = rowMap[r];
   if (y === undefined) return;
-  const m = rowText(y).match(/^\s*(\S)\)/);
+  let m = rowText(y).match(/^\s*(\S)\)/);
+  if (!m && rowText(y).trim() && r > 0) m = rowText(rowMap[r - 1]).match(/^\s*(\S)\)/);   // 英語＋日本語: 訳の行を押したら上の品
   if (m && valid.includes(m[1])) answer(m[1]);
 });
 // 「次へ」待ちの間は、画面のどこをタップしても次へ進む（十字キーや行動ボタンの上でも）。

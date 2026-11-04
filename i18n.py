@@ -114,6 +114,20 @@ def _ja_part(v: str) -> str:
     return _pairs.get(low, v)
 
 
+class lang_as:
+    """with lang_as('ja'): の間だけ言語を切り替える（英語＋日本語でも状態行は日本語で組む、など）"""
+    def __init__(self, lang: str) -> None:
+        self.lang = lang
+
+    def __enter__(self) -> None:
+        global _lang
+        self.old, _lang = _lang, self.lang
+
+    def __exit__(self, *exc) -> None:
+        global _lang
+        _lang = self.old
+
+
 def ja_of(text: str) -> str | None:
     """英語＋日本語のとき、英語の文の日本語訳（分からなければ None）"""
     return _pairs.get(text) if _lang == 'enja' else None
