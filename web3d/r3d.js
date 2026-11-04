@@ -1487,16 +1487,17 @@ function artFor(o, u) {
 }
 // 形ごとの大きさ・色の手直し（食料は升が少ないぶん大きく描かれるので小さめに。色は肉の赤茶、骨は白っぽく）
 const ART_SCALE = { ':': 0.8 }, ART_COL = { ':': '#c0653c' }, BONE_COL = '#e8e0cc';
-// 武器・杖・巻物・鎧・食料の札は、置いた場所ごとに決まった向きを持つ（2026-11-04 ユーザーが 3 案から選択）。
+// 武器・杖・巻物・鎧・食料・指輪・魔除けの札は、置いた場所ごとに決まった向きを持つ（2026-11-04 ユーザーが 3 案から選択）。
 // 札の面と見る向きの角度で、字の間だけを詰める（字の大きさはそのまま。端から見ると縦一列の細い棒）。裏から見ると形も字も左右が逆
-const TURN_ITEMS = new Set([')', '/', '?', ']', ':']);   // 平たい物・左右で形の違う物。薬・指輪・金貨・魔除けは丸く、どこから見ても同じなので正面のまま
+const TURN_ITEMS = new Set([')', '/', '?', ']', ':', '=', ',']);   // 平たい物・左右で形の違う物。薬（瓶）・金貨（小山）は丸く、どこから見ても同じなので正面のまま
+const TURN_MIN = { ':': 0.55 };   // 端から見ても残る幅。骨付き肉は厚みがあるので薄くしない（2026-11-04 ユーザー指摘）
 function itemTurn(o, u) {
   if (!TURN_ITEMS.has(u.ch) || u.cell == null || u.flying) return null;
   const a = (Math.imul(u.cell + 1, 2654435761) >>> 0) / 4294967296 * Math.PI * 2;
   let cx = camera.position.x - o.sp.position.x, cz = camera.position.z - o.sp.position.z;
   const l = Math.hypot(cx, cz) || 1;
   const c = (Math.cos(a) * cx + Math.sin(a) * cz) / l;
-  return { k: Math.max(0.12, Math.abs(c)), flip: c < 0 };
+  return { k: Math.max(TURN_MIN[u.ch] || 0.12, Math.abs(c)), flip: c < 0 };
 }
 // 形で描けたら true（近くて、1 升が画面の升の 0.75 倍以上になるとき）
 function drawArt(o, u) {
