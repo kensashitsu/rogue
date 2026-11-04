@@ -1455,6 +1455,7 @@ const ART_FRONT = {
     ' XX   XX ',
   ],
 };
+ART['$'] = ART['*'];   // 以前の版で $ に化けた Xeroc が残っているセーブ用（今は金貨と同じ * に化ける）
 const SIDE_NATIVE = new Set(['E', 'C', 'D', 'J', 'Q', 'U', 'Z']);   // ART が横向きのモンスター
 for (const art of [...Object.values(ART), ...Object.values(ART_SIDE), ...Object.values(ART_FRONT)]) {   // 行の長さをそろえる（短い行は右を空白で埋める）
   const n = Math.max(...art.map(r => r.length));

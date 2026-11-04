@@ -110,7 +110,9 @@ MONSTER_DB: dict[str, MonsterStats] = {
 }
 
 # Xeroc が変装に使う文字セット
-_XEROC_CHARS = list("!?:)]=/$,")
+# Rogue 5.4 rnd_thing(): 薬・巻物・指輪・杖・食料・武器・鎧・階段・金貨。魔除けは AMULETLEVEL 以深だけ
+# （以前は金貨を $ にしていた。このゲームの金貨は * で、3D 版では $ の形がなく大きな 1 文字になり、正体がすぐ分かった）
+_XEROC_CHARS = list("!?=/:)]%*")
 
 
 # ===========================================================================
@@ -648,7 +650,7 @@ def spawn_monster(
     # Xeroc: ランダムなアイテム文字に変装
     disguise = ''
     if letter == 'X':
-        disguise = random.choice(_XEROC_CHARS)
+        disguise = random.choice(_XEROC_CHARS + ([','] if floor_level >= AMULETLEVEL else []))
 
     has_item = random.randint(0, 99) < stats.carry
 
