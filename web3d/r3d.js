@@ -16,6 +16,8 @@ const EYE = 0.55;
 let facing = 0;
 try { facing = +localStorage.getItem('rogue3d-facing') || 0; } catch {}
 export const getFacing = () => facing;
+// 音（sound.js）が使う: 今の階・自分の位置と向き・部屋・燭台・地図の字（音を出す側はこちらの中身を書き換えない）
+export const soundScene = () => ({ level: rockLevel, player, facing, rooms, sconces, grid: lastGrid, isRock });
 export const keyFor = rel => KEYS[(facing + rel + 8) % 8];   // rel: 0 = 前、2 = 右、4 = 後ろ、6 = 左
 
 // ---------------------------------------------------------------------------
