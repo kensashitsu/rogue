@@ -259,6 +259,50 @@ function thump(out, t, { f = 90, dur = 0.08, gain = 0.6, drop = 0.6 } = {}) {
 }
 
 const rnd = (a, b) => a + Math.random() * (b - a);
+
+// 金属の「ちん・からん」: 倍音が整数倍にならない（鐘や金属片の響き）。f が低いほど大きな金物
+function tink(out, t, { f = 3000, dur = 0.25, gain = 0.2, parts = [1, 2.76, 5.4, 8.93] } = {}) {
+  parts.forEach((m, i) => {
+    if (f * m > 16000) return;   // 聞こえない高さの倍音は作らない
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f * m * rnd(0.99, 1.01);
+    const g = ctx.createGain(), d = dur / (1 + i * 0.7);
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain / (1 + i * 0.8), t + 0.002); g.gain.exponentialRampToValueAtTime(0.0003, t + d);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + d + 0.02);
+  });
+}
+// ガラス: 高く澄んだ短い響き（瓶どうし・瓶を床に置く）
+const glass = (out, t, gain = 0.15, f = 2400) => tink(out, t, { f: f * rnd(0.95, 1.05), dur: 0.35, gain, parts: [1, 2.32, 4.25] });
+// 紙: 細かく乾いたかさかさ（巻物）
+function rustle(out, t, { n = 8, span = 0.4, gain = 0.25 } = {}) {
+  for (let i = 0; i < n; i++) burst(out, t + Math.random() * span, { f: rnd(2500, 7000), q: rnd(0.8, 2), dur: rnd(0.015, 0.05), gain: gain * rnd(0.4, 1) });
+}
+// 革のきしみ: 低めの帯域でざらっとこすれる
+function creak(out, t, { dur = 0.25, gain = 0.3 } = {}) {
+  burst(out, t, { f: rnd(500, 800), q: 4, dur, gain, attack: dur * 0.4, f2: rnd(350, 600) });
+}
+// 金貨: 数枚がぶつかり合う
+function coins(out, t, n = 5, gain = 0.12) {
+  for (let i = 0; i < n; i++) tink(out, t + i * rnd(0.02, 0.07), { f: rnd(3200, 4800), dur: 0.18, gain: gain * rnd(0.6, 1) });
+}
+// 物の種類ごとの「床に当たる・手に取る」音。soft: 手でそっと扱う（拾う・置く）
+function thing(out, t, ch, w, soft) {
+  const k = soft ? 0.6 : 1;
+  if (ch === '*') coins(out, t, soft ? 6 : 4, 0.13 * k);
+  else if (ch === ')') {   // 武器: 弓は木、ほかは金物
+    if (w === 2) { thump(out, t, { f: 180, dur: 0.06, gain: 0.25 * k, drop: 0.8 }); burst(out, t, { f: 900, q: 3, dur: 0.04, gain: 0.2 * k }); }
+    else if (w === 3 || w === 6) { tink(out, t, { f: 2600, dur: 0.1, gain: 0.08 * k }); burst(out, t, { f: 2000, q: 2, dur: 0.03, gain: 0.12 * k }); }   // 矢・ダーツ: 軽い
+    else { tink(out, t, { f: w === 0 ? 700 : w === 5 ? 520 : 1100, dur: 0.45, gain: 0.16 * k }); thump(out, t, { f: 150, dur: 0.05, gain: 0.2 * k }); }
+  } else if (ch === ']') {   // 鎧: 革はどさっ、金属はがしゃっ
+    thump(out, t, { f: 90, dur: 0.12, gain: 0.35 * k });
+    if (w === 0 || w === 2) creak(out, t, { dur: 0.15, gain: 0.25 * k });
+    else for (let i = 0; i < 5; i++) tink(out, t + i * rnd(0.01, 0.04), { f: rnd(1500, 2600), dur: 0.15, gain: 0.07 * k });
+  } else if (ch === '!') glass(out, t, 0.14 * k);
+  else if (ch === '?') rustle(out, t, { n: 5, span: 0.2, gain: 0.18 * k });
+  else if (ch === ':') { thump(out, t, { f: 130, dur: 0.07, gain: 0.3 * k }); burst(out, t, { f: 600, q: 1, dur: 0.05, gain: 0.15 * k }); }   // 食料: 包みがぽふっ
+  else if (ch === '=' || ch === ',') tink(out, t, { f: 3800, dur: 0.3, gain: 0.08 * k });   // 指輪・魔除け: 小さな金物
+  else if (ch === '/') { thump(out, t, { f: 240, dur: 0.05, gain: 0.2 * k, drop: 0.8 }); burst(out, t, { f: 1200, q: 3, dur: 0.03, gain: 0.15 * k }); }   // 杖: 木の棒がこつん
+  else burst(out, t, { f: 1200, q: 1, dur: 0.05, gain: 0.15 * k });
+}
 function note(kind) { stats.played++; stats.last.push(kind); if (stats.last.length > 20) stats.last.shift(); }
 
 // 足音。surface: 部屋の床（'.'）・通路（'#' 砂利まじり）・扉の口（'+' 木の敷居）
@@ -448,9 +492,16 @@ export function effect(d) {
     const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.25, t + 0.2); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.9);
     o.connect(g); g.connect(v.inp); o.start(t); o.stop(t + 1);
     note('gaze');
-  } else if (d.type === 'throw') {   // 投げる・放つ
+  } else if (d.type === 'throw') {   // 投げる・放つ（飛んでいく音は missile で、道筋に沿って動かす）
+    lastThrow = { at: performance.now(), w: d.w, ch: d.ch, fired: !!d.fired };
     const v = voice(p[0], p[1], { h: 0.6, occl: false, send: 0.3, model: 'equalpower' });
-    burst(v.inp, t, { f: d.fired ? 2500 : 900, q: 1.5, dur: d.fired ? 0.12 : 0.18, gain: 0.3, attack: 0.03, f2: d.fired ? 1200 : 2000 });
+    if (d.fired) {   // 弓の弦: 引き絞って（きりっ）放つ（びぃん）
+      creak(v.inp, t, { dur: 0.18, gain: 0.25 });
+      const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(140, t + 0.22); o.frequency.exponentialRampToValueAtTime(105, t + 0.5);
+      const g = ctx.createGain(); g.gain.setValueAtTime(0, t + 0.22); g.gain.linearRampToValueAtTime(0.35, t + 0.225); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.55);
+      o.connect(g); g.connect(v.inp); o.start(t + 0.22); o.stop(t + 0.6);
+      burst(v.inp, t + 0.22, { f: 1800, q: 2, dur: 0.04, gain: 0.3 });
+    } else burst(v.inp, t + 0.05, { f: 600, q: 1.2, dur: 0.18, gain: 0.8, attack: 0.08, f2: 1500 });   // 腕を振る
     note('throw');
   } else if (d.type === 'descend') {   // 階段: 段を下りる・上る足音／落とし穴: ひゅっ → どさっ
     const v = voice(p[0], p[1], { h: 0.1, occl: false, send: 0.6, model: 'equalpower' });
@@ -478,8 +529,137 @@ export function effect(d) {
       for (let i = 0; i < 6; i++) burst(o, t1 + 0.9 + i * rnd(0.05, 0.14), { f: rnd(3000, 6000), q: 2.5, dur: 0.03, gain: rnd(0.12, 0.3) });   // ぱらぱら
     }
     note('secretdoor');
+  } else if (d.type === 'bolt') {   // 次に飛ぶのは杖の光線（missile で鳴らす）
+    pendingBolt = { at: performance.now(), name: d.name };
+    return;
+  } else if (d.type === 'land') {   // 投げた物が落ちた・割れた（落ちた所から）
+    const v = voice(d.y, d.x, { h: 0.05, send: 0.6 });
+    const at = t + 0.02;
+    if (d.broke) {   // 瓶が割れる: ぱりん＋破片＋しぶき
+      for (let i = 0; i < 4; i++) glass(v.inp, at + i * rnd(0, 0.03), 0.4, rnd(2600, 4200));
+      burst(v.inp, at, { f: 5000, q: 0.8, dur: 0.12, gain: 0.6 });
+      for (let i = 0; i < 6; i++) burst(v.inp, at + 0.08 + i * rnd(0.02, 0.06), { f: rnd(4000, 8000), q: 3, dur: 0.02, gain: 0.2 });
+      burst(v.inp, at + 0.03, { f: 900, q: 0.7, dur: 0.2, gain: 0.25, attack: 0.02 });
+    } else {
+      thing(v.inp, at, d.ch, d.w, false);
+      if (d.ch === ')' && d.w !== 2) thing(v.inp, at + rnd(0.12, 0.2), d.ch, d.w, true);   // 金物は一度はねる
+    }
+    note('land');
+  } else if (d.type === 'act') {   // 自分の手元の動作
+    const v = voice(p[0], p[1], { h: 0.6, occl: false, send: 0.3, model: 'equalpower' });
+    const o = v.inp;
+    act(o, t, d);
+    note('act:' + d.what);
   }
 }
+
+// 手元の動作の音（どれも画面のメッセージで分かることだけ。音でしか分からないことは鳴らし分けない）
+function act(o, t, d) {
+  const w = d.w;
+  if (d.what === 'pickup') {   // 拾う: 床から取り上げて袋へ（物ごとの音・最後に袋がさっ）
+    (d.chs || []).slice(0, 4).forEach((ch, i) => thing(o, t + i * 0.12, ch, -1, true));
+    burst(o, t + 0.15 + Math.min(4, (d.chs || []).length) * 0.12, { f: 700, q: 0.8, dur: 0.12, gain: 0.25, attack: 0.03 });
+  } else if (d.what === 'drop') {   // 置く: 袋から出して足元へ
+    burst(o, t, { f: 700, q: 0.8, dur: 0.1, gain: 0.2, attack: 0.03 });
+    thing(o, t + 0.15, d.ch, w, true);
+  } else if (d.what === 'eat') {   // 食べる: かじる → 数回噛む → 飲み込む。粘菌はやわらかく湿った音、食料（乾パン）は乾いて固い
+    const slime = w === 1;
+    for (let i = 0; i < 6; i++) {
+      const at = t + 0.1 + i * rnd(0.2, 0.26);
+      if (slime) { burst(o, at, { f: rnd(500, 900), q: 2, dur: 0.09, gain: 0.25, attack: 0.02 }); thump(o, at, { f: 110, dur: 0.06, gain: 0.12 }); }
+      else { for (let j = 0; j < 3; j++) burst(o, at + j * 0.015, { f: rnd(1800, 4000), q: 1.5, dur: 0.025, gain: i ? 0.18 : 0.3 }); thump(o, at, { f: 90, dur: 0.05, gain: 0.15 }); }
+    }
+    gulp(o, t + 1.55, 0.3);
+  } else if (d.what === 'quaff') {   // 飲む: 栓を抜く（ぽん）→ ごくごく → 瓶を下ろす
+    pop(o, t);
+    for (let i = 0; i < 3; i++) gulp(o, t + 0.25 + i * 0.22, 0.25);
+    glass(o, t + 0.95, 0.06);
+  } else if (d.what === 'read') {   // 読む: 巻物を広げる（ばさっ→かさかさ）
+    burst(o, t, { f: 2000, q: 0.6, dur: 0.12, gain: 0.25, attack: 0.03 });
+    rustle(o, t + 0.05, { n: 12, span: 0.45, gain: 0.22 });
+  } else if (d.what === 'wield') {   // 持つ: 剣は鞘から抜く（しゃりーん）、弓は木がこつ、棍棒・槍は柄を握る
+    if (w === 1 || w === 4 || w === 5) {
+      burst(o, t, { f: 3000, q: 4, dur: 0.35, gain: 0.25, attack: 0.25, f2: 6000 });
+      tink(o, t + 0.34, { f: w === 5 ? 900 : 1500, dur: 0.6, gain: 0.1 });
+    } else if (w === 2) { creak(o, t, { dur: 0.2, gain: 0.25 }); thump(o, t + 0.15, { f: 200, dur: 0.05, gain: 0.2 }); }
+    else { burst(o, t, { f: 600, q: 1.2, dur: 0.1, gain: 0.2 }); thump(o, t + 0.05, { f: 160, dur: 0.06, gain: 0.25 }); }
+  } else if (d.what === 'sheathe') {   // しまう: 剣は鞘に納める（しゃっ→かちん）
+    if (w === 1 || w === 4 || w === 5) { burst(o, t, { f: 5000, q: 4, dur: 0.25, gain: 0.2, attack: 0.05, f2: 2800 }); tink(o, t + 0.26, { f: 1200, dur: 0.15, gain: 0.12 }); }
+    else burst(o, t, { f: 700, q: 0.8, dur: 0.12, gain: 0.2, attack: 0.03 });
+  } else if (d.what === 'wear' || d.what === 'takeoff') {   // 着る・脱ぐ: 革はきしみと留め具、金属鎧はじゃらじゃら
+    const leather = w === 0 || w === 2, n = d.what === 'wear' ? 4 : 3;
+    for (let i = 0; i < n; i++) {
+      const at = t + i * rnd(0.18, 0.28);
+      if (leather) creak(o, at, { dur: 0.2, gain: 0.25 });
+      else for (let j = 0; j < 4; j++) tink(o, at + j * rnd(0.01, 0.03), { f: rnd(1600, 2800), dur: 0.12, gain: 0.06 });
+      burst(o, at, { f: 800, q: 0.8, dur: 0.12, gain: 0.15, attack: 0.04 });
+    }
+    tink(o, t + n * 0.24, { f: 2200, dur: 0.12, gain: 0.08 });   // 留め具がかちっ
+  } else if (d.what === 'puton') tink(o, t + 0.05, { f: 3600, dur: 0.25, gain: 0.07 });   // 指輪: 指に通すときの小さな金物
+  else if (d.what === 'remove') tink(o, t + 0.05, { f: 3300, dur: 0.2, gain: 0.06 });
+  else if (d.what === 'zap') {   // 杖を振る: 細い木の棒がひゅっ（剣より軽く高い）
+    burst(o, t, { f: 1500, q: 2, dur: 0.12, gain: 0.6, attack: 0.05, f2: 3500 });
+  }
+}
+// 栓を抜く: ぽん
+function pop(out, t) {
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(900, t); o.frequency.exponentialRampToValueAtTime(350, t + 0.05);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.35, t + 0.002); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.07);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.1);
+  burst(out, t, { f: 1500, q: 1, dur: 0.03, gain: 0.2 });
+}
+// 飲み込む: のどがごくっ
+function gulp(out, t, gain) {
+  const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(260, t); o.frequency.exponentialRampToValueAtTime(120, t + 0.09);
+  const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(gain, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0005, t + 0.12);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.15);
+  burst(out, t, { f: 400, type: 'lowpass', dur: 0.08, gain: gain * 0.5 });
+}
+
+// 飛んでいく物の音: 道筋に沿って音の出どころを動かす（横を飛べば左右に流れて聞こえる）
+let lastThrow = null, pendingBolt = null;
+export function missile(m) {
+  if (!ready() || !m.path || !m.path.length) return;
+  const p = scene().player;
+  if (!p) return;
+  wake();
+  const now = performance.now(), t = ctx.currentTime + 0.01, dur = m.step * m.path.length / 1000;
+  const bolt = pendingBolt && now - pendingBolt.at < 3000 ? pendingBolt.name : null;
+  pendingBolt = null;
+  const th = !bolt && lastThrow && now - lastThrow.at < 3000 ? lastThrow : null;
+  // 動く音の出どころ（HRTF。壁越しにはならない: 見えている道筋を飛ぶ）
+  const inp = ctx.createGain();
+  const pan = ctx.createPanner(); pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 1; pan.rolloffFactor = 0.8;
+  const pts = [p, ...m.path];
+  if (pan.positionX) {
+    pts.forEach(([y, x], i) => {
+      const at = t + i * m.step / 1000;
+      if (i === 0) { pan.positionX.setValueAtTime(x + 0.5, at); pan.positionZ.setValueAtTime(y + 0.5, at); pan.positionY.setValueAtTime(0.55, at); }
+      else { pan.positionX.linearRampToValueAtTime(x + 0.5, at); pan.positionZ.linearRampToValueAtTime(y + 0.5, at); }
+    });
+  } else { const [y, x] = pts[pts.length >> 1]; pan.setPosition(x + 0.5, 0.55, y + 0.5); }
+  inp.connect(pan); pan.connect(dry);
+  const s = ctx.createGain(); s.gain.value = 0.4; inp.connect(s); s.connect(convA); s.connect(convB);
+  const D = Math.max(0.08, dur);
+  if (bolt === 'fire') {   // 炎の光線: ごおっと燃えながら飛ぶ
+    burst(inp, t, { f: 400, type: 'lowpass', q: 0.5, dur: D + 0.3, gain: 1.3, attack: 0.05, f2: 1200 });
+    burst(inp, t, { f: 2500, q: 0.6, dur: D + 0.2, gain: 0.4, attack: 0.05 });
+  } else if (bolt === 'cold') {   // 冷気: 空気が凍るしゃりしゃり
+    burst(inp, t, { f: 6000, q: 1, dur: D + 0.2, gain: 1.5, attack: 0.05 });
+    for (let i = 0; i < 10; i++) burst(inp, t + Math.random() * D, { f: rnd(5000, 9000), q: 4, dur: 0.02, gain: 0.6 });
+  } else if (bolt === 'electric') {   // 稲妻: ばりっと裂ける音とごろごろ
+    for (let i = 0; i < 8; i++) burst(inp, t + Math.random() * D * 0.6, { f: rnd(2000, 7000), q: 0.7, dur: 0.03, gain: 0.7 });
+    thump(inp, t + 0.02, { f: 55, dur: D + 0.6, gain: 0.5, drop: 0.7 });
+  } else if (bolt) {   // 魔法の矢など: 空気を押しのけるしゅうっ
+    burst(inp, t, { f: 1200, q: 1.5, dur: D + 0.1, gain: 1.0, attack: 0.03, f2: 2400 });
+  } else if (th && (th.w === 3 || th.w === 6 || th.w === 7 || th.w === 8 || th.w === 4)) {   // 矢・ダーツ・手裏剣・槍・短剣: 空を切る
+    burst(inp, t, { f: th.w === 7 ? 3500 : 2200, q: th.w === 7 ? 6 : 3, dur: D, gain: 0.7, attack: D * 0.3 });
+  } else {   // ほかの物: かすかな風
+    burst(inp, t, { f: 800, q: 1, dur: D, gain: 0.3, attack: D * 0.3 });
+  }
+  note(bolt ? 'bolt:' + bolt : 'fly');
+}
+
 
 // 怪物が動いた: 同じ並び（ゲームのモンスターの並び）で前と比べ、1〜2 マス動いたものに足音
 function monsMoved(mons) {

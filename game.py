@@ -640,6 +640,7 @@ class Game:
         ]
         # ISMANY マージ集計: slot → (pack_item, 追加合計数)
         _merged_counts: dict[str, tuple] = {}
+        got: list[str] = []   # 3D 版: 拾えた物の種類（拾う音）
 
         for fi in picked:
             if (getattr(fi.item, 'o_type', '') == CH_SCROLL
@@ -652,6 +653,7 @@ class Game:
             if fi.item.o_type == CH_GOLD:
                 amount = fi.item.o_arm
                 self.player.gain_gold(amount)
+                got.append(CH_GOLD)
                 ui.add_message(tr('You pick up {amount} gold pieces.', amount=amount))
                 self.floor_items.remove(fi)
                 self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
@@ -669,6 +671,7 @@ class Game:
                                 _merged_counts[slot] = (pack_item, fi.item.o_count)
                             self.floor_items.remove(fi)
                             self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
+                            got.append(fi.item.o_type)
                             merged = True
                             break
                     if merged:
@@ -681,10 +684,13 @@ class Game:
                     if fi.item.o_type == CH_AMULET:
                         self.player.has_amulet = True
                     name = fi.item.display_name(self.knowledge)
+                    got.append(fi.item.o_type)
                     ui.add_message(tr('You pick up {name} ({slot}).', name=name, slot=slot))
                     self.floor_items.remove(fi)
                     self.dungeon.map[fi.y][fi.x].ch = CH_FLOOR
 
+        if got:
+            ui.effect('act', what='pickup', chs=got)
         # ISMANY マージ分をまとめて1件メッセージ
         for slot, (pack_item, added) in _merged_counts.items():
             name = pack_item.display_name(self.knowledge)
@@ -732,6 +738,7 @@ class Game:
         self.floor_items.append(
             FloorItem(item=item, y=self.player.y, x=self.player.x)
         )
+        ui.effect('act', what='drop', ch=item.o_type, w=getattr(item, 'o_which', -1))
         ui.add_message(tr('You drop {name}.', name=name))
         self._end_turn(ui)
 
@@ -774,6 +781,7 @@ class Game:
         item = self.player.remove_from_pack(slot)
         if item is None:
             return
+        ui.effect('act', what='eat', w=item.o_which)   # 3D 版: かじって噛んで飲み込む音（待たない: 音を切っている人の手を止めない）
         food_amount = random.randint(1100, 1500)
         msgs = self.player.eat(food_amount)
         # 味メッセージと経験値（Rogue 5.4仕様）
@@ -799,6 +807,7 @@ class Game:
         item = self.player.remove_from_pack(slot)
         if item is None:
             return
+        ui.effect('act', what='quaff')   # 3D 版: 栓を抜いて飲む音
         fi_items = [fi.item for fi in self.floor_items]
         msgs = use_potion(
             item, self.player, self.dungeon, self.knowledge, self.monsters,
@@ -831,6 +840,7 @@ class Game:
                 return
             target_item = self.player.pack.get(tslot)
         self.player.remove_from_pack(slot)
+        ui.effect('act', what='read')   # 3D 版: 巻物を広げる音
         fi_items = [fi.item for fi in self.floor_items]
         msgs = use_scroll(
             item, self.player, self.dungeon, self.knowledge,
@@ -865,6 +875,7 @@ class Game:
         if item is None:
             return
         item.o_flags |= ISKNOW
+        ui.effect('act', what='wield', w=item.o_which)
         old = self.player.equip_weapon(item)
         if old is not None:
             returned = self.player.add_to_pack(old)
@@ -895,6 +906,7 @@ class Game:
         if item is None:
             return
         item.o_flags |= ISKNOW
+        ui.effect('act', what='wear', w=item.o_which)
         old = self.player.equip_armor(item)
         if old is not None:
             s = self.player.add_to_pack(old)
@@ -917,6 +929,7 @@ class Game:
                 return
             old = self.player.unequip_armor()
             if old is not None:
+                ui.effect('act', what='takeoff', w=old.o_which)
                 s = self.player.add_to_pack(old)
                 if s is None:
                     self.floor_items.append(
@@ -935,6 +948,7 @@ class Game:
                 return
             old = self.player.unequip_weapon()
             if old is not None:
+                ui.effect('act', what='sheathe', w=old.o_which)
                 s = self.player.add_to_pack(old)
                 if s is None:
                     self.floor_items.append(
@@ -992,6 +1006,7 @@ class Game:
                 ui.add_message(
                     tr('No room in pack; {item} dropped.', item=old_ring.display_name(self.knowledge))
                 )
+        ui.effect('act', what='puton')
         msgs = _items_put_on_ring(item, self.player, ring_slot, self.knowledge)
         ui.add_messages(msgs)
         if getattr(item, 'o_which', -1) == R_AGGR:
@@ -1024,6 +1039,7 @@ class Game:
             ui.add_message(tr("You can't remove the cursed ring!"))
             return
         self.player.remove_ring(ring_slot)
+        ui.effect('act', what='remove')
         name = ring.display_name(self.knowledge)
         s = self.player.add_to_pack(ring)
         if s is None:
@@ -1140,6 +1156,11 @@ class Game:
 
         # 命中した矢は消滅、外れた矢のみ着地点に落ちて回収可能
         drop_on_floor = not bool(hit_monster)
+        # 3D 版: 落ちた音（床に落ちた所から）。薬が敵に当たれば瓶の割れる音
+        if hit_monster and item.o_type == CH_POTION:
+            ui.effect('land', y=land_y, x=land_x, ch=item.o_type, w=-1, broke=True)
+        elif drop_on_floor and (land_y != self.player.y or land_x != self.player.x):
+            ui.effect('land', y=land_y, x=land_x, ch=item.o_type, w=getattr(item, 'o_which', -1), broke=False)
 
         if item.o_flags & ISMANY and item.o_count > 1:
             item.o_count -= 1
@@ -1226,11 +1247,14 @@ class Game:
         direction = ui.prompt_direction(tr('Zap in which direction? '))
         import items as _items
         _items.last_bolt = None
+        if direction != (0, 0):
+            ui.effect('act', what='zap')   # 3D 版: 杖を振る音
         msgs = use_stick(
             item, self.player, self.dungeon,
             self.knowledge, self.monsters, direction,
         )
         if _items.last_bolt and _items.last_bolt['path']:   # 光線を放つ杖なら、飛ぶ様子を見せてから知らせる
+            ui.effect('bolt', name=_items.last_bolt['name'])   # 3D 版: 次に飛ぶものは光線（炎・冷気・稲妻・魔法の矢で音を変える）
             ui.animate_bolt(_items.last_bolt, direction, self.dungeon, self.player, self.monsters, self.floor_items)
         ui.add_messages(msgs)
         self._end_turn(ui)

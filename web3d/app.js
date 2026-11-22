@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.57';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.58';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.57';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.58';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.57';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.58';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1099,7 +1099,7 @@ function start() {
     }
     else if (d.type === 'file') saveFile(d.name, d.data);
     else if (d.type === 'mem') { alive.mem = Math.round(d.wasm / 1048576); if (!alive.mem0) alive.mem0 = alive.mem; }
-    else if (d.type === 'missile') { alive.last.push('missile'); if (alive.last.length > 8) alive.last.shift(); r3d.missile(d.data); }
+    else if (d.type === 'missile') { alive.last.push('missile'); if (alive.last.length > 8) alive.last.shift(); r3d.missile(d.data); try { snd.missile(d.data); } catch (e) { console.warn(e); } }
     else if (d.type === 'effect' && d.data.type === 'msgja') {   // 英語＋日本語: メッセージの日本語訳
       if (jaMap.size > 300) jaMap.clear();
       jaMap.set(d.data.en.trim(), d.data.ja); requestDraw();
