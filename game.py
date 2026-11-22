@@ -1330,6 +1330,7 @@ class Game:
         found_doors = self.dungeon.search(self.player.y, self.player.x)
         found_traps = self.dungeon.search_traps(self.player.y, self.player.x)
         if found_doors:
+            ui.effect('secretdoor', cells=[[c.y, c.x] for c in found_doors])   # 3D 版: 隠し扉が開く音
             ui.add_message(tr('You found a secret door!'))
         if found_traps:
             ui.add_message(tr('You found a trap!'))
@@ -1554,6 +1555,7 @@ class Game:
         for _ in range(self.player.search_bonus):
             found = self.dungeon.search(self.player.y, self.player.x)
             if found:
+                ui.effect('secretdoor', cells=[[c.y, c.x] for c in found])   # 3D 版: 隠し扉が開く音
                 ui.add_message(tr('You found a secret door!'))
 
         # R_TELEPORT 指輪: 1/33 の確率でランダムテレポート

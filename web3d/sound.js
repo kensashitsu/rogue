@@ -320,7 +320,7 @@ function startAmbient() {
   s.connect(lp); lp.connect(ambGain); ambGain.connect(dry);
   const send = ctx.createGain(); send.gain.value = 0.3; ambGain.connect(send); send.connect(convA); send.connect(convB);
   s.start();
-  // 燭台のはぜる音（4 秒をくり返す）。近い燭台 2 つに音を置く
+  // 燭台は松明（2026-11-22 ユーザー確認。蝋燭ではない）。はぜる音（4 秒をくり返す）。近い燭台 2 つに音を置く
   const cb = ctx.createBuffer(1, len, ctx.sampleRate), c = cb.getChannelData(0);
   let hiss = 0;
   for (let i = 0; i < len; i++) { hiss = hiss * 0.9 + (Math.random() * 2 - 1) * 0.1; c[i] = hiss * 0.15; }
@@ -465,6 +465,19 @@ export function effect(d) {
     const v = voice(p[0], p[1], { h: 0.6, occl: false, send: 0.6, model: 'equalpower' });
     burst(v.inp, t, { f: 6000, q: 2, dur: 0.5, gain: 0.3, attack: 0.05, f2: 400 });
     note('teleport');
+  } else if (d.type === 'secretdoor') {   // 隠し扉が開く: 留め金が外れる → 石の戸が重くずれる → 砂がこぼれる（扉の場所から）
+    for (const [y, x] of d.cells || []) {
+      const v = voice(y, x, { h: 0.6, occl: false, send: 0.7 });
+      const o = v.inp;
+      thump(o, t, { f: 260, dur: 0.05, gain: 0.25, drop: 0.7 });   // かちっ
+      burst(o, t, { f: 3200, q: 3, dur: 0.03, gain: 0.5 });
+      const t1 = t + 0.18;
+      thump(o, t1, { f: 48, dur: 0.9, gain: 0.35, drop: 0.8 });   // ごご…: 低いうなりに、ざらついたこすれを細かく重ねる
+      for (let i = 0; i < 14; i++) burst(o, t1 + i * 0.055 + rnd(0, 0.02), { f: rnd(250, 520), q: 1.2, dur: 0.12, gain: rnd(0.9, 1.6), attack: 0.02 });
+      thump(o, t1 + 0.8, { f: 70, dur: 0.18, gain: 0.45 });   // ずん（止まる）
+      for (let i = 0; i < 6; i++) burst(o, t1 + 0.9 + i * rnd(0.05, 0.14), { f: rnd(3000, 6000), q: 2.5, dur: 0.03, gain: rnd(0.12, 0.3) });   // ぱらぱら
+    }
+    note('secretdoor');
   }
 }
 
