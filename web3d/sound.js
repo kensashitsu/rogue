@@ -1,6 +1,6 @@
 // 3D 版の音。テーマ（ASCII だけでどこまで現実的な空間を表せるか）に合わせ、音も「現実の聞こえ方」に寄せる。
 //   - 鳴らすもの: 自分の足音・怪物の足音（見えていない怪物も。2026-11-22 ユーザー指定で「鳴らして遊んでから考える」）・
-//     振る・当たる・殴られる・炎・凍る・階段・テレポート・燭台（蝋燭。すぐそばでだけ芯がかすかに鳴る）・地下の空気
+//     振る・当たる・殴られる・炎・凍る・階段・テレポート・燭台のはぜる音・地下の空気
 //   - 聞こえ方: 距離で小さく・遠いほど高い音が抜ける・向きで左右（HRTF）・壁越しはこもる・
 //     自分のいる所の広さで響き（狭い通路は短く詰まった響き、部屋は広さに応じて長く）
 //   - 消音でもゲーム性は変わらない作り: 音でしか分からない合図は作らない（音は今のところ試し）
@@ -320,18 +320,17 @@ function startAmbient() {
   s.connect(lp); lp.connect(ambGain); ambGain.connect(dry);
   const send = ctx.createGain(); send.gain.value = 0.3; ambGain.connect(send); send.connect(convA); send.connect(convB);
   s.start();
-  // 燭台は蝋燭（ユーザーには蝋燭に見えている。2026-11-22）。蝋燭はほぼ無音で、芯がたまにじじっと鳴るだけ。
-  // 4 秒をくり返す。近い燭台 2 つに音を置く（松明のようなぱちぱちは鳴らさない）
+  // 燭台のはぜる音（4 秒をくり返す）。近い燭台 2 つに音を置く
   const cb = ctx.createBuffer(1, len, ctx.sampleRate), c = cb.getChannelData(0);
   let hiss = 0;
-  for (let i = 0; i < len; i++) { hiss = hiss * 0.9 + (Math.random() * 2 - 1) * 0.1; c[i] = hiss * 0.025; }
-  for (let k = 0; k < 5; k++) {   // 芯のじじっ（4 秒に数回、小さく）
-    const at = Math.floor(Math.random() * (len - 2000)), amp = rnd(0.06, 0.16), n = Math.floor(rnd(300, 1200));
+  for (let i = 0; i < len; i++) { hiss = hiss * 0.9 + (Math.random() * 2 - 1) * 0.1; c[i] = hiss * 0.15; }
+  for (let k = 0; k < 70; k++) {   // ぱちっ
+    const at = Math.floor(Math.random() * (len - 2000)), amp = Math.random() < 0.15 ? 0.9 : rnd(0.15, 0.45), n = Math.floor(rnd(80, 600));
     for (let i = 0; i < n; i++) c[at + i] += (Math.random() * 2 - 1) * amp * Math.exp(-i / (n / 5));
   }
   for (let j = 0; j < 2; j++) {
     const src = ctx.createBufferSource(); src.buffer = cb; src.loop = true;
-    const hp = ctx.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 2200; hp.Q.value = 0.8;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
     const gn = ctx.createGain(); gn.gain.value = 0;
     const pan = ctx.createPanner(); pan.panningModel = 'equalpower'; pan.distanceModel = 'inverse'; pan.refDistance = 0.6; pan.rolloffFactor = 1.6;
     src.connect(hp); hp.connect(gn); gn.connect(pan); pan.connect(dry);
@@ -339,18 +338,18 @@ function startAmbient() {
     torchVoices.push({ gn, pan, key: -1 });
   }
 }
-// 近い燭台（1.5 マスほど。蝋燭の音は 1 歩離れればもう聞こえない）に音を置く。遠い燭台は鳴らさない
+// 近い燭台（明かりの届く 3 マスほど）に音を置く。遠い燭台は鳴らさない
 function updateTorches() {
   const sc = scene(), p = sc.player;
   if (!p || !torchVoices.length) return;
-  const near = sc.sconces.map(s => ({ s, d: Math.hypot(s.x - (p[1] + 0.5), s.z - (p[0] + 0.5)) })).filter(o => o.d < 1.5).sort((a, b) => a.d - b.d).slice(0, 2);
+  const near = sc.sconces.map(s => ({ s, d: Math.hypot(s.x - (p[1] + 0.5), s.z - (p[0] + 0.5)) })).filter(o => o.d < 3.2).sort((a, b) => a.d - b.d).slice(0, 2);
   const t = ctx.currentTime;
   torchVoices.forEach((v, i) => {
     const o = near[i];
     if (!o) { v.gn.gain.setTargetAtTime(0, t, 0.3); v.key = -1; return; }
     const key = Math.round(o.s.x * 100) * 10000 + Math.round(o.s.z * 100);
     if (key !== v.key) { setPos(v.pan, o.s.x, 0.75, o.s.z); v.key = key; }
-    v.gn.gain.setTargetAtTime(0.5, t, 0.3);
+    v.gn.gain.setTargetAtTime(0.32, t, 0.3);
   });
 }
 
