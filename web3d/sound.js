@@ -53,7 +53,7 @@ export function init(r3dScene) {
   };
   for (const ev of ['pointerdown', 'touchend', 'keydown']) addEventListener(ev, unlock, { capture: true, passive: true });
   document.addEventListener('visibilitychange', () => { if (document.hidden && ctx && ctx.state === 'running') ctx.suspend(); });
-  window.__snd = { stats, envKey: () => envKey, ctx: () => ctx, master: () => master, beepUp: () => beepUp(), amb: () => ambGain, torch: () => torchVoices, step };
+  window.__snd = { stats, envKey: () => envKey, ctx: () => ctx, master: () => master, beepUp: d => beepUp(d), amb: () => ambGain, torch: () => torchVoices, step };
 }
 
 // ---------------------------------------------------------------------------
@@ -440,7 +440,8 @@ export function update() {
 }
 // レベルアップ: 状態行の「経験:レベル/経験値」（英語は Exp:）でレベルが上がったのを見る。状態行が書き換わる＝画面に出た時に鳴る。
 // 現実の音ではない出来事なので、ダンジョンの中の音（響き・向き）にはせず、端末のスピーカーが鳴らすピポパの音にする
-// （読み込み・死んだときのエラー表示など、ゲームの仕組みの出来事は端末らしさで見せている方針に合わせた）。下がったとき（吸い取られた）は鳴らさない
+// （読み込み・死んだときのエラー表示など、ゲームの仕組みの出来事は端末らしさで見せている方針に合わせた）。
+// 下がったとき（レイス・ヴァンパイアに吸い取られた）は、同じ音を逆の順（ド・ソ・ミ・ド）で鳴らす（2026-11-22 ユーザー指定）
 let xpLevel = null;
 function watchXpLevel(grid) {
   const row = grid && grid[23];
@@ -448,19 +449,20 @@ function watchXpLevel(grid) {
   const m = row.filter(Boolean).map(c => c[0]).join('').match(/(?:Exp|経験):\s*(\d+)\//);
   if (!m) return;
   const lv = +m[1];
-  if (xpLevel !== null && lv > xpLevel && ready()) beepUp();
+  if (xpLevel !== null && lv !== xpLevel && ready()) beepUp(lv < xpLevel);
   xpLevel = lv;
 }
-function beepUp() {
+function beepUp(down = false) {
   const t = ctx.currentTime + 0.05;
-  [523, 659, 784, 1047].forEach((f, i) => {   // ド・ミ・ソ・ド（四角い波を少し丸めた PC のスピーカーの音）
+  const notes = [523, 659, 784, 1047];   // ド・ミ・ソ・ド（四角い波を少し丸めた PC のスピーカーの音）。下がったときは逆の順
+  (down ? notes.reverse() : notes).forEach((f, i) => {
     const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = f;
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3500;
     const g = ctx.createGain(), at = t + i * 0.09, d = i === 3 ? 0.22 : 0.07;
     g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.05, at + 0.004); g.gain.setValueAtTime(0.05, at + d - 0.01); g.gain.linearRampToValueAtTime(0, at + d);
     o.connect(lp); lp.connect(g); g.connect(master); o.start(at); o.stop(at + d + 0.02);
   });
-  note('levelup');
+  note(down ? 'leveldown' : 'levelup');
 }
 // 自分の足元: 地図の字は @ なので、部屋の中か・扉か・通路かで決める
 function surfaceAt(y, x) {
