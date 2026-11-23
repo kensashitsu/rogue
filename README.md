@@ -2,6 +2,28 @@
 
 Python implementation of Rogue 5.4 for the terminal, in English or Japanese.
 
+## 3D Version (browser)
+
+**Play: https://kensashitsu.github.io/rogue/web3d/**
+
+The same game seen in first person — drawn only with ASCII characters. Walls, floors, torchlight
+and monsters are all built from the glyphs of an 80x24 terminal, and the question behind it is
+how real a space can feel when it is made of nothing but text. Light falls off with distance,
+lit rooms glow through their doorways, and places you only remember sink into darkness.
+Sound follows the same idea: footsteps, torches and doors are placed in space, muffled through
+walls and echo according to the size of the room (sound is optional; the game plays the same muted).
+
+- Works on phones (touch buttons) and desktop browsers (keyboard). Tested mainly on iPhone SE (3rd gen).
+- The first load takes a while (tens of seconds): it downloads Python (Pyodide) to run the game.
+- English, Japanese, or English with Japanese subtitles.
+- Saves stay in the browser, separate from the 2D browser version.
+
+## How This Was Made
+
+This project was built with an AI coding assistant (Claude Code). The author decided what to make,
+played it on a real phone and judged every change; most of the code was written by the AI.
+The rules follow the Rogue 5.4 C source, with the deliberate changes listed below.
+
 ## Requirements
 
 - Python 3.12+
@@ -128,7 +150,29 @@ web/
   app.js         Browser version: drawing, buttons, local storage
   worker.js      Browser version: runs the game in Pyodide
   coi-serviceworker.js  Enables cross-origin isolation on GitHub Pages
+web3d/           3D browser version (copy of web/ plus the following)
+  r3d.js         First-person view drawn with ASCII glyphs (Three.js)
+  sound.js       Positional sound, synthesized in the page
 ```
+
+## Changes from Rogue 5.4
+
+Everything else aims to match 5.4. These differences are intentional, mostly to make the game
+a little friendlier, in the spirit of *Torneko no Daibouken* (Mystery Dungeon):
+
+- Combat and healing messages show damage and HP numbers. Resting (`.`) says "You rest.".
+- Gold and items taken by a thief come back when you kill it. A nymph can steal any one item and moves elsewhere on the floor.
+- The five identify scrolls are merged into one that identifies any item.
+- Wandering monsters appear asleep. Unseen attackers are "something", not "it".
+- Gentler numbers: +2 max HP on level up; blindness and hallucination last about 50 turns, confusion 5.
+- Monster detection lasts until you leave the floor.
+- Thrown potions shatter and affect the monster they hit.
+- Two-handed swords (and long swords, less so) are clumsy in corridors and doorways; a two-handed sword also worsens AC by 1.
+- Entering a treasure room shows a one-time message.
+- `Z` rests until you are healed.
+- 3D version only: undiscovered traps and secret doors give faint hints up close, sleeping monsters close their eyes,
+  badly hurt monsters look damaged, corridors you have walked are lit by torches, and lit rooms can be seen into
+  from their doorways. The map memory itself is unchanged.
 
 ## License
 
