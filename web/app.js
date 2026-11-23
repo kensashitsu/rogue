@@ -6,11 +6,21 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '11-23.9';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-23.10';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
 const DEBUG = location.hash === '#debug';
+// 作者の端末は数えない（2026-11-23 ユーザー指定）。URL の末尾に #nocount を付けて開く／版番号を 5 回続けてタップすると、
+// このブラウザからはアクセス数・遊びの記録を送らない（版番号の横に no count と出る）。#count か、もう一度 5 回タップで元に戻す。
+// web と web3d は同じ保存場所なので両方に効く。ホーム画面のアプリは Safari と保存場所が別なので、それぞれで一度ずつ
+const GC_SKIP = 'gcSkip';
+let GC_OFF = (() => { try {
+  if (location.hash === '#nocount') localStorage.setItem(GC_SKIP, '1');
+  else if (location.hash === '#count') localStorage.removeItem(GC_SKIP);
+  return localStorage.getItem(GC_SKIP) === '1';
+} catch (e) { return false; } })();
+
 const debugLines = [];
 function debug(s) {
   if (!DEBUG) return;
@@ -561,7 +571,8 @@ tap($('vFull'), () => setView('full'));
 }));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
-$('ver').textContent = 'v' + VERSION;
+const verText = () => 'v' + VERSION + (GC_OFF ? ' · no count' : '');
+$('ver').textContent = verText();
 
 // 新しい版が出ていたら版番号の所に知らせる（iPhone はページを開いたまま保つので、自分では読み込み直さない）。
 // 遊んでいる途中で勝手に読み込み直すと保存していない冒険が消えるので、押されたときだけ読み込み直す
@@ -575,7 +586,15 @@ async function checkUpdate() {
     v.classList.add('update');
   } catch {}
 }
-tap($('ver'), () => { if ($('ver').classList.contains('update')) location.reload(); });
+let verTaps = [];   // 版番号を 2 秒以内に 5 回タップで「数えない」を切り替える（上の GC_OFF）
+tap($('ver'), () => {
+  if ($('ver').classList.contains('update')) { location.reload(); return; }
+  const now = Date.now(); verTaps = verTaps.filter(x => now - x < 2000); verTaps.push(now);
+  if (verTaps.length < 5) return;
+  verTaps = []; GC_OFF = !GC_OFF;
+  try { GC_OFF ? localStorage.setItem(GC_SKIP, '1') : localStorage.removeItem(GC_SKIP); } catch (e) {}
+  $('ver').textContent = verText();
+});
 document.addEventListener('visibilitychange', () => { if (!document.hidden) checkUpdate(); });
 setInterval(checkUpdate, 10 * 60 * 1000);
 tap($('moreClose'), () => { $('more').hidden = true; });
@@ -755,7 +774,7 @@ function start() {
 const GC_DEEP = 'gcDeep2d';   // その回のゲームで着いた一番深い階（2D と 3D は同じ保存場所なので名前を分ける）
 function gcEvent(path, title) {
   try {
-    if (!/\.github\.io$/.test(location.hostname)) return;
+    if (!/\.github\.io$/.test(location.hostname) || GC_OFF) return;
     const q = new URLSearchParams({ p: path, t: title, e: 'true', s: screen.width, b: navigator.webdriver ? 153 : 0, rnd: Math.random().toString(36).slice(2) });
     const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
     if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
@@ -795,7 +814,7 @@ function gcScore(score, what) {
 // COEP の下では count.js を読めないので、送るだけの sendBeacon にする（答えは受け取らない）
 (function countVisit() {
   try {
-    if (!/\.github\.io$/.test(location.hostname)) return;
+    if (!/\.github\.io$/.test(location.hostname) || GC_OFF) return;
     // 読み込み直すと来た元（Reddit など）が自分のページに変わるので、直す前に覚えておく
     if (!window.crossOriginIsolated) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
     let ref = sessionStorage.getItem('gcRef'); sessionStorage.removeItem('gcRef');
