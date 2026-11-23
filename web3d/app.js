@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.71';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.72';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.71';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.72';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.71';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.72';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1139,8 +1139,10 @@ function start() {
 }
 // 遊びの記録（GoatCounter のイベント。2026-11-23 ユーザー指定「何階まで行ったかも記録したい」）
 //   3d/floor/NN … その回のゲームで初めて NN 階に着いた（1 階＝遊び始めた。並べると何階で止まる人が多いか分かる）
-//   3d/died/NN  … NN 階で死んだ　　3d/won … 魔除けを持って地上に戻った
-// 送るのは階の数と出来事だけ（名前・死因・持ち物は送らない）。公開先でだけ送る
+//   3d/died/NN  … NN 階で死んだ　　3d/quit/NN … NN 階でやめた　　3d/won … 魔除けを持って地上に戻った
+//   3d/cause/<死因> … 死因（kestrel・starved・arrow など。2026-11-23 ユーザー指定）
+//   3d/score/<幅> … 終わったときのスコアの幅。正確な値は題名に入れる（Export の CSV で 1 件ずつ見られる。2026-11-23 ユーザー指定）
+// 名前・持ち物・メッセージは送らない。公開先でだけ送る
 const GC_DEEP = 'gcDeep3d';   // その回のゲームで着いた一番深い階（2D と 3D は同じ保存場所なので名前を分ける）
 function gcEvent(path, title) {
   try {
@@ -1155,8 +1157,28 @@ function gcPlay(d) {
   if (d.type === 'newlevel' && d.depth > (+localStorage.getItem(GC_DEEP) || 0)) {
     localStorage.setItem(GC_DEEP, d.depth);
     gcEvent('3d/floor/' + nn(d.depth), '3D: reached floor ' + d.depth);
-  } else if (d.type === 'died') gcEvent('3d/died/' + nn(d.floor), '3D: died on floor ' + d.floor);
-  else if (d.type === 'descend' && d.how === 'win') gcEvent('3d/won', '3D: won');
+  } else if (d.type === 'died') {
+    const sc = d.score != null ? ', score ' + d.score : '';
+    if (d.cause === 'quit') gcEvent('3d/quit/' + nn(d.floor), '3D: quit on floor ' + d.floor + sc);
+    else {
+      gcEvent('3d/died/' + nn(d.floor), '3D: died on floor ' + d.floor + sc);
+      const c = String(d.cause || 'unknown').replace(/^killed by an? /, '').replace(/ to death$/, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      gcEvent('3d/cause/' + c, '3D: ' + (d.cause || 'unknown cause'));
+    }
+    gcScore(d.score, '3D: ' + (d.cause === 'quit' ? 'quit' : d.cause || 'died') + ' on floor ' + d.floor);
+  } else if (d.type === 'won') {
+    gcEvent('3d/won', '3D: won, score ' + d.score);
+    gcScore(d.score, '3D: won');
+  }
+}
+// スコアは値がばらばらで並べても読めないので幅でまとめ、正確な値は題名に入れる
+function gcScore(score, what) {
+  if (score == null) return;
+  const edges = [0, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+  let i = edges.length - 1; while (i > 0 && score < edges[i]) i--;
+  const lo = edges[i], hi = edges[i + 1];
+  const band = hi ? String(lo).padStart(5, '0') + '-' + String(hi - 1).padStart(5, '0') : String(lo).padStart(5, '0') + '-up';
+  gcEvent('3d/score/' + band, what + ', score ' + score);
 }
 
 // アクセス数（GoatCounter・Cookie なし。集計は https://kensashitsu-rogue.goatcounter.com 。2026-11-23）

@@ -438,7 +438,7 @@ class Game:
         entries, rank = _add_score(entry)
         _delete_save()
         _write_gameover_log(self.player, self._player_name, self._death_cause, ui.get_event_log())
-        ui.effect_wait('died', 3000, dur=3000, cause=self._death_cause, floor=self.floor)   # 3D 版: Python のエラー表示のように死因を出す
+        ui.effect_wait('died', 3000, dur=3000, cause=self._death_cause, floor=self.floor, score=score)   # 3D 版: Python のエラー表示のように死因を出す
         ui.game_over(self.player, self._death_cause, rank, entries)
 
     # -------------------------------------------------------------------------
@@ -1256,6 +1256,8 @@ class Game:
         if _items.last_bolt and _items.last_bolt['path']:   # 光線を放つ杖なら、飛ぶ様子を見せてから知らせる
             ui.effect('bolt', name=_items.last_bolt['name'])   # 3D 版: 次に飛ぶものは光線（炎・冷気・稲妻・魔法の矢で音を変える）
             ui.animate_bolt(_items.last_bolt, direction, self.dungeon, self.player, self.monsters, self.floor_items)
+            if not self.player.is_alive:
+                self._death_cause = "killed by a bolt"
         ui.add_messages(msgs)
         self._end_turn(ui)
 
@@ -1302,6 +1304,8 @@ class Game:
             if random.randint(1, 20) >= 21 - self.player.effective_ac:
                 self.player.take_damage(dmg)
                 msgs.append(tr('The arrow hits you for {dmg} damage.', dmg=dmg))
+                if not self.player.is_alive:
+                    self._death_cause = "killed by an arrow"
             else:
                 msgs.append(tr('The arrow misses.'))
                 arrow = make_weapon(ARROW)
@@ -1328,6 +1332,8 @@ class Game:
             dmg = random.randint(1, 4)
             msgs = [tr('A dart hits you!')]
             self.player.take_damage(dmg)
+            if not self.player.is_alive:
+                self._death_cause = "killed by a dart"
             if not save_throw(self.player.level, VS_POISON):
                 if self.player._has_ring(R_SUSTSTR):
                     msgs.append(tr('The dart was poisoned, but your ring protects you!'))
@@ -1398,6 +1404,7 @@ class Game:
             gold  = self.player.gold,
         )
         entries, rank = _add_score(entry)
+        ui.effect('won', score=score, floor=self.floor)   # ブラウザ版の遊びの記録（勝ったときのスコア）
         _delete_save()
         ui.win_screen(self.player)
         ui.show_high_scores(entries, highlight_rank=rank)

@@ -19,7 +19,7 @@ walls and echo according to the size of the room (sound is optional; the game pl
 - The first load takes a while (tens of seconds): it downloads Python (Pyodide) to run the game.
 - English, Japanese, or English with Japanese subtitles.
 - Saves stay in the browser, separate from the 2D browser version.
-- Page visits are counted with GoatCounter (no cookies, no personal data). The game also sends the deepest floor reached, the floor where you died, and a win, as anonymous counts; nothing else (no name, items or messages).
+- Page visits are counted with GoatCounter (no cookies, no personal data). When you play, the game also sends anonymous counts of the deepest floor reached and, when a game ends, the floor, the cause of death and the score; nothing else (no name, items or messages).
 
 ## How This Was Made
 

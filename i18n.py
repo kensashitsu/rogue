@@ -159,12 +159,16 @@ def cause(text: str) -> str:
     if _lang == 'enja':   # 英語＋日本語: 英語のまま返し、日本語訳を覚える
         from i18n_ja import JA, NAMES
         pre = "killed by a "
-        ja = (JA.get("killed by a {name}", "killed by a {name}").format(name=NAMES.get('monster', {}).get(text[len(pre):], text[len(pre):]))
+        ja = (JA[text] if text in JA   # 決まった訳のある死因（killed by a dart など）が先
+              else JA.get("killed by a {name}", "killed by a {name}").format(name=NAMES.get('monster', {}).get(text[len(pre):], text[len(pre):]))
               if text.startswith(pre) else JA.get(text, text))
         _remember(text, ja)
         return text
     if _lang != 'ja':
         return text
+    from i18n_ja import JA
+    if text in JA:   # 決まった訳のある死因（killed by a dart など）は怪物の名前として訳さない
+        return tr(text)
     prefix = "killed by a "
     if text.startswith(prefix):
         return tr("killed by a {name}", name=name('monster', text[len(prefix):]))
