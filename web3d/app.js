@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.70';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.71';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.70';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.71';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.70';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.71';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1082,6 +1082,7 @@ function cover(text, btnLabel, fn) {
 function start() {
   const files = loadFiles();
   readLang(files);
+  if (!files['rogue.sav']) localStorage.removeItem(GC_DEEP);   // 新しいゲーム: 着いた階を数え直す（遊びの記録）
   if (!files['rogue.sav']) r3d.forgetRock();
   if (!files['rogue.cfg']) {   // 初回は端末の言語で始める（名前入力画面の Tab で切り替えられる）
     const cfg = new TextEncoder().encode(JSON.stringify({ lang }));
@@ -1114,7 +1115,8 @@ function start() {
     else if (d.type === 'file') saveFile(d.name, d.data);
     else if (d.type === 'mem') { alive.mem = Math.round(d.wasm / 1048576); if (!alive.mem0) alive.mem0 = alive.mem; }
     else if (d.type === 'missile') { alive.last.push('missile'); if (alive.last.length > 8) alive.last.shift(); r3d.missile(d.data); try { snd.missile(d.data); } catch (e) { console.warn(e); } }
-    else if (d.type === 'effect' && d.data.type === 'msgja') {   // 英語＋日本語: メッセージの日本語訳
+    if (d.type === 'effect') gcPlay(d.data);   // 遊びの記録（何階まで行ったか）
+    if (d.type === 'effect' && d.data.type === 'msgja') {   // 英語＋日本語: メッセージの日本語訳
       if (jaMap.size > 300) jaMap.clear();
       jaMap.set(d.data.en.trim(), d.data.ja); requestDraw();
     }
@@ -1135,6 +1137,28 @@ function start() {
     else if (d.type === 'error') { rain.stop(); snd.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
+// 遊びの記録（GoatCounter のイベント。2026-11-23 ユーザー指定「何階まで行ったかも記録したい」）
+//   3d/floor/NN … その回のゲームで初めて NN 階に着いた（1 階＝遊び始めた。並べると何階で止まる人が多いか分かる）
+//   3d/died/NN  … NN 階で死んだ　　3d/won … 魔除けを持って地上に戻った
+// 送るのは階の数と出来事だけ（名前・死因・持ち物は送らない）。公開先でだけ送る
+const GC_DEEP = 'gcDeep3d';   // その回のゲームで着いた一番深い階（2D と 3D は同じ保存場所なので名前を分ける）
+function gcEvent(path, title) {
+  try {
+    if (!/\.github\.io$/.test(location.hostname)) return;
+    const q = new URLSearchParams({ p: path, t: title, e: 'true', s: screen.width, b: navigator.webdriver ? 153 : 0, rnd: Math.random().toString(36).slice(2) });
+    const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
+    if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+  } catch (e) { console.warn(e); }
+}
+function gcPlay(d) {
+  const nn = n => String(n).padStart(2, '0');
+  if (d.type === 'newlevel' && d.depth > (+localStorage.getItem(GC_DEEP) || 0)) {
+    localStorage.setItem(GC_DEEP, d.depth);
+    gcEvent('3d/floor/' + nn(d.depth), '3D: reached floor ' + d.depth);
+  } else if (d.type === 'died') gcEvent('3d/died/' + nn(d.floor), '3D: died on floor ' + d.floor);
+  else if (d.type === 'descend' && d.how === 'win') gcEvent('3d/won', '3D: won');
+}
+
 // アクセス数（GoatCounter・Cookie なし。集計は https://kensashitsu-rogue.goatcounter.com 。2026-11-23）
 // 公開先でだけ、開いたときに 1 回送る。初めて開いたときは coi-serviceworker が読み込み直すので、読み込み直した後（crossOriginIsolated）だけ数える。
 // COEP の下では count.js を読めないので、送るだけの sendBeacon にする（答えは受け取らない）
