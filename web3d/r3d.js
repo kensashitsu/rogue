@@ -44,9 +44,19 @@ let trapCells = new Set(), monState = new Map(), monList = [];
 // 部屋（壁の上下左右と、暗い部屋か）。明るい部屋の壁には燭台を灯す。暗い部屋には燭台を置かない（火の消えた燭台があると、灯せそうに見える。2026-10-23 ユーザー指定）
 let rooms = [], sconces = [];
 const SCONCE_GAP = 4;   // 燭台を置く間隔（マス）
-// アミュレットを持っている間は、階段を上り階段に描く（段が北へ上っていき、天井に口が開いて上の階へ抜ける）
+// アミュレットを持っている間は、階段を上り階段に描く（段が奥へ上っていき、天井に口が開いて上の階へ抜ける）
 let upStairs = false;
 let stairAt = { level: '', cell: -1 };
+// 階段の向き（0 北・1 東・2 南・3 西 = 段の上る／下りていく向き）。近づいてくる側に一段目が向くよう、自分と階段の位置で決める
+// （以前は必ず北向きで、東や西から近づくと階段の横腹に向かう形になっていた。2026-11-23 ユーザー指摘）。階段の上に立っている間は変えない
+let stairDir = 0;
+const STAIR_V = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // 向きごとの (x, z) の進む向き
+// 北向きで考えたマスの中の点 (lx, lz)（0〜1。lz = 1 が一段目の側）を、向き d に回してマスの座標にする
+function stairPt(x, y, lx, lz, d) {
+  const u = lx - 0.5, w = lz - 0.5;
+  const [a, b] = d === 0 ? [u, w] : d === 1 ? [-w, u] : d === 2 ? [-u, -w] : [w, -u];
+  return [x + 0.5 + a, y + 0.5 + b];
+}
 const STEP_RISE = 0.25;   // 上り階段の 1 段の高さ（4 段で天井に届く）
 let edgeSegs = [], edgeBright = [];   // 壁の輪郭の線分（x, y, z の組を 2 つずつ）と、その明るさ
 const glyphGroup = new THREE.Group();   // モンスター・アイテムの位置（描くのは drawTerm。札そのものは見せない）
@@ -259,11 +269,12 @@ function transCamera(now) {
   if (trans.how === 'fall') {   // 床を抜けて、だんだん速く落ちる
     return { x: cam.x, z: cam.z, y: EYE - 2.4 * k * k, yaw: cam.yaw, pitch: 0.25 * k };
   }
-  // 階段: 北（段の下りていく・上っていく向き）へ向き直りながら、段を下りる（上る）
+  // 階段: 段の下りていく・上っていく向き（stairDir）へ向き直りながら、段を下りる（上る）
   const turnK = Math.min(1, k / 0.35), e = Math.max(0, (k - 0.2) / 0.8);
-  const dYaw = ((0 - cam.yaw) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+  const dYaw = ((yawOf(stairDir * 2) - cam.yaw) % (2 * Math.PI) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
   const up = BRIGHT_TRANS.has(trans.how) ? 1 : -1;
-  return { x: cam.x, z: cam.z + 0.3 - e * 1.1, y: EYE + up * e * 1.0, yaw: cam.yaw + dYaw * turnK, pitch: 0.2 * up * e };
+  const [vx, vz] = STAIR_V[stairDir], go = e * 1.1 - 0.3;
+  return { x: cam.x + vx * go, z: cam.z + vz * go, y: EYE + up * e * 1.0, yaw: cam.yaw + dYaw * turnK, pitch: 0.2 * up * e };
 }
 // 暗さ（0〜1）: 下りる終わりに暗くなり、新しい階で明ける
 function transDark(now) {
@@ -393,8 +404,13 @@ function build(grid) {
         const ns = [ch(y - 1, x), ch(y + 1, x), ch(y, x - 1), ch(y, x + 1)];
         corr = ns.includes('#') && !ns.includes('.');
       }
+      if (c === '%' && !onStairs && player) {
+        const dy = y - player[0], dx = x - player[1];
+        if (Math.abs(dy) > Math.abs(dx)) stairDir = dy < 0 ? 0 : 2;
+        else if (Math.abs(dx) > Math.abs(dy)) stairDir = dx > 0 ? 1 : 3;   // 斜めちょうどのときは前の向きのまま
+      }
       if (c === '%') {
-        // 下り階段: 床の代わりに穴。北（奥）へ向かって段が下りていく
+        // 下り階段: 床の代わりに穴。近づいてきた向きの奥へ段が下りていく
         const st = (s & 15) ? PALETTE[(s & 15) - 1] : stairsColor;
         stairsColor = st;
         if (upStairs) {
@@ -402,8 +418,8 @@ function build(grid) {
           // 段の上に立っている間は段を描かない（視点が段の中に埋まるので）。床と、頭の上の口だけ
           if (onStairs) put(floors, 'floors', x, 0, y, bright);
           else for (let i = 0; i < STEPS; i++) {
-            const top = STEP_RISE * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
-            put(meshes.steps, 'steps', x + 0.5, top / 2, z1 + 0.5 / STEPS, bright, 0, 1, top, 1 / STEPS, true);
+            const top = STEP_RISE * (i + 1), [cx, cz] = stairPt(x, y, 0.5, 1 - (i + 0.5) / STEPS, stairDir);
+            put(meshes.steps, 'steps', cx, top / 2, cz, bright, stairDir % 2 ? Math.PI / 2 : 0, 1, top, 1 / STEPS, true);
           }
           for (const [px, pz, sx, sz] of [[x + 0.5, y + 0.02, 1, 0.04], [x + 0.5, y + 0.98, 1, 0.04], [x + 0.02, y + 0.5, 0.04, 1], [x + 0.98, y + 0.5, 0.04, 1]])
             put(meshes.pits, 'pits', px, 1.6, pz, 1, 0, sx, 1.2, sz, true);   // 天井の上の縦穴（明るく）
@@ -411,8 +427,8 @@ function build(grid) {
           continue;
         }
         for (let i = 0; i < STEPS; i++) {
-          const top = -STEP_DROP * (i + 1), z1 = y + 1 - (i + 1) / STEPS;
-          put(meshes.steps, 'steps', x + 0.5, (top - 1.2) / 2, z1 + 0.5 / STEPS, bright, 0, 1, top + 1.2, 1 / STEPS, true);
+          const top = -STEP_DROP * (i + 1), [cx, cz] = stairPt(x, y, 0.5, 1 - (i + 0.5) / STEPS, stairDir);
+          put(meshes.steps, 'steps', cx, (top - 1.2) / 2, cz, bright, stairDir % 2 ? Math.PI / 2 : 0, 1, top + 1.2, 1 / STEPS, true);
         }
         for (const [px, pz, sx, sz] of [[x + 0.5, y + 0.02, 1, 0.04], [x + 0.5, y + 0.98, 1, 0.04], [x + 0.02, y + 0.5, 0.04, 1], [x + 0.98, y + 0.5, 0.04, 1]])
           put(meshes.pits, 'pits', px, -0.6, pz, bright * 0.8, 0, sx, 1.2, sz, true);
@@ -520,9 +536,9 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
     line(x, 0.996, y, x + 1, 0.996, y, b); line(x, 0.996, y + 1, x + 1, 0.996, y + 1, b);
     line(x, 0.996, y, x, 0.996, y + 1, b); line(x + 1, 0.996, y, x + 1, 0.996, y + 1, b);
     for (let i = 0; i < STEPS; i++) {
-      const z0 = y + 1 - i / STEPS;
-      line(x, STEP_RISE * (i + 1), z0, x + 1, STEP_RISE * (i + 1), z0, b);   // この段の踏み面の先
-      line(x, STEP_RISE * i, z0, x + 1, STEP_RISE * i, z0, b);               // 蹴込みの下
+      const [ax, az] = stairPt(x, y, 0, 1 - i / STEPS, stairDir), [bx, bz] = stairPt(x, y, 1, 1 - i / STEPS, stairDir);
+      line(ax, STEP_RISE * (i + 1), az, bx, STEP_RISE * (i + 1), bz, b);   // この段の踏み面の先
+      line(ax, STEP_RISE * i, az, bx, STEP_RISE * i, bz, b);               // 蹴込みの下
     }
   }
   // 下り階段: 穴の縁と、段の角（踏み面の先と、蹴込みの下）
@@ -530,9 +546,10 @@ function buildEdges(solid, stairCells = [], doorCells = []) {
     line(x, 0.004, y, x + 1, 0.004, y, b); line(x, 0.004, y + 1, x + 1, 0.004, y + 1, b);
     line(x, 0.004, y, x, 0.004, y + 1, b); line(x + 1, 0.004, y, x + 1, 0.004, y + 1, b);
     for (let i = 0; i < STEPS; i++) {
-      const z0 = y + 1 - i / STEPS, upper = -STEP_DROP * i, top = -STEP_DROP * (i + 1);
-      line(x, upper, z0, x + 1, upper, z0, b);   // 一段上の踏み面の先
-      line(x, top, z0, x + 1, top, z0, b);       // この段の蹴込みの下
+      const upper = -STEP_DROP * i, top = -STEP_DROP * (i + 1);
+      const [ax, az] = stairPt(x, y, 0, 1 - i / STEPS, stairDir), [bx, bz] = stairPt(x, y, 1, 1 - i / STEPS, stairDir);
+      line(ax, upper, az, bx, upper, bz, b);   // 一段上の踏み面の先
+      line(ax, top, az, bx, top, bz, b);       // この段の蹴込みの下
     }
   }
   edgeSegs = pos; edgeBright = bri;
