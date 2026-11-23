@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.67';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.68';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.67';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.68';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.67';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.68';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1140,8 +1140,13 @@ function start() {
 // COEP の下では count.js を読めないので、送るだけの sendBeacon にする（答えは受け取らない）
 (function countVisit() {
   try {
-    if (!/\.github\.io$/.test(location.hostname) || !window.crossOriginIsolated) return;
-    const q = new URLSearchParams({ p: location.pathname, t: document.title, r: document.referrer || '',
+    if (!/\.github\.io$/.test(location.hostname)) return;
+    // 読み込み直すと来た元（Reddit など）が自分のページに変わるので、直す前に覚えておく
+    if (!window.crossOriginIsolated) { sessionStorage.setItem('gcRef', document.referrer || ''); return; }
+    let ref = sessionStorage.getItem('gcRef'); sessionStorage.removeItem('gcRef');
+    if (ref === null) ref = document.referrer || '';
+    if (ref.split('?')[0] === location.href.split('?')[0]) ref = '';   // 自分のページは来た元にしない
+    const q = new URLSearchParams({ p: location.pathname, t: document.title, r: ref,
       s: [screen.width, screen.height, devicePixelRatio || 1].join(','), rnd: Math.random().toString(36).slice(2) });
     const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
     if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
