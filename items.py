@@ -966,10 +966,9 @@ def use_scroll(
         pass   # game.py で食料の位置を表示する
 
     elif which == S_TELEP:
-        old_y, old_x = player.y, player.x
         pos = dungeon.teleport_player(player.y, player.x)
         player.y, player.x = pos.y, pos.x
-        msgs.append(tr('You feel a wrenching sensation. ({old_y},{old_x}) -> ({y},{x})', old_y=old_y, old_x=old_x, y=player.y, x=player.x))
+        msgs.append(tr('You feel a wrenching sensation.'))   # 試験用の座標の表示が残っていたのを消した（5.4 には無い）
 
     elif which == S_ENCH:
         if player.weapon is not None:

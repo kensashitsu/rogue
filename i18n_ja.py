@@ -339,7 +339,7 @@ JA: dict[str, str] = {
     "Your armor glows faintly for a moment. (AC {old_ac} -> {o_arm})": "鎧が一瞬、淡く光った。（防御 {old_ac} → {o_arm}）",
     "You feel a magical aura around you.": "魔法の気配に包まれた。",
     "You hear maniacal laughter in the distance.": "遠くで狂ったような笑い声がした。",
-    "You feel a wrenching sensation. ({old_y},{old_x}) -> ({y},{x})": "体がねじれるような感覚がした。（{old_y},{old_x}）→（{y},{x}）",
+    "You feel a wrenching sensation.": "体がねじれるような感覚がした。",
     "Your weapon glows silver for a moment.": "武器が一瞬、銀色に光った。",
     "Your weapon glows blue for a moment. (hit {old:+d} -> {o_hplus:+d})": "武器が一瞬、青く光った。（命中 {old:+d} → {o_hplus:+d}）",
     "Your weapon glows red for a moment. (dmg {old:+d} -> {o_dplus:+d})": "武器が一瞬、赤く光った。（威力 {old:+d} → {o_dplus:+d}）",
