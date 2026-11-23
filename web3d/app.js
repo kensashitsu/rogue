@@ -8,17 +8,17 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.76';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.77';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.76';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.77';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.76';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.77';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
 const DEBUG = location.hash === '#debug';
 // 作者の端末は数えない（2026-11-23 ユーザー指定）。URL の末尾に #nocount を付けて開く／版番号を 5 回続けてタップすると、
-// このブラウザからはアクセス数・遊びの記録を送らない（版番号の横に no count と出る）。#count か、もう一度 5 回タップで元に戻す。
+// このブラウザからはアクセス数・遊びの記録を送らない（版番号の横に off と出る）。#count か、もう一度 5 回タップで元に戻す。
 // web と web3d は同じ保存場所なので両方に効く。ホーム画面のアプリは Safari と保存場所が別なので、それぞれで一度ずつ
 const GC_SKIP = 'gcSkip';
 let GC_OFF = (() => { try {
@@ -739,7 +739,7 @@ tap($('vFull'), () => setView('full'));
 }));
 [...$('zoomSeg').children].forEach(o => o.setAttribute('aria-pressed', +o.dataset.cols === viewCols));
 setView(view);
-const verText = () => 'v' + VERSION + (GC_OFF ? ' · no count' : '');
+const verText = () => 'v' + VERSION + (GC_OFF ? ' · off' : '');
 $('ver').textContent = verText();
 
 // 落ちた跡を残す。iPhone の Safari はタブが落ちると黙って読み込み直すので、画面を見ている間に止まったら、次に開いたとき前回の様子を上に出す
@@ -775,10 +775,10 @@ async function checkUpdate() {
     v.classList.add('update');
   } catch {}
 }
-let verTaps = [];   // 版番号を 2 秒以内に 5 回タップで「数えない」を切り替える（上の GC_OFF）
+let verTaps = [];   // 版番号を 3 秒以内に 5 回タップで「数えない」を切り替える（上の GC_OFF）
 tap($('ver'), () => {
   if ($('ver').classList.contains('update')) { location.reload(); return; }
-  const now = Date.now(); verTaps = verTaps.filter(x => now - x < 2000); verTaps.push(now);
+  const now = Date.now(); verTaps = verTaps.filter(x => now - x < 3000); verTaps.push(now);
   if (verTaps.length < 5) return;
   verTaps = []; GC_OFF = !GC_OFF;
   try { GC_OFF ? localStorage.setItem(GC_SKIP, '1') : localStorage.removeItem(GC_SKIP); } catch (e) {}
