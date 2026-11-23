@@ -6,6 +6,8 @@ Python implementation of Rogue 5.4 for the terminal, in English or Japanese.
 
 **Play: https://kensashitsu.github.io/rogue/web3d/**
 
+![Rogue 3D: a kestrel made of K characters, gold and torches in a lit room](web3d/og.png)
+
 The same game seen in first person — drawn only with ASCII characters. Walls, floors, torchlight
 and monsters are all built from the glyphs of an 80x24 terminal, and the question behind it is
 how real a space can feel when it is made of nothing but text. Light falls off with distance,

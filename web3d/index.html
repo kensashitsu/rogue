@@ -12,6 +12,16 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0b0d0f">
 <title>Rogue 3D</title>
+<meta name="description" content="The 1980 classic Rogue in first person, drawn only with ASCII characters. Plays in the browser on phones and desktops.">
+<!-- リンクを貼ったときのプレビュー（Reddit・X・Discord など）。画像は絶対 URL が要る -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Rogue 3D">
+<meta property="og:description" content="The 1980 classic Rogue in first person, drawn only with ASCII characters. Plays in the browser on phones and desktops.">
+<meta property="og:url" content="https://kensashitsu.github.io/rogue/web3d/">
+<meta property="og:image" content="https://kensashitsu.github.io/rogue/web3d/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
 <script src="coi-serviceworker.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -289,6 +299,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script type="module" src="app.js?v=3d-1.63"></script><!-- ?v= は app.js の VERSION と揃える（ブラウザが古いファイルを使い続けないように） -->
+<script type="module" src="app.js?v=3d-1.64"></script><!-- ?v= は app.js の VERSION と揃える（ブラウザが古いファイルを使い続けないように） -->
 </body>
 </html>
