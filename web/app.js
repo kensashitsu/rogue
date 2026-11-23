@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '11-23.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-23.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -744,5 +744,18 @@ function start() {
     else if (d.type === 'error') { console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
+// アクセス数（GoatCounter・Cookie なし。集計は https://kensashitsu-rogue.goatcounter.com 。2026-11-23）
+// 公開先でだけ、開いたときに 1 回送る。初めて開いたときは coi-serviceworker が読み込み直すので、読み込み直した後（crossOriginIsolated）だけ数える。
+// COEP の下では count.js を読めないので、送るだけの sendBeacon にする（答えは受け取らない）
+(function countVisit() {
+  try {
+    if (!/\.github\.io$/.test(location.hostname) || !window.crossOriginIsolated) return;
+    const q = new URLSearchParams({ p: location.pathname, t: document.title, r: document.referrer || '',
+      s: [screen.width, screen.height, devicePixelRatio || 1].join(','), rnd: Math.random().toString(36).slice(2) });
+    const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
+    if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+  } catch (e) { console.warn(e); }
+})();
+
 start();
 document.fonts && document.fonts.ready.then(requestDraw);

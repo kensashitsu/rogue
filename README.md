@@ -19,6 +19,7 @@ walls and echo according to the size of the room (sound is optional; the game pl
 - The first load takes a while (tens of seconds): it downloads Python (Pyodide) to run the game.
 - English, Japanese, or English with Japanese subtitles.
 - Saves stay in the browser, separate from the 2D browser version.
+- Page visits are counted with GoatCounter (no cookies, no personal data; the game itself sends nothing).
 
 ## How This Was Made
 

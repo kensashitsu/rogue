@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.66';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.67';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.66';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.67';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.66';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.67';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1135,6 +1135,19 @@ function start() {
     else if (d.type === 'error') { rain.stop(); snd.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
+// アクセス数（GoatCounter・Cookie なし。集計は https://kensashitsu-rogue.goatcounter.com 。2026-11-23）
+// 公開先でだけ、開いたときに 1 回送る。初めて開いたときは coi-serviceworker が読み込み直すので、読み込み直した後（crossOriginIsolated）だけ数える。
+// COEP の下では count.js を読めないので、送るだけの sendBeacon にする（答えは受け取らない）
+(function countVisit() {
+  try {
+    if (!/\.github\.io$/.test(location.hostname) || !window.crossOriginIsolated) return;
+    const q = new URLSearchParams({ p: location.pathname, t: document.title, r: document.referrer || '',
+      s: [screen.width, screen.height, devicePixelRatio || 1].join(','), rnd: Math.random().toString(36).slice(2) });
+    const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
+    if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
+  } catch (e) { console.warn(e); }
+})();
+
 // WebGL が使えないと r3d.init が投げる。そのままだと「読み込み中」で止まるので、2D 版へ案内する（2026-11-23）
 let glOk = true;
 try { r3d.init($('v3')); } catch (e) { glOk = false; console.error(e); }
