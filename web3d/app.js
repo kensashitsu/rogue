@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.65';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.66';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.65';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.66';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.65';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.66';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -59,7 +59,7 @@ const L = {
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'], ['Z', 'Rest to heal'],
-           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['sound', 'Sound'], ['manual', 'Manual (ja)'], ['S', 'Save & quit'], ['Q', 'Quit'], ['export', 'Export save'], ['import', 'Import save']],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['sound', 'Sound'], ['manual', 'Manual'], ['S', 'Save & quit'], ['Q', 'Quit'], ['export', 'Export save'], ['import', 'Import save']],
     noSave: 'There is no save to export. Use “Save & quit” first', badSave: 'This is not a save file',
     askImport: 'Your current save (and scores) will be replaced by the imported one. Continue?',
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
@@ -772,19 +772,20 @@ tap($('moreClose'), () => { $('more').hidden = true; });
 // ---------------------------------------------------------------------------
 // 説明書（exe 版と同じ manual.txt を読み込んで、スマホの幅で読めるように組む）
 // ---------------------------------------------------------------------------
-let manualLoaded = false;
+let manualLoaded = '';   // 読み込んだ説明書の言語（英語のときは manual_en.txt。2026-11-23）
 async function openManual() {
   $('manual').hidden = false;
   $('manualClose').textContent = t().close;
+  $('manual').querySelector('header span').textContent = lang === 'ja' ? '説明書' : 'Manual';
   $('manualTop').textContent = lang === 'ja' ? '↑ 目次へ' : '↑ Contents';
-  if (manualLoaded) return;
+  if (manualLoaded === lang) return;
   const body = $('manualBody');
   body.textContent = t().loading;
   try {
-    const r = await fetch('../manual.txt', { cache: 'no-cache' });
+    const r = await fetch(lang === 'en' ? '../manual_en.txt' : '../manual.txt', { cache: 'no-cache' });
     if (!r.ok) throw new Error(r.status);
     buildManual(body, await r.text());
-    manualLoaded = true;
+    manualLoaded = lang;
   } catch (e) { body.textContent = String(e); }
 }
 // 見た目の桁数（全角 = 2）
@@ -797,6 +798,8 @@ function buildManual(body, text) {
   const isBox = l => /^\s*[┌│└]/.test(l);
   // 4 列以上ある行か、深く字下げした続きの行（表の右端の列）
   const isTable = l => (l.trim().match(/\S {2,}(?=\S)/g) || []).length >= 3 || (l.trim() && l.match(/^ */)[0].length >= 30);
+  const join = /^\s*ROGUE\s+–\s+Player's Manual/m.test(text);   // 英語版（manual_en.txt）だけ。日本語は行の切れ目に意味があるので触らない
+  let last = null;   // 直前の地の文の行 { el, cont: 続きの行の字下げ }
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
     // ===== で挟まれた 1〜3 行は見出し
@@ -805,6 +808,7 @@ function buildManual(body, text) {
       while (j < lines.length && j - i <= 4 && !/^=+$/.test(lines[j].trim())) j++;
       if (j < lines.length && j - i <= 4 && j > i + 1) {
         add('h2', '', lines.slice(i + 1, j).map(s => s.trim()).filter(Boolean).join('\n'));
+        last = null;
         i = j;
       }
       continue;
@@ -819,17 +823,24 @@ function buildManual(body, text) {
       if (para.some(s => isBox(s) || isTable(s))) {
         const n = Math.min(...para.map(s => s.match(/^ */)[0].length));
         add('pre', 'wide', para.map(s => s.slice(n)).join('\n'));
+        last = null;
         i = j - 1;
         continue;
       }
     }
-    if (isRule(l)) { add('hr'); continue; }
-    if (!l.trim()) { add('div', 'gap'); continue; }
+    if (isRule(l)) { add('hr'); last = null; continue; }
+    if (!l.trim()) { add('div', 'gap'); last = null; continue; }
     const ind = l.match(/^ */)[0].length;
-    const d = add('div', 'ln', l.slice(ind));
     // 折り返した行の字下げ（半角 2 文字 = 1em）。「名前    説明」の表の行は、説明の列に揃えて折り返す
     const m = l.slice(ind).match(/^(\S.*?\S|\S) {2,}(?=\S)/);
     const hang = m && textCols(m[0]) <= 40 ? textCols(m[0]) : 0;
+    if (join && last && ind === last.cont && !hang && !/^([-*•]\s|\d+\.\s|\[)/.test(l.slice(ind))) {
+      last.el.textContent += ' ' + l.slice(ind);
+      continue;
+    }
+    const d = add('div', 'ln', l.slice(ind));
+    const bullet = l.slice(ind).match(/^([-*•]|\d+\.)\s+/);
+    last = { el: d, cont: hang ? ind + hang : bullet ? ind + bullet[0].length : ind };
     // 深い字下げは画面の半分までに抑える（はみ出すとスクロールのたびに左右にぶれる）
     const pad = `min(${(ind + hang) / 2}em, 45vw)`;
     d.style.paddingLeft = pad;
