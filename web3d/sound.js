@@ -42,6 +42,7 @@ export function init(r3dScene) {
   // iPhone は触ったときにしか音を始められない。最初に触ったときに作る（以後も、眠っていたら触って起こす）
   const unlock = () => {
     if (!enabled || !(window.AudioContext || window.webkitAudioContext)) return;   // 音の仕組みが無いブラウザでは鳴らさないだけ
+    if (dead) return;   // 終わった後（保存して終了・死んだ後）の画面を触っても音を起こさない
     if (!ctx) { try { build(); } catch (e) { console.warn(e); enabled = false; return; } }
     if (ctx.state !== 'running') ctx.resume();
     if (!unlocked) {   // 無音を一度鳴らして iOS の鍵を外す
@@ -399,7 +400,7 @@ function updateTorches() {
 
 function wake() {
   activeAt = performance.now();
-  if (!ctx || !enabled) return;
+  if (!ctx || !enabled || dead) return;
   if (ctx.state !== 'running' && unlocked) ctx.resume();
   if (sleeping && !dead) { sleeping = false; ambGain.gain.setTargetAtTime(0.05, ctx.currentTime, 0.4); updateTorches(); }
   clearTimeout(idleTimer);
@@ -470,6 +471,16 @@ function surfaceAt(y, x) {
   if (!r) return '#';
   if (y === r.top || y === r.bottom || x === r.left || x === r.right) return '+';
   return '.';
+}
+
+// ゲームが終わった（保存して終了・エラーで止まった）: 空気と松明の音を消して、音の処理を止める。以後は触っても鳴らさない
+export function stop() {
+  dead = true; sleeping = true;
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  ambGain.gain.setTargetAtTime(0, t, 0.1);
+  torchVoices.forEach(v => v.gn.gain.setTargetAtTime(0, t, 0.1));
+  setTimeout(() => { if (ctx.state === 'running') ctx.suspend(); }, 600);
 }
 
 // ゲームからの知らせ（effect）

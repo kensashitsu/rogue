@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.61';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.62';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.61';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.62';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.61';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.62';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1113,11 +1113,12 @@ function start() {
     }
     else if (d.type === 'flash') { const f = $('flash'); f.style.opacity = .35; setTimeout(() => { f.style.opacity = 0; }, 90); }
     else if (d.type === 'exit') {
+      snd.stop();   // 保存して終了した後の画面では音を鳴らさない
       rain.stop();
       const saved = 'rogue.sav' in loadFiles();
       cover(saved ? t().saved : t().over, saved ? t().resume : t().again, () => location.reload());
     }
-    else if (d.type === 'error') { rain.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
+    else if (d.type === 'error') { rain.stop(); snd.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
 r3d.init($('v3'));
