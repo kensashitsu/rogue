@@ -707,8 +707,11 @@ function kindMat(kind) {
 
 const CELL_W = 5.5;   // 升目 1 つの横幅（CSS の px。縦はその 2 倍）。粗・中・細を見比べて中に決めた
 let tcols = 0, trows = 0, tcw = 0, tch = 0, rt = null, tbuf = null, tdpr = 1;
+// 横の升目は 130 字まで（2026-11-23 ユーザーが A今のまま/B 180字/C 130字 から C を選択）。PC の大画面で 300 字近くになり、
+// 点描が細かすぎて灰色の面に見えていた。130 字はスマホの粗さに近い。効くのは幅が約 715px より広い画面だけ（iPhone の縦向きは変わらない）
+const MAX_COLS = 130;
 function sizeTerm(w, h) {
-  tcols = Math.max(24, Math.round(w / CELL_W)); tcw = w / tcols;
+  tcols = Math.min(MAX_COLS, Math.max(24, Math.round(w / CELL_W))); tcw = w / tcols;
   tch = tcw * 2; trows = Math.max(12, Math.floor(h / tch));
   const dpr = tdpr = Math.min(devicePixelRatio || 1, 2);
   glyph.shapes.clear();
