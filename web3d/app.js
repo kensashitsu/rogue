@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.69';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.70';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.69';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.70';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.69';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.70';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -1147,7 +1147,8 @@ function start() {
     if (ref === null) ref = document.referrer || '';
     if (ref.split('?')[0] === location.href.split('?')[0]) ref = '';   // 自分のページは来た元にしない
     const q = new URLSearchParams({ p: location.pathname, t: document.title, r: ref,
-      s: [screen.width, screen.height, devicePixelRatio || 1].join(','), rnd: Math.random().toString(36).slice(2) });
+      // 項目は公式の count.js（gc.zgo.at/count.js）と同じにする。b（ロボットか）が無い・s が横幅だけでないと数えられなかった（2026-11-23）
+      s: screen.width, b: navigator.webdriver ? 153 : 0, q: location.search, rnd: Math.random().toString(36).slice(2) });
     const url = 'https://kensashitsu-rogue.goatcounter.com/count?' + q;
     if (!(navigator.sendBeacon && navigator.sendBeacon(url))) fetch(url, { mode: 'no-cors', keepalive: true }).catch(() => {});
   } catch (e) { console.warn(e); }
