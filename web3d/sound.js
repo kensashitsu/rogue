@@ -18,7 +18,7 @@ let ctx = null, master = null, dry = null, wetA = null, wetB = null, convA = nul
 let ambGain = null, torchVoices = [];
 let enabled = true;
 try { enabled = localStorage.getItem(KEY) !== '0'; } catch {}
-let unlocked = false, activeAt = 0, sleeping = false, idleTimer = 0;
+let unlocked = false, activeAt = 0, sleeping = false, idleTimer = 0, dead = false;
 let lastPos = null, lastLevel = null, skipStep = false, lastStepAt = 0;
 let prevMons = null;
 let envKey = '';
@@ -385,7 +385,7 @@ function startAmbient() {
 // 近い燭台（明かりの届く 3 マスほど）に音を置く。遠い燭台は鳴らさない
 function updateTorches() {
   const sc = scene(), p = sc.player;
-  if (!p || !torchVoices.length) return;
+  if (!p || !torchVoices.length || dead) return;
   const near = sc.sconces.map(s => ({ s, d: Math.hypot(s.x - (p[1] + 0.5), s.z - (p[0] + 0.5)) })).filter(o => o.d < 3.2).sort((a, b) => a.d - b.d).slice(0, 2);
   const t = ctx.currentTime;
   torchVoices.forEach((v, i) => {
@@ -401,7 +401,7 @@ function wake() {
   activeAt = performance.now();
   if (!ctx || !enabled) return;
   if (ctx.state !== 'running' && unlocked) ctx.resume();
-  if (sleeping) { sleeping = false; ambGain.gain.setTargetAtTime(0.05, ctx.currentTime, 0.4); updateTorches(); }
+  if (sleeping && !dead) { sleeping = false; ambGain.gain.setTargetAtTime(0.05, ctx.currentTime, 0.4); updateTorches(); }
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
     if (!ctx || performance.now() - activeAt < IDLE_MS - 50) return;
@@ -556,6 +556,32 @@ export function effect(d) {
       for (let i = 0; i < 6; i++) burst(o, t1 + 0.9 + i * rnd(0.05, 0.14), { f: rnd(3000, 6000), q: 2.5, dur: 0.03, gain: rnd(0.12, 0.3) });   // ぱらぱら
     }
     note('secretdoor');
+  } else if (d.type === 'died') {   // 死んだ: 体が崩れ落ちる → ダンジョンの音が消える → エラー表示が出た所で端末のブザー
+    const cause = String(d.cause || '');
+    const quit = cause === 'quit';
+    if (!quit) {   // あきらめたときは倒れない
+      const v = voice(p[0], p[1], { h: 0.1, occl: false, send: 0.6, model: 'equalpower' });
+      thump(v.inp, t + 0.05, { f: 85, dur: 0.15, gain: 0.45 });   // 膝をつく
+      burst(v.inp, t + 0.05, { f: 700, q: 0.8, dur: 0.12, gain: 0.3, attack: 0.02 });
+      thump(v.inp, t + 0.38, { f: 60, dur: 0.3, gain: 0.6, drop: 0.5 });   // 体が床に
+      burst(v.inp, t + 0.38, { f: 500, q: 0.7, dur: 0.25, gain: 0.4, attack: 0.02 });
+      tink(v.inp, t + 0.45, { f: 950, dur: 0.5, gain: 0.12 });   // 手から武器が落ちる
+      tink(v.inp, t + 0.62, { f: 1010, dur: 0.35, gain: 0.07 });
+    }
+    // ダンジョンの空気と松明の音を静かに消す（もう聞く人がいない）
+    const tf = t + (quit ? 0.1 : 0.7);
+    ambGain.gain.setTargetAtTime(0, tf, 0.4);
+    torchVoices.forEach(tv => tv.gn.gain.setTargetAtTime(0, tf, 0.4));
+    sleeping = true; dead = true;   // このあと画面が描き直されても空気の音は戻さない（新しく始めるときはページを読み込み直す）
+    // エラー表示（app.js の termFx.died）の最後の行 PlayerDied / SystemExit が出る時に合わせる。呼び出しの段数は死に方で決まる
+    const frames = quit ? 1 : cause.startsWith('starved') ? 2 : cause.startsWith('killed by') ? 5 : 1;
+    const tb = t + (260 + frames * 270 + 150) / 1000;
+    const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = 196;   // ブー（低いソ。レベルの音と同じ PC のスピーカー）
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2500;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, tb); g.gain.linearRampToValueAtTime(0.06, tb + 0.005); g.gain.setValueAtTime(0.06, tb + 0.55); g.gain.linearRampToValueAtTime(0, tb + 0.57);
+    o.connect(lp); lp.connect(g); g.connect(master); o.start(tb); o.stop(tb + 0.6);
+    note('died');
   } else if (d.type === 'bolt') {   // 次に飛ぶのは杖の光線（missile で鳴らす）
     pendingBolt = { at: performance.now(), name: d.name };
     return;
