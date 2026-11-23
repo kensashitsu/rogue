@@ -157,8 +157,9 @@ web3d/           3D browser version (copy of web/ plus the following)
 
 ## Changes from Rogue 5.4
 
-Everything else aims to match 5.4. These differences are intentional, mostly to make the game
-a little friendlier, in the spirit of *Torneko no Daibouken* (Mystery Dungeon):
+Everything else aims to match 5.4. These differences are intentional: small adjustments for
+modern players, making the game a little more forgiving and showing more of what is going on,
+without changing how it plays:
 
 - Combat and healing messages show damage and HP numbers. Resting (`.`) says "You rest.".
 - Gold and items taken by a thief come back when you kill it. A nymph can steal any one item and moves elsewhere on the floor.
