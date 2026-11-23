@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.64';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.65';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.64';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.65';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.64';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.65';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -52,6 +52,7 @@ const L = {
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
     noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
+    noGL: 'このブラウザでは 3D の画面を出せませんでした（WebGL が使えません）。\n同じゲームを 2D の画面で遊べます。', open2d: '2D 版を開く',
     crash: 'エラーで止まりました', reload: '読み込み直す',
   },
   en: {
@@ -68,6 +69,7 @@ const L = {
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
     noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
+    noGL: 'This browser cannot show the 3D view (WebGL is not available).\nThe same game can be played in 2D.', open2d: 'Open the 2D version',
     crash: 'Stopped by an error', reload: 'Reload',
   },
 };
@@ -1122,9 +1124,16 @@ function start() {
     else if (d.type === 'error') { rain.stop(); snd.stop(); console.error(d.text); cover(t().crash + '\n' + d.text.split('\n').slice(-3).join('\n'), t().reload, () => location.reload()); }
   };
 }
-r3d.init($('v3'));
-snd.init(r3d.soundScene);
-window.__rogue = { rowText, findPlayer, r3d, grid, termFx, snd };   // 試験用（自動で歩かせて撮る）
-new ResizeObserver(() => { r3d.resize(); }).observe(box);
-start();
+// WebGL が使えないと r3d.init が投げる。そのままだと「読み込み中」で止まるので、2D 版へ案内する（2026-11-23）
+let glOk = true;
+try { r3d.init($('v3')); } catch (e) { glOk = false; console.error(e); }
+if (glOk) {
+  snd.init(r3d.soundScene);
+  window.__rogue = { rowText, findPlayer, r3d, grid, termFx, snd };   // 試験用（自動で歩かせて撮る）
+  new ResizeObserver(() => { r3d.resize(); }).observe(box);
+  start();
+} else {
+  readLang(loadFiles());
+  cover(t().noGL, t().open2d, () => { location.href = '../web/'; });
+}
 document.fonts && document.fonts.ready.then(requestDraw);
