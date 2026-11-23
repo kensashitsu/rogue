@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '11-23.7';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-23.8';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -797,7 +797,7 @@ function gcScore(score, what) {
   try {
     if (!/\.github\.io$/.test(location.hostname)) return;
     // 読み込み直すと来た元（Reddit など）が自分のページに変わるので、直す前に覚えておく
-    if (!window.crossOriginIsolated) { sessionStorage.setItem('gcRef', document.referrer || ''); return; }
+    if (!window.crossOriginIsolated) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
     let ref = sessionStorage.getItem('gcRef'); sessionStorage.removeItem('gcRef');
     if (ref === null) ref = document.referrer || '';
     if (ref.split('?')[0] === location.href.split('?')[0]) ref = '';   // 自分のページは来た元にしない

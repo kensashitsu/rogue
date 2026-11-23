@@ -14,7 +14,7 @@
 <title>Rogue</title>
 <script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
 <!-- アクセス数の来た元: 初回は coi-serviceworker がすぐ読み込み直して referrer が自分のページに変わるので、その前に覚える（app.js の countVisit が送る） -->
-<script>try { if (!window.crossOriginIsolated) sessionStorage.setItem('gcRef', document.referrer || ''); } catch (e) {}</script>
+<script>try { if (!window.crossOriginIsolated && sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); } catch (e) {}</script><!-- 読み込み直しが 2 回続くことがあるので、最初の来た元を上書きしない -->
 <script src="coi-serviceworker.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -249,6 +249,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script src="app.js?v=11-23.7"></script><!-- ?v= は app.js の VERSION と揃える -->
+<script src="app.js?v=11-23.8"></script><!-- ?v= は app.js の VERSION と揃える -->
 </body>
 </html>

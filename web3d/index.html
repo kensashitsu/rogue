@@ -24,7 +24,7 @@
 <meta name="twitter:card" content="summary_large_image">
 <script>window.coi = { coepCredentialless: () => false, quiet: true };</script>
 <!-- アクセス数の来た元: 初回は coi-serviceworker がすぐ読み込み直して referrer が自分のページに変わるので、その前に覚える（app.js の countVisit が送る） -->
-<script>try { if (!window.crossOriginIsolated) sessionStorage.setItem('gcRef', document.referrer || ''); } catch (e) {}</script>
+<script>try { if (!window.crossOriginIsolated && sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); } catch (e) {}</script><!-- 読み込み直しが 2 回続くことがあるので、最初の来た元を上書きしない -->
 <script src="coi-serviceworker.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -301,6 +301,6 @@ canvas { display: block; flex: none; }
 <div id="flash"></div>
 <pre id="debug"></pre>
 
-<script type="module" src="app.js?v=3d-1.72"></script><!-- ?v= は app.js の VERSION と揃える（ブラウザが古いファイルを使い続けないように） -->
+<script type="module" src="app.js?v=3d-1.73"></script><!-- ?v= は app.js の VERSION と揃える（ブラウザが古いファイルを使い続けないように） -->
 </body>
 </html>
