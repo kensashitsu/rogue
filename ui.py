@@ -389,7 +389,7 @@ class UI:
         """演出をメッセージの列に挟む。それより前のメッセージを読み進めてから出る（3D 版の敵の攻撃など）。"""
         self._msgs.append(('effect', kind, data))
 
-    def flush_messages(self) -> None:
+    async def flush_messages(self) -> None:
         """
         キューのメッセージを全件表示する。
         複数ある場合は '--More--' をメッセージ末尾に付加してキー待ちする。
@@ -405,7 +405,7 @@ class UI:
             if any(isinstance(m, str) for m in self._msgs):
                 self._raw_message(self._with_more(msg))
                 if self.stdscr:
-                    self._wait_advance()
+                    await self._wait_advance()
             else:
                 self._raw_message(msg)
 
@@ -466,7 +466,7 @@ class UI:
             return None
         return ja if below_col + text_width(ja) <= self._JA_MAX_COL + 4 else None   # 長い 4 音節の巻物（まれ）も省かない
 
-    def _lines_ja(self, lines: list[str], attr: int = 0, wait=None) -> bool:
+    async def _lines_ja(self, lines: list[str], attr: int = 0, wait=None) -> bool:
         """英語＋日本語のとき、行ごとに日本語訳を下に添えて表示する（訳のない行・空行は 1 行だけ）。
         23 行に入らなければページを分けて、ページごとにキーを待つ。最後のページの待ちは呼び出し側。英語＋日本語でなければ False"""
         if get_lang() != 'enja':
@@ -484,7 +484,7 @@ class UI:
                 except curses.error:
                     pass
                 self.stdscr.refresh()
-                wait()
+                await wait()
                 self.stdscr.clear()
                 row = 0
             if not line.strip() and row == 0:
@@ -517,7 +517,7 @@ class UI:
     # 入力
     # =========================================================================
 
-    def _getch(self, hint: str = 'any', keys: str = '') -> int:
+    async def _getch(self, hint: str = 'any', keys: str = '') -> int:
         """
         curses getch のラッパー。stdscr が None なら -1 を返す。
         hint / keys は何の入力を待っているか（スマホ版がボタンの出し分けに使う。端末では無視）:
@@ -526,19 +526,19 @@ class UI:
         if self.stdscr is None:
             return -1
         curses.input_hint(hint, keys)
-        return self.stdscr.getch()
+        return await self.stdscr.getch()
 
-    def _wait_advance(self) -> None:
+    async def _wait_advance(self) -> None:
         """スペース・エンター・エスケープで進む --More-- キー待ち。"""
         _ADVANCE = {ord(' '), ord('\n'), ord('\r'), 27}
         while True:
-            ch = self._getch('more')
+            ch = await self._getch('more')
             if ch in (-1, curses.KEY_RESIZE):
                 continue
             if ch in _ADVANCE:
                 break
 
-    def get_command(self) -> tuple[str, str]:
+    async def get_command(self) -> tuple[str, str]:
         """
         キー入力を待ち (action, key) を返す。
         未割り当てキーは action='noop' で返す。
@@ -548,10 +548,10 @@ class UI:
           1. 整数コード (_INT_KEY_MAP): 矢印キー・テンキー NumLock OFF
           2. 文字コード (KEY_MAP): vi キー・テンキー NumLock ON（数字）・その他
         """
-        self.flush_messages()
+        await self.flush_messages()
 
         while True:
-            ch = self._getch('command')
+            ch = await self._getch('command')
             if ch == -1:
                 continue
 
@@ -578,7 +578,7 @@ class UI:
 
             return action, key
 
-    def prompt_char(self, msg: str, valid: str = "") -> str:
+    async def prompt_char(self, msg: str, valid: str = "") -> str:
         """
         1 文字入力プロンプト。
         valid が空でなければそのいずれかが入力されるまで繰り返す。
@@ -586,7 +586,7 @@ class UI:
         """
         self._raw_message(msg)
         while True:
-            ch = self._getch('char', valid)
+            ch = await self._getch('char', valid)
             if ch in (27, ord('Q')):   # ESC
                 self.clear_message()
                 return ''
@@ -598,7 +598,7 @@ class UI:
                 self.clear_message()
                 return c
 
-    def prompt_str(self, msg: str) -> str:
+    async def prompt_str(self, msg: str) -> str:
         """
         1 行テキスト入力プロンプト。
         Enter で確定、ESC でキャンセル（空文字を返す）。
@@ -611,7 +611,7 @@ class UI:
         buf: list[str] = []
         try:
             while True:
-                ch = self._getch('text')
+                ch = await self._getch('text')
                 if ch == 27:
                     buf = []
                     break
@@ -636,28 +636,28 @@ class UI:
         """画面の演出のきっかけを知らせる（ブラウザの 3D 版が使う。端末では何もしない）。"""
         curses.effect({'type': kind, **data})
 
-    def effect_wait(self, kind: str, ms: int, **data) -> None:
+    async def effect_wait(self, kind: str, ms: int, **data) -> None:
         """演出を知らせ、3D 版ではそれが終わるまで待つ（階段を下りる・落とし穴に落ちる。端末では待たない）。"""
         self.effect(kind, **data)
         if curses.variant() == '3d':
-            curses.napms(ms)
+            await curses.napms(ms)
 
     MISSILE_STEP_MS = 35   # 投げた物が 1 マス進む間
 
     # 杖の光線の色（炎 = 赤、冷気 = 水色、電撃 = 黄、魔法の矢 = 白）
     BOLT_CP = {'fire': _CP_MONSTER, 'cold': _CP_STAIRS, 'electric': _CP_GOLD, 'magic missile': _CP_DEFAULT}
 
-    def animate_bolt(self, bolt: dict, direction: tuple, dungeon, player, monsters, objects) -> None:
+    async def animate_bolt(self, bolt: dict, direction: tuple, dungeon, player, monsters, objects) -> None:
         """杖の光線が飛ぶ様子（5.4 と同じく、向きに合わせた | - / \\ の字で）。当たったら当てた演出も。"""
         dy, dx = direction
         ch = '|' if dx == 0 else '-' if dy == 0 else '\\' if dy == dx else '/'
-        self.animate_missile(bolt['path'], ch, dungeon, player, monsters, objects,
+        await self.animate_missile(bolt['path'], ch, dungeon, player, monsters, objects,
                              cp=self.BOLT_CP.get(bolt['name'], _CP_DEFAULT))
         if bolt['hit']:
             y, x, dmg, killed = bolt['hit']
             self.effect('hit', y=y, x=x, dmg=dmg, killed=killed)
 
-    def animate_missile(
+    async def animate_missile(
         self, path: list, ch: str,
         dungeon: "Dungeon", player: "Player", monsters: list, objects: list,
         cp: Optional[int] = None,
@@ -669,13 +669,13 @@ class UI:
         step = self.MISSILE_STEP_MS
         self.draw_all(dungeon, player, monsters, objects)   # 持ち物の一覧などが出たままにならないよう、先に地図に戻す
         if curses.missile([list(p) for p in path], ch, attr, step):
-            curses.napms(step * len(path))   # 画面側が動かし終わるまで待つ（当たった知らせが先に出ないように）
+            await curses.napms(step * len(path))   # 画面側が動かし終わるまで待つ（当たった知らせが先に出ないように）
             return
         for y, x in path:
             self.draw_all(dungeon, player, monsters, objects)
             self._addch(y, x, ch, attr)
             self.stdscr.refresh()
-            curses.napms(step)
+            await curses.napms(step)
         self.draw_all(dungeon, player, monsters, objects)
 
     def draw_all(
@@ -891,7 +891,7 @@ class UI:
     # インベントリ画面
     # =========================================================================
 
-    def show_inventory(
+    async def show_inventory(
         self,
         player:           "Player",
         title:            str  = "",
@@ -935,7 +935,7 @@ class UI:
 
         if not items and not equip_slots:
             self.add_message(tr('You are carrying nothing.'))
-            self.flush_messages()
+            await self.flush_messages()
             return None
 
         # ヘッダ行数: タイトル + セパレータ + 装備スロット行 + 装備セパレータ
@@ -1044,7 +1044,7 @@ class UI:
                 pass
             self.stdscr.refresh()
 
-            inp = self._getch('more' if display_only else 'list', ''.join(sorted(valid_slots)))
+            inp = await self._getch('more' if display_only else 'list', ''.join(sorted(valid_slots)))
 
             # スクロール操作
             if inp == curses.KEY_UP and offset > 0:
@@ -1076,7 +1076,7 @@ class UI:
     # アイテム検出表示（P_TFIND / S_FDET）
     # =========================================================================
 
-    def show_all_objects(
+    async def show_all_objects(
         self,
         dungeon:     "Dungeon",
         player:      "Player",
@@ -1114,13 +1114,13 @@ class UI:
         except curses.error:
             pass
         self.stdscr.refresh()
-        self._wait_advance()
+        await self._wait_advance()
 
     # =========================================================================
     # モンスター検出表示（P_MFIND）
     # =========================================================================
 
-    def show_all_monsters(
+    async def show_all_monsters(
         self,
         dungeon:  "Dungeon",
         player:   "Player",
@@ -1156,18 +1156,18 @@ class UI:
         except curses.error:
             pass
         self.stdscr.refresh()
-        self._wait_advance()
+        await self._wait_advance()
 
     # =========================================================================
     # 情報画面
     # =========================================================================
 
-    def show_help(self) -> None:
+    async def show_help(self) -> None:
         """ヘルプ画面を表示し、キー待ちする。"""
         if self.stdscr is None:
             return
-        if self._lines_ja([tr(l) for l in _HELP_LINES], wait=self._getch):
-            self._getch()
+        if await self._lines_ja([tr(l) for l in _HELP_LINES], wait=self._getch):
+            await self._getch()
             return
         self.stdscr.clear()
         for i, line in enumerate(_HELP_LINES):
@@ -1178,14 +1178,14 @@ class UI:
             except curses.error:
                 pass
         self.stdscr.refresh()
-        self._getch()
+        await self._getch()
 
-    def show_status(self, player: "Player") -> None:
+    async def show_status(self, player: "Player") -> None:
         """プレイヤーのステータス詳細画面を表示する（'@' コマンド）。"""
         if self.stdscr is None:
             return
-        if self._lines_ja([tr(" Character Status"), " " + "─" * 30, *player.detail_lines(), "", tr(" Press any key...")], wait=self._getch):
-            self._getch()
+        if await self._lines_ja([tr(" Character Status"), " " + "─" * 30, *player.detail_lines(), "", tr(" Press any key...")], wait=self._getch):
+            await self._getch()
             return
         self.stdscr.clear()
         try:
@@ -1205,11 +1205,11 @@ class UI:
         except curses.error:
             pass
         self.stdscr.refresh()
-        self._getch()
+        await self._getch()
 
-    def identify_symbol(self) -> None:
+    async def identify_symbol(self) -> None:
         """'/' コマンド: 入力されたシンボルの意味を説明する。"""
-        ch = self.prompt_char(tr('What symbol would you like explained? '))
+        ch = await self.prompt_char(tr('What symbol would you like explained? '))
         if not ch:
             return
         if 'A' <= ch <= 'Z':
@@ -1217,9 +1217,9 @@ class UI:
         else:
             desc = tr(_SYMBOL_DESC.get(ch, "Unknown symbol"))
         self.add_message(f"'{ch}' -- {desc}")
-        self.flush_messages()
+        await self.flush_messages()
 
-    def check_trap(self, dungeon: "Dungeon", player: "Player") -> None:
+    async def check_trap(self, dungeon: "Dungeon", player: "Player") -> None:
         """'^' コマンド: 足元のトラップを確認する。"""
         trap = dungeon.get_trap_at(player.y, player.x)
         if trap is not None and trap.known:
@@ -1232,13 +1232,13 @@ class UI:
             self.add_message(tr('There is a {name} here!', name=name))
         else:
             self.add_message(tr("You don't see any traps."))
-        self.flush_messages()
+        await self.flush_messages()
 
     # =========================================================================
     # ゲーム開始 / 終了画面
     # =========================================================================
 
-    def name_entry_screen(self) -> str:
+    async def name_entry_screen(self) -> str:
         """
         名前入力画面。最大 23 文字、Enter で確定。Tab で表示言語（英語 / 日本語）を切り替える。
         空のまま Enter した場合は空文字を返す。
@@ -1305,7 +1305,7 @@ class UI:
 
             self.stdscr.refresh()
 
-            ch = self._getch('name')
+            ch = await self._getch('name')
             if ch in (10, 13):          # Enter
                 break
             if ch == 9:                 # Tab: 言語切り替え（英語 → 日本語 → 英語＋日本語。英語＋日本語はブラウザ版だけ）
@@ -1325,18 +1325,18 @@ class UI:
 
         return ''.join(buf)
 
-    def choose_language(self) -> bool:
+    async def choose_language(self) -> bool:
         """'o' コマンド: 表示言語を切り替える。切り替えたら True。"""
         if curses.is_web():   # ブラウザ版: 英語＋日本語も選べる
-            c = self.prompt_char(tr("Language: (e)nglish, (j)apanese or (b)oth? "), "ejb")
+            c = await self.prompt_char(tr("Language: (e)nglish, (j)apanese or (b)oth? "), "ejb")
         else:
-            c = self.prompt_char(tr("Language: (e)nglish or (j)apanese? "), "ej")
+            c = await self.prompt_char(tr("Language: (e)nglish or (j)apanese? "), "ej")
         if not c:
             return False
         set_lang({'j': 'ja', 'b': 'enja'}.get(c, 'en'))
         return True
 
-    def title_screen(self) -> None:
+    async def title_screen(self) -> None:
         """タイトル画面を表示する。"""
         if self.stdscr is None:
             return
@@ -1355,9 +1355,9 @@ class UI:
             except curses.error:
                 pass
         self.stdscr.refresh()
-        self._getch()
+        await self._getch()
 
-    def game_over(
+    async def game_over(
         self,
         player: "Player",
         cause:  str  = "killed by a monster",
@@ -1414,13 +1414,13 @@ class UI:
                 except curses.error:
                     pass
         self.stdscr.refresh()
-        self._wait_advance()
+        await self._wait_advance()
 
         # ---- ハイスコア画面 ----
         if scores:
-            self.show_high_scores(scores, highlight_rank=rank)
+            await self.show_high_scores(scores, highlight_rank=rank)
 
-    def show_high_scores(self, scores: list, highlight_rank: int = 0) -> None:
+    async def show_high_scores(self, scores: list, highlight_rank: int = 0) -> None:
         """
         ハイスコア一覧を表示してキー待ちする。
         highlight_rank > 0 の場合、その順位の行を強調表示する。
@@ -1483,9 +1483,9 @@ class UI:
         except curses.error:
             pass
         self.stdscr.refresh()
-        self._wait_advance()
+        await self._wait_advance()
 
-    def win_screen(self, player: "Player") -> None:
+    async def win_screen(self, player: "Player") -> None:
         """アミュレットを持って地上に帰還した場合の勝利画面。"""
         if self.stdscr is None:
             return
@@ -1504,8 +1504,8 @@ class UI:
             "",
             tr("  Press any key to exit."),
         ]
-        if self._lines_ja(lines, self._cp(_CP_GOLD) | curses.A_BOLD, wait=self._getch):
-            self._getch()
+        if await self._lines_ja(lines, self._cp(_CP_GOLD) | curses.A_BOLD, wait=self._getch):
+            await self._getch()
             return
         for i, line in enumerate(lines, 5):
             try:
@@ -1516,25 +1516,25 @@ class UI:
             except curses.error:
                 pass
         self.stdscr.refresh()
-        self._getch()
+        await self._getch()
 
-    def confirm_quit(self) -> bool:
+    async def confirm_quit(self) -> bool:
         """'Q' コマンドの確認ダイアログ。'y' で True を返す。"""
         curses.flushinp()
-        ch = self.prompt_char(tr('Do you really want to quit? (y/n) '), "yn")
+        ch = await self.prompt_char(tr('Do you really want to quit? (y/n) '), "yn")
         return ch == 'y'
 
-    def confirm_save(self) -> bool:
+    async def confirm_save(self) -> bool:
         """'S' コマンドの確認ダイアログ。"""
         curses.flushinp()
-        ch = self.prompt_char(tr('Save and quit? (y/n) '), "yn")
+        ch = await self.prompt_char(tr('Save and quit? (y/n) '), "yn")
         return ch == 'y'
 
     # =========================================================================
     # 方向入力
     # =========================================================================
 
-    def prompt_direction(self, msg: str = "") -> tuple[int, int]:
+    async def prompt_direction(self, msg: str = "") -> tuple[int, int]:
         """
         方向入力プロンプト。hjklyubn・矢印キー・テンキーから (dy, dx) を返す。
         ESC / スペース / Q でキャンセル → (0, 0) を返す。
@@ -1553,7 +1553,7 @@ class UI:
         }
         self._raw_message(msg or tr("Which direction? "))
         while True:
-            ch = self._getch('direction')
+            ch = await self._getch('direction')
             if ch in (27, ord(' '), ord('Q')):
                 self.clear_message()
                 return (0, 0)
@@ -1599,7 +1599,7 @@ class UI:
 # curses.wrapper 用エントリポイント
 # ---------------------------------------------------------------------------
 
-def run_with_curses(main_func) -> None:
+async def run_with_curses(main_func) -> None:
     """
     curses.wrapper 相当の安全なラッパー。
     `main_func(ui: UI)` を呼び出す。例外時もターミナルを復元する。
@@ -1608,7 +1608,7 @@ def run_with_curses(main_func) -> None:
     ui = UI()
     try:
         ui.init()
-        main_func(ui)
+        await main_func(ui)
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as _exc:
@@ -1628,7 +1628,7 @@ def run_with_curses(main_func) -> None:
                 except curses.error:
                     pass
                 ui.stdscr.refresh()
-                ui.stdscr.getch()
+                await ui.stdscr.getch()
         except Exception:
             pass
         with open("error.log", "a", encoding="utf-8") as _f:

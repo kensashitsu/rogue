@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.79';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.80';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.79';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.80';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.79';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.80';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -61,9 +61,6 @@ const L = {
     char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
-    inApp: 'アプリの中のブラウザでは動かせません。\n画面の「⋮」や「…」のメニューから「Safari で開く」（または「ブラウザで開く」）を選んでください。',
-    copyUrl: 'URL をコピー', copied: 'URL をコピーしました。\nSafari か Chrome を開いて、アドレス欄に貼り付けてください。',
-    noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
     noGL: 'このブラウザでは 3D の画面を出せませんでした（WebGL が使えません）。\n同じゲームを 2D の画面で遊べます。', open2d: '2D 版を開く',
     crash: 'エラーで止まりました', reload: '読み込み直す',
   },
@@ -80,9 +77,6 @@ const L = {
     char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
-    inApp: 'The game cannot run in an in-app browser.\nChoose "Open in Safari" (or "Open in browser") from the "⋮" or "…" menu.',
-    copyUrl: 'Copy URL', copied: 'URL copied.\nOpen Safari or Chrome and paste it into the address bar.',
-    noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
     noGL: 'This browser cannot show the 3D view (WebGL is not available).\nThe same game can be played in 2D.', open2d: 'Open the 2D version',
     crash: 'Stopped by an error', reload: 'Reload',
   },
@@ -416,21 +410,22 @@ function drawCells(lines) {   // lines[画面の行] = ゲーム画面の行
 }
 
 // ---------------------------------------------------------------------------
-// キー（SharedArrayBuffer のリングバッファで Worker に渡す）
+// キー（postMessage で Worker に渡す）
 // ---------------------------------------------------------------------------
-let keys = null;
+// 2026-11-24 から postMessage で渡す（SharedArrayBuffer はアプリの中のブラウザで使えないため）。
+// queued = 送ったがゲームがまだ受け取っていない数（Worker が受け取るたびに 'took' で知らせる）
+let keys = null;   // Worker（ゲームが動き出したら入る）
+let queued = 0;
 let waiting = false;   // ゲームが入力を待っていて、まだ何も送っていない
 function send(...codes) {
   if (!keys) return;
   waiting = false;
   for (const k of codes) {
     const code = typeof k === 'number' ? k : k.codePointAt(0);
-    const w = Atomics.load(keys, 0);
-    if (w - keys[1] >= KEYQ) return;
-    keys[2 + (w % KEYQ)] = code;
-    Atomics.store(keys, 0, w + 1);
+    if (queued >= KEYQ) return;
+    queued++;
+    keys.postMessage({ type: 'key', code });
   }
-  Atomics.notify(keys, 0);
 }
 const keyCode = k => k === '^P' ? 16 : k;
 // ボタンの答えは、ゲームが今の質問で待っているときだけ送る。素早い二度押しで、次の質問の答えや
@@ -514,8 +509,8 @@ function buildButtons() {
     // 長押し: 押している間 1 歩ずつ歩き続ける（休むも同じ）。前の 1 歩をゲームが受け取ってから次を送るので、
     // 離せばすぐ止まる。メッセージの「次へ」待ちなどになったら止まる
     const repeat = () => {
-      debug(`repeat ${k} hint=${hint} queued=${Atomics.load(keys, 0) - keys[1]}`);
-      if (hint === 'command' && Atomics.load(keys, 0) === keys[1]) send(dirKey(k));
+      debug(`repeat ${k} hint=${hint} queued=${queued}`);
+      if (hint === 'command' && queued === 0) send(dirKey(k));
       timer = setTimeout(repeat, 110);
     };
     const press = () => {
@@ -1102,30 +1097,9 @@ function cover(text, btnLabel, fn) {
   if (btnLabel) { b.textContent = btnLabel; coverFn = fn; }
 }
 
-// アプリの中のブラウザ（X・スレッズ・LINE など）は Service Worker が無く、crossOriginIsolated にならないので動かせない（2026-11-24 X の iPhone アプリで判明）。
-// 待たずにすぐ、ふつうのブラウザで開き直す案内を出す。
+// アプリの中のブラウザ（X・スレッズ・LINE など）は Service Worker が無く、crossOriginIsolated にならない。以前はそのため遊べなかった（2026-11-24 X の iPhone アプリで判明）。
+// 2026-11-24 から SharedArrayBuffer を使わないので、そのまま遊べる（noServiceWorker は数える・読み込み直しを待たない判断に使う）。
 function noServiceWorker() { return !window.crossOriginIsolated && !('serviceWorker' in navigator); }
-function inAppCover() {
-  // 2026-11-24 X の iPhone アプリでは x-safari-https: のボタンを押しても何も起きなかった。アプリがブラウザへの切り替えを止めている。
-  // メニューの「Safari で開く」を案内し、ボタンは URL のコピーにする（コピーはタップの中ですぐ行う。待つと許可が切れる）
-  const url = location.origin + location.pathname;
-  const done = () => cover(t().copied, t().copyUrl, copy);
-  const copy = () => {
-    try {
-      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done, fallback); return; }
-    } catch (e) {}
-    fallback();
-  };
-  const fallback = () => {   // 古い方法（選んだ文字をコピー）
-    const ta = document.createElement('textarea'); ta.value = url; ta.setAttribute('readonly', '');
-    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta);
-    ta.select(); ta.setSelectionRange(0, url.length);
-    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
-    ta.remove();
-    if (ok) done(); else cover(t().inApp + '\n\n' + url, t().copyUrl, copy);
-  };
-  cover(t().inApp, t().copyUrl, copy);
-}
 
 function start() {
   const files = loadFiles();
@@ -1137,19 +1111,20 @@ function start() {
     saveFile('rogue.cfg', cfg); files['rogue.cfg'] = loadFiles()['rogue.cfg'];
   }
   cover(t().loading); rain.start();
-  if (noServiceWorker()) { inAppCover(); return; }
-  if (!window.crossOriginIsolated) {
-    // coi-serviceworker が登録後に読み込み直す。それでも駄目なら諦める
-    setTimeout(() => cover(t().noIso, t().reload, () => location.reload()), 6000);
+  // ふつうのブラウザでは coi-serviceworker が初回に一度読み込み直す（同じサイトのファイルを毎回取り直させるため）。その間は始めない。
+  // Service Worker の無いアプリの中のブラウザ（X・スレッズなど）では、そのまま始める（2026-11-24 から SharedArrayBuffer なしで動く）
+  if (!window.crossOriginIsolated && !noServiceWorker() && !sessionStorage.getItem('coiTried')) {
+    sessionStorage.setItem('coiTried', '1');
+    setTimeout(() => location.reload(), 6000);   // 読み込み直されなかったら、自分で一度だけ読み込み直す
     return;
   }
-  const sab = new SharedArrayBuffer(4 * (2 + KEYQ));
-  keys = new Int32Array(sab);
   const worker = new Worker('worker.js', { type: 'module' });
+  keys = worker; queued = 0;
   const bin = {}; for (const [k, v] of Object.entries(files)) bin[k] = decode(v);
-  worker.postMessage({ type: 'start', sab, files: bin });
+  worker.postMessage({ type: 'start', files: bin });
   worker.onmessage = e => {
     const d = e.data;
+    if (d.type === 'took') { queued = Math.max(0, queued - (d.n || 1)); return; }
     if (d.type === 'progress') cover(d.text === 'python' ? t().loadPy : t().loadGame);
     else if (d.type === 'draw') { for (const [y, chars, styles] of JSON.parse(d.rows)) putRow(y, chars, styles); requestDraw(); }
     else if (d.type === 'wait') {
@@ -1239,7 +1214,7 @@ function gcScore(score, what) {
     // 読み込み直すと来た元（Reddit など）が自分のページに変わるので、直す前に覚えておく
     // アプリの中のブラウザは読み込み直しも起きないので、ここで数え、開けなかった印のイベントも送る
     if (noServiceWorker()) { gcEvent('3d/inapp', 'in-app browser: ' + navigator.userAgent.slice(0, 200)); }
-    else if (!window.crossOriginIsolated) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
+    else if (!window.crossOriginIsolated && !sessionStorage.getItem('coiTried')) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
     let ref = sessionStorage.getItem('gcRef'); sessionStorage.removeItem('gcRef');
     if (ref === null) ref = document.referrer || '';
     if (ref.split('?')[0] === location.href.split('?')[0]) ref = '';   // 自分のページは来た元にしない

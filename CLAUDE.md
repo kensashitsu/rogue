@@ -12,7 +12,7 @@ web/（ブラウザ版: index.html / app.js / worker.js / coi-serviceworker.js�
 ## ブラウザ版（スマホ）
 - 公開先は https://kensashitsu.github.io/rogue/web/ 。GitHub Pages（master のルート）なので push すれば約1分で反映される
 - ゲーム本体の .py はそのまま Pyodide で動かす（worker.js の SOURCES に並べたファイルを読む。.py を増やしたらここにも足す）
-- term.py は sys.platform == 'emscripten' のとき画面を rogue_draw に渡し、キーを rogue_getch で待つ（Atomics.wait。COOP/COEP が要るので coi-serviceworker を使う）
+- term.py は sys.platform == 'emscripten' のとき画面を rogue_draw に渡し、キーを rogue_getch で待つ。2026-11-24 からキー入力を待つ流れは async（getch・napms を辿る関数は async def、呼び出しは await。main.py は asyncio.run）。新しくキー待ちを呼ぶ関数を足したら async にして await で呼ぶ（忘れると「never awaited」で何も起きない）。SharedArrayBuffer・Atomics.wait は使わないので、アプリの中のブラウザ（X・スレッズ）でも遊べる。coi-serviceworker は同じサイトのファイルを毎回取り直させるために残している
 - ui.py の getch は _getch(hint, keys) を通す。hint（command / direction / more / char / text / name / list / any）でスマホのボタンを出し分ける。新しい入力待ちを足すときは hint も付ける
 - 説明書は「その他 → 説明書」で manual.txt をそのまま読み込んで組む（app.js の buildManual。===== で挟んだ行が見出し、┌│└ で始まる図は横スクロール）。manual.txt を直せば exe 版と両方に反映される。英語で遊んでいるときは manual_en.txt（英訳。2026-11-23）を開くので、manual.txt を直したら manual_en.txt も同じように直す（英語版は 80 桁で折り返し、画面では段落につなぎ直して組む）
 - web/ を直して公開するときは app.js の VERSION を上げる（画面右上に出る。iPhone に新しい版が届いたかの確認用）。index.html の app.js?v= も同じ版に、web3d/ では app.js の import './r3d.js?v=' も同じ版に揃える（揃えないとブラウザが古い r3d.js を使い続け、版番号だけ新しくなる）。実機の調査は URL 末尾に #debug を付けると操作の出来事が画面に出る

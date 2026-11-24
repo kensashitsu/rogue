@@ -1,8 +1,8 @@
 // ブラウザ版: Pyodide でゲーム本体（Python）をそのまま動かす Web Worker
 //
-// ゲームはキー入力を「止まって待つ」作りなので、Worker の中で Atomics.wait を使って待つ。
-// キーは app.js が SharedArrayBuffer のリングバッファに書き込む:
-//   [0] 書いた数  [1] 読んだ数  [2..] キーコード（KEYQ 個で一周）
+// ゲームのキー入力を待つ流れは async（2026-11-24 から）。rogue_getch は Promise を返し、Python が await で待つ。
+// キーは app.js が postMessage（type 'key'）で送り、ここの列に溜める。受け取ったら 'took' で知らせる（長押しの歩きで使う）。
+// 以前は SharedArrayBuffer＋Atomics.wait で止まって待っていたが、COOP/COEP が要り、アプリの中のブラウザ（X・スレッズ）で動かなかった。
 // 画面は term.py が変化した行を rogue_draw に渡し、ここから app.js へ送る。
 // セーブ・スコア・言語設定のファイルは、キー待ちのたびに変化を見て app.js へ送る（app.js が端末内に保存する）。
 // モジュール Worker にしているのは、COEP の下でも Pyodide を CORS で読み込めるようにするため（importScripts は通らない）。
@@ -16,20 +16,15 @@ const SOURCES = [
 ];
 const SAVE_FILES = ['rogue.sav', 'rogue.scr', 'rogue.cfg'];
 const DIR = '/rogue/';
-const KEYQ = 64;
 
-let keys, py;
+let py;
+const queue = [];   // 届いたキー
+let wake = null;    // キーを待っている Promise を解く関数
 const mtimes = {};
 
 function takeKey() {
-  for (;;) {
-    const w = Atomics.load(keys, 0), r = keys[1];
-    if (w !== r) {
-      keys[1] = r + 1;
-      return keys[2 + (r % KEYQ)];
-    }
-    Atomics.wait(keys, 0, w);
-  }
+  if (queue.length) return Promise.resolve(queue.shift());
+  return new Promise(r => { wake = r; });
 }
 
 function mtimeOf(name) {
@@ -50,21 +45,23 @@ self.rogue_draw = rows => postMessage({ type: 'draw', rows });
 self.rogue_flash = () => postMessage({ type: 'flash' });
 self.rogue_missile = json => postMessage({ type: 'missile', data: JSON.parse(json) });
 self.rogue_effect = json => postMessage({ type: 'effect', data: JSON.parse(json) });
-const nap = new Int32Array(new SharedArrayBuffer(4));   // 待つだけに使う（投げた物が飛ぶ間）
-self.rogue_sleep = ms => { Atomics.wait(nap, 0, 0, ms); };
-self.rogue_flushinp = () => { keys[1] = Atomics.load(keys, 0); };
+self.rogue_sleep = ms => new Promise(r => setTimeout(r, ms));   // 待つだけ（投げた物が飛ぶ間）
+self.rogue_flushinp = () => { const n = queue.length; queue.length = 0; if (n) postMessage({ type: 'took', n }); };
 let getchCount = 0;
 self.rogue_getch = (kind, valid) => {
   syncSaves();
   // 落ちた原因を調べる用: Python（WebAssembly）のメモリの大きさを時々知らせる
   if (getchCount++ % 20 === 0) { try { postMessage({ type: 'mem', wasm: py._module.HEAP8.length }); } catch { /* 取れなくても続ける */ } }
   postMessage({ type: 'wait', kind, valid });
-  return takeKey();
+  return takeKey().then(k => { postMessage({ type: 'took' }); return k; });
 };
 
 self.onmessage = async e => {
+  if (e.data.type === 'key') {
+    if (wake) { const w = wake; wake = null; w(e.data.code); } else queue.push(e.data.code);
+    return;
+  }
   if (e.data.type !== 'start') return;
-  keys = new Int32Array(e.data.sab);
   try {
     postMessage({ type: 'progress', text: 'python' });
     py = await loadPyodide({ indexURL: PYODIDE, stdout: () => {}, stderr: s => console.warn(s) });
@@ -82,13 +79,13 @@ self.onmessage = async e => {
     return;
   }
   try {
-    py.runPython(`
+    await py.runPythonAsync(`
 import os, sys
 os.chdir('${DIR}')
 sys.path.insert(0, '${DIR}')
 from game import run_game
 try:
-    run_game()
+    await run_game()
 except SystemExit:
     pass
 `);

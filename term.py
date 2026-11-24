@@ -184,10 +184,10 @@ def variant() -> str:
     return ''
 
 
-def napms(ms: int) -> None:
+async def napms(ms: int) -> None:
     """ms ミリ秒待つ（投げた物が飛ぶ様子を見せる間など）。"""
     if _WEB:
-        js.rogue_sleep(ms)
+        await js.rogue_sleep(ms)   # 画面側の Promise（setTimeout）を待つ
         return
     time.sleep(ms / 1000)
 
@@ -403,13 +403,13 @@ class window:
     def getmaxyx(self) -> tuple[int, int]:
         return self._rows, self._cols
 
-    def getch(self) -> int:
+    async def getch(self) -> int:
         global _hint
         self.refresh()
         if _WEB:
             kind, keys = _hint
             _hint = ('any', '')
-            return int(js.rogue_getch(kind, keys))
+            return int(await js.rogue_getch(kind, keys))   # キーが来たら解ける Promise（2026-11-24 から。それまでは Atomics.wait で止まって待っていた）
         c = msvcrt.getwch()
         if c in ('\x00', '\xe0'):
             return _SPECIAL_KEYS.get(msvcrt.getwch(), -1)
