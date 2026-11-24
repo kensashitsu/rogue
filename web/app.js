@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '11-24.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-24.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -52,8 +52,8 @@ const L = {
     char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
-    inApp: 'アプリの中のブラウザでは動かせません。\n下のボタンでブラウザを開いてください。\n開かないときは、画面の「…」や「⋮」のメニューから「ブラウザで開く」を選んでください。',
-    openSafari: 'Safari で開く', openChrome: 'Chrome で開く', copyUrl: 'URL をコピー', copied: 'コピーしました。Safari か Chrome に貼り付けて開いてください。',
+    inApp: 'アプリの中のブラウザでは動かせません。\n画面の「⋮」や「…」のメニューから「Safari で開く」（または「ブラウザで開く」）を選んでください。',
+    copyUrl: 'URL をコピー', copied: 'URL をコピーしました。\nSafari か Chrome を開いて、アドレス欄に貼り付けてください。',
     noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
     crash: 'エラーで止まりました', reload: '読み込み直す',
   },
@@ -68,8 +68,8 @@ const L = {
     char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
-    inApp: 'The game cannot run in an in-app browser.\nUse the button below to open your browser.\nIf nothing happens, choose "Open in browser" from the "…" or "⋮" menu.',
-    openSafari: 'Open in Safari', openChrome: 'Open in Chrome', copyUrl: 'Copy URL', copied: 'Copied. Paste it into Safari or Chrome.',
+    inApp: 'The game cannot run in an in-app browser.\nChoose "Open in Safari" (or "Open in browser") from the "⋮" or "…" menu.',
+    copyUrl: 'Copy URL', copied: 'URL copied.\nOpen Safari or Chrome and paste it into the address bar.',
     noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
     crash: 'Stopped by an error', reload: 'Reload',
   },
@@ -724,17 +724,28 @@ function animateMissile(m) {
 }
 
 // アプリの中のブラウザ（X・スレッズ・LINE など）は Service Worker が無く、crossOriginIsolated にならないので動かせない（2026-11-24 X の iPhone アプリで判明）。
-// 待たずにすぐ、ふつうのブラウザで開き直すボタンを出す。iOS は x-safari-https:（iOS 17 以降）、Android は intent: で既定のブラウザ。
+// 待たずにすぐ、ふつうのブラウザで開き直す案内を出す。
 function noServiceWorker() { return !window.crossOriginIsolated && !('serviceWorker' in navigator); }
 function inAppCover() {
+  // 2026-11-24 X の iPhone アプリでは x-safari-https: のボタンを押しても何も起きなかった。アプリがブラウザへの切り替えを止めている。
+  // メニューの「Safari で開く」を案内し、ボタンは URL のコピーにする（コピーはタップの中ですぐ行う。待つと許可が切れる）
   const url = location.origin + location.pathname;
-  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
-  const android = /Android/.test(navigator.userAgent);
-  if (ios) cover(t().inApp, t().openSafari, () => { location.href = 'x-safari-' + url; });
-  else if (android) cover(t().inApp, t().openChrome, () => { location.href = 'intent://' + location.host + location.pathname + '#Intent;scheme=https;end'; });
-  else cover(t().inApp, t().copyUrl, () => {
-    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => cover(t().copied), () => cover(t().inApp + '\n' + url));
-  });
+  const done = () => cover(t().copied, t().copyUrl, copy);
+  const copy = () => {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done, fallback); return; }
+    } catch (e) {}
+    fallback();
+  };
+  const fallback = () => {   // 古い方法（選んだ文字をコピー）
+    const ta = document.createElement('textarea'); ta.value = url; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0'; document.body.appendChild(ta);
+    ta.select(); ta.setSelectionRange(0, url.length);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    if (ok) done(); else cover(t().inApp + '\n\n' + url, t().copyUrl, copy);
+  };
+  cover(t().inApp, t().copyUrl, copy);
 }
 
 function start() {
