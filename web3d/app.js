@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.77';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.78';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
-import * as snd from './sound.js?v=3d-1.77';   // 音（?v= は VERSION と揃える）
+import * as snd from './sound.js?v=3d-1.78';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.77';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.78';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -61,6 +61,8 @@ const L = {
     char: { y: 'はい', n: 'いいえ', l: '左', r: '右', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: '読み込み中…', loadPy: 'Python を読み込み中…\n初回は数十秒かかります', loadGame: 'ゲームを準備中…',
     over: 'ゲームが終わりました', again: 'もう一度遊ぶ', saved: '保存しました。\n続きはいつでも遊べます', resume: '続きを遊ぶ',
+    inApp: 'アプリの中のブラウザでは動かせません。\n下のボタンでブラウザを開いてください。\n開かないときは、画面の「…」や「⋮」のメニューから「ブラウザで開く」を選んでください。',
+    openSafari: 'Safari で開く', openChrome: 'Chrome で開く', copyUrl: 'URL をコピー', copied: 'コピーしました。Safari か Chrome に貼り付けて開いてください。',
     noIso: 'このブラウザでは動かせませんでした。\nSafari か Chrome の通常のウィンドウで開いてください。',
     noGL: 'このブラウザでは 3D の画面を出せませんでした（WebGL が使えません）。\n同じゲームを 2D の画面で遊べます。', open2d: '2D 版を開く',
     crash: 'エラーで止まりました', reload: '読み込み直す',
@@ -78,6 +80,8 @@ const L = {
     char: { y: 'Yes', n: 'No', l: 'Left', r: 'Right', e: 'English', j: '日本語', b: 'English＋日本語' },
     loading: 'Loading…', loadPy: 'Loading Python…\nThe first time takes a while', loadGame: 'Preparing the game…',
     over: 'The game is over', again: 'Play again', saved: 'Game saved.\nYou can continue any time', resume: 'Continue',
+    inApp: 'The game cannot run in an in-app browser.\nUse the button below to open your browser.\nIf nothing happens, choose "Open in browser" from the "…" or "⋮" menu.',
+    openSafari: 'Open in Safari', openChrome: 'Open in Chrome', copyUrl: 'Copy URL', copied: 'Copied. Paste it into Safari or Chrome.',
     noIso: 'This browser could not run the game.\nOpen it in a normal Safari or Chrome window.',
     noGL: 'This browser cannot show the 3D view (WebGL is not available).\nThe same game can be played in 2D.', open2d: 'Open the 2D version',
     crash: 'Stopped by an error', reload: 'Reload',
@@ -1098,6 +1102,20 @@ function cover(text, btnLabel, fn) {
   if (btnLabel) { b.textContent = btnLabel; coverFn = fn; }
 }
 
+// アプリの中のブラウザ（X・スレッズ・LINE など）は Service Worker が無く、crossOriginIsolated にならないので動かせない（2026-11-24 X の iPhone アプリで判明）。
+// 待たずにすぐ、ふつうのブラウザで開き直すボタンを出す。iOS は x-safari-https:（iOS 17 以降）、Android は intent: で既定のブラウザ。
+function noServiceWorker() { return !window.crossOriginIsolated && !('serviceWorker' in navigator); }
+function inAppCover() {
+  const url = location.origin + location.pathname;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent) || (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const android = /Android/.test(navigator.userAgent);
+  if (ios) cover(t().inApp, t().openSafari, () => { location.href = 'x-safari-' + url; });
+  else if (android) cover(t().inApp, t().openChrome, () => { location.href = 'intent://' + location.host + location.pathname + '#Intent;scheme=https;end'; });
+  else cover(t().inApp, t().copyUrl, () => {
+    (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject()).then(() => cover(t().copied), () => cover(t().inApp + '\n' + url));
+  });
+}
+
 function start() {
   const files = loadFiles();
   readLang(files);
@@ -1108,6 +1126,7 @@ function start() {
     saveFile('rogue.cfg', cfg); files['rogue.cfg'] = loadFiles()['rogue.cfg'];
   }
   cover(t().loading); rain.start();
+  if (noServiceWorker()) { inAppCover(); return; }
   if (!window.crossOriginIsolated) {
     // coi-serviceworker が登録後に読み込み直す。それでも駄目なら諦める
     setTimeout(() => cover(t().noIso, t().reload, () => location.reload()), 6000);
@@ -1207,7 +1226,9 @@ function gcScore(score, what) {
   try {
     if (!/\.github\.io$/.test(location.hostname) || GC_OFF) return;
     // 読み込み直すと来た元（Reddit など）が自分のページに変わるので、直す前に覚えておく
-    if (!window.crossOriginIsolated) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
+    // アプリの中のブラウザは読み込み直しも起きないので、ここで数え、開けなかった印のイベントも送る
+    if (noServiceWorker()) { gcEvent('3d/inapp', 'in-app browser: ' + navigator.userAgent.slice(0, 200)); }
+    else if (!window.crossOriginIsolated) { if (sessionStorage.getItem('gcRef') === null) sessionStorage.setItem('gcRef', document.referrer || ''); return; }
     let ref = sessionStorage.getItem('gcRef'); sessionStorage.removeItem('gcRef');
     if (ref === null) ref = document.referrer || '';
     if (ref.split('?')[0] === location.href.split('?')[0]) ref = '';   // 自分のページは来た元にしない
