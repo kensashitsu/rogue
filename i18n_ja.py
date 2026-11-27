@@ -85,7 +85,7 @@ NAMES: dict[str, dict[str, str]] = {
         "amber": "琥珀色", "aquamarine": "藍玉色", "black": "黒", "blue": "青", "brown": "茶色",
         "clear": "透明", "crimson": "深紅", "cyan": "水色", "ecru": "生成り色", "gold": "金色",
         "green": "緑", "grey": "灰色", "magenta": "赤紫", "orange": "橙色", "pink": "桃色",
-        "plaid": "格子模様", "purple": "紫", "red": "赤", "silver": "銀色", "tan": "黄褐色",
+        "plaid": "格子模様", "purple": "紫", "red": "赤", "silver": "銀色", "tan": "黄褐色", "tangerine": "蜜柑色", "topaz": "トパーズ色",
         "turquoise": "青緑", "vermilion": "朱色", "violet": "菫色", "white": "白", "yellow": "黄色",
     },
     'gem': {
@@ -96,9 +96,21 @@ NAMES: dict[str, dict[str, str]] = {
         "onyx": "オニキス", "opal": "オパール", "pearl": "真珠", "peridot": "ペリドット",
         "ruby": "ルビー", "sapphire": "サファイア", "tiger eye": "虎目石", "topaz": "トパーズ",
         "turquoise": "トルコ石", "zircon": "ジルコン",
+        "germanium": "ゲルマニウム", "granite": "御影石", "stibotantalite": "安タンタル石",
+        "taaffeite": "ターフェアイト",
     },
-    # 杖の素材。名詞は「の」込み、形容詞はそのまま（「樫の短い杖」「ねじれた短い杖」）
+    # 杖の素材（杖＝木、短い杖＝金属。5.4 wood[]・metal[]）。名詞は「の」込み
+    # 末尾の curved〜willow の一部は 2026-11-27 より前のセーブにだけ出る（当時の独自の表）
     'wood': {
+        "banyan": "バンヤンの", "fall": "枯れ木の", "hemlock": "栂の", "holly": "柊の",
+        "ironwood": "鉄木の", "kukui wood": "ククイ材の", "mahogany": "マホガニーの",
+        "manzanita": "マンザニタの", "oaken": "樫の", "persimmon wood": "柿材の",
+        "pecan": "ピーカンの", "rosewood": "紫檀の", "walnut": "胡桃の", "zebrawood": "ゼブラウッドの",
+        "aluminum": "アルミニウムの", "beryllium": "ベリリウムの", "bone": "骨の", "brass": "真鍮の",
+        "bronze": "青銅の", "copper": "銅の", "electrum": "琥珀金の", "gold": "金の", "lead": "鉛の",
+        "magnesium": "マグネシウムの", "mercury": "水銀の", "nickel": "ニッケルの",
+        "pewter": "ピューターの", "platinum": "白金の", "silicon": "シリコンの", "tin": "錫の",
+        "tungsten": "タングステンの", "zinc": "亜鉛の",
         "avocado wood": "アボカド材の", "balsa": "バルサ材の", "bamboo": "竹の", "birch": "樺の",
         "cedar": "杉の", "cherry": "桜の", "cinnibar": "辰砂の", "curved": "曲がった",
         "cypress": "檜の", "dogwood": "水木の", "driftwood": "流木の", "ebony": "黒檀の",
@@ -141,6 +153,13 @@ NAMES: dict[str, dict[str, str]] = {
         "wed": "ウェド", "werg": "ウェルグ", "wex": "ウェクス", "whon": "ウォン", "wun": "ワン", "xo": "ゾ",
         "yot": "ヨト", "yu": "ユ", "zant": "ザント", "zap": "ザップ", "zeb": "ゼブ", "zer": "ゼル", "zy": "ジ",
         "zyme": "ザイム", "zon": "ゾン",
+        # 5.4 の音節で上に無かったもの（上の一部は 2026-11-27 より前のセーブにだけ出る）
+        "bie": "ビエ", "bit": "ビト", "bjor": "ビョル", "blu": "ブル", "gop": "ゴプ", "gre": "グレ",
+        "ha": "ハ", "hyd": "ヒド", "i": "イ", "ing": "イング", "ip": "イプ", "ish": "イシュ",
+        "it": "イト", "ite": "イテ", "iv": "イヴ", "kho": "コ", "kli": "クリ", "klis": "クリス",
+        "mar": "マル", "me": "メ", "mic": "ミック", "mik": "ミク", "sa": "サ", "san": "サン",
+        "sat": "サト", "sef": "セフ", "seh": "セー", "snik": "スニク", "y": "ユ", "zim": "ジム",
+        "zok": "ゾク", "zum": "ズム",
     },
 }
 

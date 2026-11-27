@@ -83,54 +83,101 @@ def _get_spread(name: str, default: int) -> int:
 # 出現外観プール（Rogue 5.4 準拠）
 # ===========================================================================
 
-_POTION_COLORS: list[str] = [
+_POTION_COLORS: list[str] = [   # 5.4 rainbow[]
     "amber", "aquamarine", "black", "blue", "brown", "clear", "crimson",
     "cyan", "ecru", "gold", "green", "grey", "magenta", "orange",
-    "pink", "plaid", "purple", "red", "silver", "tan", "turquoise",
-    "vermilion", "violet", "white", "yellow",
+    "pink", "plaid", "purple", "red", "silver", "tan", "tangerine",
+    "topaz", "turquoise", "vermilion", "violet", "white", "yellow",
 ]
 
-_SCROLL_SYLLABLES: list[str] = [
+_SCROLL_SYLLABLES: list[str] = [   # 5.4 sylls[]（"nes" が2つあるのも 5.4 のまま）
     "a", "ab", "ag", "aks", "ala", "an", "app", "arg", "arze", "ash",
-    "bek", "bled", "bot", "bu", "byt", "comp", "con", "cos", "cre",
-    "dalf", "dan", "den", "do", "e", "eep", "el", "eng", "er", "ere",
-    "erk", "esh", "evs", "fa", "fid", "fore", "fri", "fu", "gan",
-    "gar", "glen", "gox", "gunn", "gym", "ge", "hal", "hoy", "hu",
-    "hum", "ig", "ist", "jad", "jan", "jar", "jef", "jo", "jum",
-    "jun", "ka", "kel", "kra", "ku", "la", "lech", "lon", "mep",
-    "mer", "mi", "mog", "mon", "mung", "mur", "nag", "nej",
-    "nelg", "nep", "ner", "nes", "nih", "nin", "o", "od", "ood",
+    "bek", "bie", "bit", "bjor", "blu", "bot", "bu", "byt", "comp",
+    "con", "cos", "cre", "dalf", "dan", "den", "do", "e", "eep", "el",
+    "eng", "er", "ere", "erk", "esh", "evs", "fa", "fid", "fri", "fu",
+    "gan", "gar", "glen", "gop", "gre", "ha", "hyd", "i", "ing", "ip",
+    "ish", "it", "ite", "iv", "jo", "kho", "kli", "klis", "la", "lech",
+    "mar", "me", "mi", "mic", "mik", "mon", "mung", "mur", "nej",
+    "nelg", "nep", "ner", "nes", "nes", "nih", "nin", "o", "od", "ood",
     "org", "orn", "ox", "oxy", "pay", "ple", "plu", "po", "pot",
-    "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol",
-    "ron", "rox", "ru", "sed", "ser", "shan", "shar", "sher", "shu",
-    "ski", "sna", "sne", "sno", "so", "sol", "sri", "sta", "sun",
-    "ta", "tab", "tem", "ther", "ti", "tox", "trol", "tue", "turs",
-    "u", "ulk", "um", "un", "uni", "ur", "val", "viv", "vly", "vom",
-    "wah", "wed", "werg", "wex", "whon", "wun", "xo", "yot", "yu",
-    "zant", "zap", "zeb", "zer", "zy", "zyme", "zon",
+    "prok", "re", "rea", "rhov", "ri", "ro", "rog", "rok", "rol", "sa",
+    "san", "sat", "sef", "seh", "shu", "ski", "sna", "sne", "snik",
+    "sno", "so", "sol", "sri", "sta", "sun", "ta", "tab", "tem",
+    "ther", "ti", "tox", "trol", "tue", "turs", "u", "ulk", "um", "un",
+    "uni", "ur", "val", "viv", "vly", "vom", "wah", "wed", "werg",
+    "wex", "whon", "wun", "xo", "y", "yot", "yu", "zant", "zeb", "zim",
+    "zok", "zon", "zum",
 ]
 
-_RING_GEMS: list[str] = [
+_RING_GEMS: list[str] = [   # 5.4 stones[]
     "agate", "alexandrite", "amethyst", "carnelian", "diamond", "emerald",
-    "garnet", "jade", "kryptonite", "lapis lazuli", "moonstone", "obsidian",
-    "onyx", "opal", "pearl", "peridot", "ruby", "sapphire", "tiger eye",
-    "topaz", "turquoise", "zircon",
+    "germanium", "granite", "garnet", "jade", "kryptonite", "lapis lazuli",
+    "moonstone", "obsidian", "onyx", "opal", "pearl", "peridot", "ruby",
+    "sapphire", "stibotantalite", "tiger eye", "topaz", "turquoise",
+    "taaffeite", "zircon",
 ]
 
-_WAND_MATERIALS: list[str] = [
-    "avocado wood", "balsa", "bamboo", "birch", "cedar", "cherry",
-    "cinnibar", "curved", "cypress", "dogwood", "driftwood", "ebony",
-    "elm", "eucalyptus", "glass", "iron", "knotty", "larch", "leather",
-    "maple", "marble", "mithril", "muddy", "oak", "ornate", "pine",
-    "poplar", "redwood", "rough", "runed", "rusty", "silver", "slime",
-    "spruce", "steel", "strange", "teak", "titanium", "twisted", "willow",
+# 杖（staff）は木、短い杖（wand）は金属。どちらになるかはゲームごとに決まる（5.4 init_materials）
+_STAFF_WOODS: list[str] = [   # 5.4 wood[]
+    "avocado wood", "balsa", "bamboo", "banyan", "birch", "cedar", "cherry",
+    "cinnibar", "cypress", "dogwood", "driftwood", "ebony", "elm",
+    "eucalyptus", "fall", "hemlock", "holly", "ironwood", "kukui wood",
+    "mahogany", "manzanita", "maple", "oaken", "persimmon wood", "pecan",
+    "pine", "poplar", "redwood", "rosewood", "spruce", "teak", "walnut",
+    "zebrawood",
 ]
 
+_WAND_METALS: list[str] = [   # 5.4 metal[]
+    "aluminum", "beryllium", "bone", "brass", "bronze", "copper",
+    "electrum", "gold", "iron", "lead", "magnesium", "mercury", "nickel",
+    "pewter", "platinum", "steel", "silver", "silicon", "tin", "titanium",
+    "tungsten", "zinc",
+]
 
-def _make_scroll_title() -> str:
-    """ランダムな呪文タイトルを 2〜4 音節で生成する。"""
-    n = random.randint(2, 4)
-    return " ".join(random.choice(_SCROLL_SYLLABLES) for _ in range(n))
+_MAXNAME = 40   # 5.4 init_names の MAXNAME
+
+
+def _make_scroll_title() -> list[list[str]]:
+    """巻物の題を 5.4 init_names どおりに作る。2〜4 語、1 語は 1〜3 音節をつないだもの。
+    音節の区切りはカタカナにするときに使うので、語ごとの音節の並びで返す。"""
+    words: list[list[str]] = []
+    length = 0
+    for _ in range(random.randrange(3) + 2):
+        word: list[str] = []
+        for _ in range(random.randrange(3) + 1):
+            sp = random.choice(_SCROLL_SYLLABLES)
+            if length + len(sp) > _MAXNAME:
+                break
+            word.append(sp)
+            length += len(sp)
+        words.append(word)
+        length += 1   # 語の後ろの空白
+    return [w for w in words if w]
+
+
+def _make_materials() -> tuple[list[str], list[str]]:
+    """杖の素材と種別（"staff" / "wand"）を 5.4 init_materials どおりに決める。"""
+    mats: list[str] = []
+    kinds: list[str] = []
+    used_wood: set[int] = set()
+    used_metal: set[int] = set()
+    for _ in range(MAXSTICKS):
+        while True:
+            if random.randrange(2) == 0:
+                j = random.randrange(len(_WAND_METALS))
+                if j not in used_metal:
+                    used_metal.add(j)
+                    mats.append(_WAND_METALS[j])
+                    kinds.append("wand")
+                    break
+            else:
+                j = random.randrange(len(_STAFF_WOODS))
+                if j not in used_wood:
+                    used_wood.add(j)
+                    mats.append(_STAFF_WOODS[j])
+                    kinds.append("staff")
+                    break
+    return mats, kinds
 
 
 # ===========================================================================
@@ -176,7 +223,7 @@ class StickInfo(NamedTuple):
     name:     str
     prob:     int
     worth:    int
-    is_staff: bool   # True=スタッフ, False=ワンド
+    is_staff: bool   # 2026-11-27 より前のセーブ用の固定値（今は種別をゲームごとに決める: Knowledge.stick_kind）
     charges:  int    # デフォルト充填数
 
 
@@ -341,14 +388,32 @@ class GameKnowledge:
         self._s_appear:  list[str] = []
         self._r_appear:  list[str] = []
         self._ws_appear: list[str] = []
+        self._s_sylls:   list[list[list[str]]] = []   # 巻物の題の音節（カタカナ用）
+        self._ws_type:   list[str] = []               # "staff" / "wand"
 
         self._randomize()
 
     def _randomize(self) -> None:
         self._p_appear  = random.sample(_POTION_COLORS, MAXPOTIONS)
-        self._s_appear  = [_make_scroll_title() for _ in range(MAXSCROLLS)]
+        self._s_sylls   = [_make_scroll_title() for _ in range(MAXSCROLLS)]
+        self._s_appear  = [' '.join(''.join(w) for w in t) for t in self._s_sylls]
         self._r_appear  = random.sample(_RING_GEMS, MAXRINGS)
-        self._ws_appear = random.sample(_WAND_MATERIALS, MAXSTICKS)
+        self._ws_appear, self._ws_type = _make_materials()
+
+    def stick_kind(self, o_which: int) -> str:
+        """杖の種別 "staff" / "wand"。2026-11-27 より前のセーブは表の固定値。"""
+        kinds = getattr(self, '_ws_type', None)
+        if kinds and 0 <= o_which < len(kinds):
+            return kinds[o_which]
+        return "staff" if STICK_INFO[o_which].is_staff else "wand"
+
+    def scroll_kana(self, o_which: int) -> str:
+        """巻物の題のカタカナ。語の中は音節をつなぎ、語の間は「・」。"""
+        sylls = getattr(self, '_s_sylls', None)
+        if sylls and 0 <= o_which < len(sylls):
+            return '・'.join(''.join(ja_name('syllable', x) for x in w) for w in sylls[o_which])
+        # 2026-11-27 より前のセーブ: 題は音節を空白で並べたもの
+        return '・'.join(ja_name('syllable', x) for x in self._s_appear[o_which].split())
 
     # ---- 識別 ----
 
@@ -421,7 +486,7 @@ class GameKnowledge:
             if self.is_known(ot, ow):
                 return tr('a scroll of {name}', name=tr_name('scroll', SCROLL_INFO[ow].name))
             title = self.get_appearance(ot, ow)
-            kana = '・'.join(ja_name('syllable', s) for s in title.split())   # 音節ごとにカタカナにする（セーブの中身は英字のまま）
+            kana = self.scroll_kana(ow)   # 表示のときだけカタカナにする（セーブの中身は英字のまま）
             if is_ja():
                 title = kana
             else:
@@ -441,7 +506,7 @@ class GameKnowledge:
 
         if ot == CH_STICK:
             info = STICK_INFO[ow]
-            kind = tr_name('stick_kind', "staff" if info.is_staff else "wand")
+            kind = tr_name('stick_kind', self.stick_kind(ow))
             if self.is_known(ot, ow):
                 return tr('a {kind} of {name} [{o_arm} charges]',
                           kind=kind, name=tr_name('stick', info.name), o_arm=item.o_arm)
@@ -1229,7 +1294,7 @@ def use_stick(
 
     if not was_known and knowledge.is_known(CH_STICK, which):
         info = STICK_INFO[which]
-        kind = "staff" if info.is_staff else "wand"
+        kind = knowledge.stick_kind(which)
         msgs.append(tr('That was a {kind} of {name}.', kind=tr_name('stick_kind', kind), name=tr_name('stick', info.name)))
 
     return msgs
