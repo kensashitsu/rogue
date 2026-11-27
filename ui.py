@@ -1430,6 +1430,13 @@ class UI:
                 self.stdscr.addstr(r, 0, l)
             except curses.error:
                 pass
+        if get_lang() == 'enja':   # 英語＋日本語: 下に日本語を灰色で添える
+            with lang_as('ja'):
+                ja = tr("Hello {name}, just a moment while I dig the dungeon...", name=name)
+            try:
+                self.stdscr.addstr(len(lines), 0, _fit(ja, 79), self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
+            except curses.error:
+                pass
         self.stdscr.refresh()
         await curses.napms(900)
 
