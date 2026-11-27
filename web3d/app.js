@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.81';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.82';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
 import * as snd from './sound.js?v=3d-1.80';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.81';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.82';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -52,7 +52,7 @@ const L = {
     follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
     acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'], ['Z', '回復するまで休む'],
-           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['sound', '音'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる'], ['export', 'セーブを書き出す'], ['import', 'セーブを読み込む']],
+           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['D', '分かった品'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['sound', '音'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる'], ['export', 'セーブを書き出す'], ['import', 'セーブを読み込む']],
     noSave: '書き出せるセーブがありません。先に「保存して終了」で保存してください', badSave: 'セーブのファイルではありません',
     askImport: '今のセーブ（と記録）は、読み込んだセーブで置き換わります。よろしいですか？',
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
@@ -68,7 +68,7 @@ const L = {
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'], ['Z', 'Rest to heal'],
-           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['sound', 'Sound'], ['manual', 'Manual'], ['S', 'Save & quit'], ['Q', 'Quit'], ['export', 'Export save'], ['import', 'Import save']],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['D', 'Discoveries'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['sound', 'Sound'], ['manual', 'Manual'], ['S', 'Save & quit'], ['Q', 'Quit'], ['export', 'Export save'], ['import', 'Import save']],
     noSave: 'There is no save to export. Use “Save & quit” first', badSave: 'This is not a save file',
     askImport: 'Your current save (and scores) will be replaced by the imported one. Continue?',
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',

@@ -33,12 +33,16 @@ from items import (
     init_knowledge, set_knowledge, GameKnowledge, Item,
     make_potion, make_scroll, make_weapon, make_armor,
     make_ring, make_stick, make_food, make_gold, make_amulet,
-    use_potion, use_scroll, use_stick,
+    use_potion, use_scroll, use_stick, is_magic, _POTION_COLORS,
     put_on_ring as _items_put_on_ring,
     remove_ring as _items_remove_ring,
 )
 from combat import player_attacks_monster, calc_exp, roll_damage
-from i18n import tr, load_lang
+from i18n import tr, load_lang, name as tr_name
+
+
+def _cap(t: str) -> str:
+    return t[:1].upper() + t[1:]
 from constants import (
     CH_FLOOR, CH_TRAP, F_SECRETDOOR, CH_PASSAGE, CH_DOOR,
     CH_POTION, CH_SCROLL, CH_WEAPON, CH_ARMOR,
@@ -468,6 +472,8 @@ class Game:
                 ui.add_message(tr("Language set to English."))
         elif action == 'show_status':
             await ui.show_status(self.player)
+        elif action == 'discoveries':
+            await ui.show_discoveries(self.knowledge)
         elif action == 'inventory':
             await self._do_inventory_use(ui)
         elif action == 'drop':
@@ -817,7 +823,10 @@ class Game:
         if item.o_which == P_MFIND and any(m.is_alive for m in self.monsters):
             await ui.show_all_monsters(self.dungeon, self.player, self.monsters)
         elif item.o_which == P_TFIND:
-            await ui.show_all_objects(self.dungeon, self.player, self.monsters, self.floor_items)
+            magic = [fi for fi in self.floor_items if is_magic(fi.item)]   # 5.4: 魔法の品だけ映す
+            if magic:
+                await ui.show_all_objects(self.dungeon, self.player, self.monsters, magic,
+                                          title_msg=tr('You sense the presence of magic on this level.'))
         await self._end_turn(ui)
 
     async def _do_read(self, ui: UI, slot: Optional[str] = None) -> None:
@@ -1291,7 +1300,21 @@ class Game:
         from combat import save_throw
         which = trap.which
         if which == T_MYST:
-            which = random.randint(0, NTRAPS - 2)  # T_MYST 以外をランダム選択
+            # 5.4: 害はなく、妙な文が出るだけ（move.c be_trapped）
+            color = lambda: tr_name('color', random.choice(_POTION_COLORS))
+            return [random.choice([
+                lambda: tr('You are suddenly in a parallel dimension.'),
+                lambda: tr('The light in here suddenly seems {color}.', color=color()),
+                lambda: tr('You feel a sting in the side of your neck.'),
+                lambda: tr('Multi-colored lines swirl around you, then fade.'),
+                lambda: tr('A {color} light flashes in your eyes.', color=color()),
+                lambda: tr('A spike shoots past your ear!'),
+                lambda: _cap(tr('{color} sparks dance across your armor.', color=color())),
+                lambda: tr('You suddenly feel very thirsty.'),
+                lambda: tr('You feel time speed up suddenly.'),
+                lambda: tr('Time now seems to be going slower.'),
+                lambda: tr('Your pack turns {color}!', color=color()),
+            ])()]
 
         if which == T_DOOR:
             self.floor += 1

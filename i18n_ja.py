@@ -480,6 +480,30 @@ JA: dict[str, str] = {
     "Language: (e)nglish or (j)apanese? ": "表示言語： (e)English / (j)日本語 ",
     "Language: (e)nglish, (j)apanese or (b)oth? ": "表示言語： (e)English / (j)日本語 / (b)English＋日本語 ",
 
+    # ---- 発見一覧（D） ----
+    " Discoveries": " 正体が分かった品",
+    "Potions": "薬", "Scrolls": "巻物", "Rings": "指輪", "Wands and staffs": "杖",
+    "{kind} of {name}": "{name}の{kind}",
+    "  You haven't found out what anything is yet.": "  まだ正体が分かった品はない。",
+
+    # ---- 5.4 の識別しない薬の文・不思議なわな ----
+    "This potion tastes like slime-mold juice.": "粘菌のジュースのような味がする。",
+    "Hey, this tastes great.  It makes you feel warm all over.": "おお、これはうまい。体じゅうが温まる。",
+    "You have a normal feeling for a moment, then it passes.": "一瞬ふつうの気分になったが、すぐに消えた。",
+    "You have a strange feeling for a moment, then it passes.": "一瞬妙な気分になったが、すぐに消えた。",
+    "You sense the presence of magic on this level.": "この階に魔法の気配を感じる。",
+    "You are suddenly in a parallel dimension.": "急に別の世界へ移ったような気がする。",
+    "The light in here suddenly seems {color}.": "ここの明かりが急に{color}に見える。",
+    "You feel a sting in the side of your neck.": "首筋がちくりとした。",
+    "Multi-colored lines swirl around you, then fade.": "色とりどりの線が体のまわりで渦を巻き、消えていった。",
+    "A {color} light flashes in your eyes.": "{color}の光が目の前で閃いた。",
+    "A spike shoots past your ear!": "釘が耳をかすめて飛んでいった！",
+    "{color} sparks dance across your armor.": "{color}の火花が鎧の上を踊った。",
+    "You suddenly feel very thirsty.": "急にひどく喉が渇いた。",
+    "You feel time speed up suddenly.": "急に時間が速く流れはじめた気がする。",
+    "Time now seems to be going slower.": "時間がゆっくり流れているように感じる。",
+    "Your pack turns {color}!": "荷物が{color}になった！",
+
     # ---- 記号の説明 ----
     "The hero (you)": "主人公（あなた）",
     "A passage": "通路",
@@ -515,6 +539,7 @@ JA: dict[str, str] = {
     "  f  Fight monster    s  Search": _row("  f  攻撃する", "s  調べる"),
     "  .  Rest one turn    @  Show status": _row("  .  1ターン休む", "@  状態を見る"),
     "  ?/F1  This help      ^  Check for traps": _row("  ?/F1  このヘルプ", "^  罠を確かめる"),
+    "  D  Discoveries": "  D  正体が分かった品の一覧",
     "  /  Identify symbol Z  Rest until healed": _row("  /  記号を調べる", "Z  回復するまで休む"),
     "  S  Save & quit      Q  Quit (no save)": _row("  S  セーブして終了", "Q  やめる（セーブなし）"),
     "  Ctrl-P  Repeat last message": "  Ctrl-P  直前のメッセージを再表示",

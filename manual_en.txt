@@ -172,6 +172,7 @@ Contents
     ?    show help (on a Japanese keyboard, F1 also works)
     F1   show help (same as ?)
     @    show your character's status in detail
+    D    list the items whose identity you have found out
     /    look up what a map symbol means
     ^    check the trap you are standing on
     Ctrl-P   show the last message again
@@ -334,7 +335,9 @@ Contents
 
   Potions (!), scrolls (?), rings (=) and wands/staffs (/) are found
   with an unknown appearance (color, title, gem, material).
-  Using one reveals what it is.
+  If using one has a clear effect, you learn what it is. Ones with no
+  visible effect (all rings) stay unknown even after you use them.
+  The "D" command lists the ones you have found out.
 
   ────────────────────────────────────────────────────────────────────────────
   [Potions (!)]  quaff with the "q" command
@@ -355,7 +358,7 @@ Contents
     raise level            Raises your level at once
     monster detection      Senses the monsters on this floor (shown over the
                            map)
-    magic detection        Senses where the items on this floor are (shown
+    magic detection        Senses where the magic items on this floor are (shown
                            over the map)
     blindness              You become blind (harmful; lasts about 50 turns)
     levitation             You float (you no longer step on traps)
@@ -441,28 +444,28 @@ Contents
 
     Each use lowers the charges by 1. Once identified, the charges are shown
     as "[X charges]".
-    There are wands and staffs; each kind is always one or the other.
+    There are wands (metal) and staffs (wood); which kind is which changes
+    from game to game.
 
     Name                   Effect
     ───────────────────────────────────────────────────────
-    light                  Lights up the current room (wand)
-    invisibility           Makes a monster invisible (wand; a bad one)
-    lightning              Fires a bolt of lightning (wand)
-    fire                   Fires a bolt of fire (wand)
-    cold                   Fires a bolt of cold (wand)
-    magic missile          Fires a magic missile (wand)
-    polymorph              Turns a monster into another monster (staff)
-    haste monster          Speeds a monster up (staff; don't use it)
-    slow monster           Slows a monster down (staff)
+    light                  Lights up the current room
+    invisibility           Makes a monster invisible (a bad one)
+    lightning              Fires a bolt of lightning
+    fire                   Fires a bolt of fire
+    cold                   Fires a bolt of cold
+    magic missile          Fires a magic missile
+    polymorph              Turns a monster into another monster
+    haste monster          Speeds a monster up (don't use it)
+    slow monster           Slows a monster down
     drain life             You lose HP//2, and each monster on this floor
-                           takes that much damage (wand)
-                           * With no monsters around, you lose no HP and
-                             it is not identified
+                           takes that much damage
+                           * With no monsters around, you lose no HP
                            * Can't be used when your HP is 1 or less
-    teleport away          Teleports a monster to a random place (staff)
-    teleport to            Pulls a monster next to you (staff)
-    cancellation           Cancels a monster's special abilities (wand)
-    nothing                Does nothing (a bad one; wand)
+    teleport away          Teleports a monster to a random place
+    teleport to            Pulls a monster next to you
+    cancellation           Cancels a monster's special abilities
+    nothing                Does nothing (a bad one)
 
   ────────────────────────────────────────────────────────────────────────────
   [Food (:)]  eat with the "e" command
@@ -495,8 +498,8 @@ Contents
                            * Leather armor doesn't rust (immune)
                            * No effect on armor protected by a scroll of
                              protect armor, or with a ring of maintain armor
-    mystery trap           Randomly acts as one of the traps above, from
-                           trap door to rust trap
+    mystery trap           Something odd seems to happen, but it does no
+                           harm
 
   [The Amulet of Yendor (,)]
     The goal of the game; there is one on floor 26. Carry it in your pack.

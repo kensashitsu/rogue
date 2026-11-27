@@ -6,7 +6,7 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-const VERSION = '11-27.1';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '11-27.2';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -45,7 +45,7 @@ const L = {
     follow: '追従', full: '全体', small: '小', mid: '中', large: '大',
     acts: [['i', '持ち物'], ['e', '食べる'], ['q', '飲む'], ['r', '読む'], ['t', '投げる'], ['z', '杖を振る'], ['s', '探す'], ['>', '降りる'], ['more', 'その他']],
     more: [['w', '武器を持つ'], ['W', '鎧を着る'], ['T', '鎧を脱ぐ'], ['P', '指輪をはめる'], ['R', '指輪を外す'], ['d', '置く'], ['f', '戦う'], ['<', '昇る'], ['Z', '回復するまで休む'],
-           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる']],
+           ['^', '罠を調べる'], ['/', '記号を調べる'], ['@', '状態'], ['D', '分かった品'], ['^P', '前の文'], ['o', '言語'], ['?', 'ヘルプ'], ['manual', '説明書'], ['S', '保存して終了'], ['Q', 'あきらめる']],
     moreTitle: 'その他のコマンド（小さな字は元のキー）', close: '閉じる', rest: '休む',
     next: '次へ', tapAnywhere: 'タップして次へ進む', cancel: 'やめる', ok: '決定', lang: 'English',
     dir: '方向を選んでください', list: '一覧の行をタップして選びます', listMore: '（↓ で続き）', name: '冒険者', text: '文字を入力',
@@ -58,7 +58,7 @@ const L = {
     follow: 'Follow', full: 'Whole', small: 'S', mid: 'M', large: 'L',
     acts: [['i', 'Pack'], ['e', 'Eat'], ['q', 'Quaff'], ['r', 'Read'], ['t', 'Throw'], ['z', 'Zap'], ['s', 'Search'], ['>', 'Down'], ['more', 'More']],
     more: [['w', 'Wield'], ['W', 'Wear'], ['T', 'Take off'], ['P', 'Put on'], ['R', 'Remove'], ['d', 'Drop'], ['f', 'Fight'], ['<', 'Up'], ['Z', 'Rest to heal'],
-           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual'], ['S', 'Save & quit'], ['Q', 'Quit']],
+           ['^', 'Trap'], ['/', 'Symbol'], ['@', 'Status'], ['D', 'Discoveries'], ['^P', 'Last msg'], ['o', 'Language'], ['?', 'Help'], ['manual', 'Manual'], ['S', 'Save & quit'], ['Q', 'Quit']],
     moreTitle: 'More commands (small text = original key)', close: 'Close', rest: 'Rest',
     next: 'Next', tapAnywhere: 'Tap to continue', cancel: 'Cancel', ok: 'OK', lang: '日本語',
     dir: 'Choose a direction', list: 'Tap a line to choose', listMore: ' (↓ for more)', name: 'Adventurer', text: 'Type here',

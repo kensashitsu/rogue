@@ -838,8 +838,12 @@ def use_potion(
     which = item.o_which
     msgs: list[str] = []
     was_known = knowledge.is_known(CH_POTION, which)
-    knowledge.know(CH_POTION, which)
     item.o_flags |= ISKNOW
+    # 飲んで正体が分かるかは 5.4 quaff どおり（怪物感知・透視・筋力回復は分からない。
+    # 魔力感知はその階に魔法の品があったときだけ。混乱は幻覚中なら分からない）
+    if which not in (P_MFIND, P_SEEINVIS, P_RESTORE, P_TFIND):
+        if not (which == P_CONFUSE and player.status.hallucinating > 0):
+            knowledge.know(CH_POTION, which)
 
     if which == P_CONFUSE:
         msgs.append(player.apply_confusion(HUHDURATION - CONFUSE_CUT))   # 5.4: HUHDURATION
@@ -863,7 +867,8 @@ def use_potion(
         msgs.append(tr('You feel stronger! (STR {str_max})', str_max=player.str_max))
 
     elif which == P_SEEINVIS:
-        msgs.append(player.apply_see_invisible(SEEDURATION))
+        player.apply_see_invisible(SEEDURATION)
+        msgs.append(tr('This potion tastes like slime-mold juice.'))   # 5.4 の文（正体は明かさない）
 
     elif which == P_HEALING:
         was_full = player.hp >= player.max_hp
@@ -883,10 +888,14 @@ def use_potion(
             for m in alive:
                 m.flags |= ISFOUND
         else:
-            msgs.append(tr('You sense no monsters nearby.'))
+            msgs.append(_passing_feeling(player))   # 5.4: 怪物がいなければ魔力感知と同じ文
 
     elif which == P_TFIND:
-        pass   # game.py で ui.show_all_objects() を呼び出す
+        # 5.4: その階に魔法の品があれば見せて識別、無ければ怪物感知と同じ文。見せるのは game.py
+        if any(is_magic(fi) for fi in (floor_items or [])):
+            knowledge.know(CH_POTION, which)
+        else:
+            msgs.append(_passing_feeling(player))
 
     elif which == P_RAISE:
         from player import _MAX_LEVEL
@@ -928,8 +937,8 @@ def use_potion(
             msgs.append(player.apply_haste(turns))
 
     elif which == P_RESTORE:
-        msg = player.restore_str()
-        msgs.append(msg if msg else tr('You feel your strength returning.'))
+        player.restore_str()
+        msgs.append(tr('Hey, this tastes great.  It makes you feel warm all over.'))   # 5.4 の文
 
     elif which == P_BLIND:
         msgs.append(player.apply_blindness(_spread(SEEDURATION - SIGHT_POTION_CUT)))   # 5.4: SEEDURATION
@@ -938,10 +947,26 @@ def use_potion(
         turns = HUHDURATION + random.randint(0, HUHDURATION)
         msgs.append(player.apply_levitation(turns))
 
-    if not was_known:
+    if not was_known and knowledge.is_known(CH_POTION, which):
         msgs.append(tr('That was a potion of {name}.', name=tr_name('potion', POTION_INFO[which].name)))
 
     return msgs
+
+
+def _passing_feeling(player: 'Player') -> str:
+    """5.4 の「一瞬 normal（幻覚中は strange）な気分になって消えた」。怪物感知と魔力感知で同じ文"""
+    if player.status.hallucinating > 0:
+        return tr('You have a strange feeling for a moment, then it passes.')
+    return tr('You have a normal feeling for a moment, then it passes.')
+
+
+def is_magic(item: 'Item') -> bool:
+    """5.4 is_magic。魔力感知に映る品"""
+    if item.o_type == CH_ARMOR:
+        return bool(item.o_flags & ISPROT) or item.o_arm != ARMOR_INFO[item.o_which].ac
+    if item.o_type == CH_WEAPON:
+        return item.o_hplus != 0 or item.o_dplus != 0
+    return item.o_type in (CH_POTION, CH_SCROLL, CH_STICK, CH_RING, CH_AMULET)
 
 
 def _next_level_exp(player: 'Player') -> int:
@@ -972,8 +997,10 @@ def use_scroll(
     which = item.o_which
     msgs: list[str] = []
     was_known = knowledge.is_known(CH_SCROLL, which)
-    knowledge.know(CH_SCROLL, which)
     item.o_flags |= ISKNOW
+    # 読んで正体が分かるのは 5.4 どおり 識別・地図・睡眠と、効いたときの金縛り・食料感知・テレポートだけ
+    if which in (S_MAP, S_SLEEP, S_ID_POTION, S_ID_SCROLL, S_ID_WEAPON, S_ID_ARMOR, S_ID_R_OR_S):
+        knowledge.know(CH_SCROLL, which)
 
     if which == S_CONFUSE:
         # 次に攻撃したモンスターを混乱させるフラグをプレイヤーに付ける
@@ -996,6 +1023,7 @@ def use_scroll(
                 m.flags |= ISHELD
                 held += 1
         if held:
+            knowledge.know(CH_SCROLL, which)
             msgs.append(tr('The monsters around you freeze.') if held > 1
                         else tr('The monster freezes.'))
         else:
@@ -1028,11 +1056,15 @@ def use_scroll(
         msgs.append(tr('You hear maniacal laughter in the distance.'))
 
     elif which == S_FDET:
-        pass   # game.py で食料の位置を表示する
+        if any(fi.o_type == CH_FOOD for fi in (floor_items or [])):
+            knowledge.know(CH_SCROLL, which)   # 食料の位置を見せるのは game.py
 
     elif which == S_TELEP:
+        before = dungeon.find_room_at(player.y, player.x)
         pos = dungeon.teleport_player(player.y, player.x)
         player.y, player.x = pos.y, pos.x
+        if dungeon.find_room_at(player.y, player.x) is not before:   # 5.4: 別の部屋に移ったときだけ識別
+            knowledge.know(CH_SCROLL, which)
         msgs.append(tr('You feel a wrenching sensation.'))   # 試験用の座標の表示が残っていたのを消した（5.4 には無い）
 
     elif which == S_ENCH:
@@ -1082,7 +1114,7 @@ def use_scroll(
         else:
             msgs.append(tr('You feel protected.'))
 
-    if not was_known:
+    if not was_known and knowledge.is_known(CH_SCROLL, which):
         msgs.append(tr('That was a scroll of {name}.', name=tr_name('scroll', SCROLL_INFO[which].name)))
 
     return msgs
@@ -1197,9 +1229,10 @@ def use_stick(
         target = _find_target(dungeon, monsters, player, direction)
         if target:
             msgs.extend(_ws_polymorph(target, player))
+            if player.status.blind <= 0 and not (target.flags & ISINVIS):   # 5.4: 変わった姿が見えたら識別
+                knowledge.know(CH_STICK, which)
         else:
             msgs.append(tr('The staff pulses.'))
-        knowledge.know(CH_STICK, which)
 
     elif which == WS_MISSILE:
         msgs.extend(_ws_bolt(dungeon, monsters, player, direction,
@@ -1214,7 +1247,6 @@ def use_stick(
             msgs.append(tr('The {name} starts moving faster!', name=target.name))
         else:
             msgs.append(tr('The staff pulses.'))
-        knowledge.know(CH_STICK, which)
 
     elif which == WS_SLOW_M:
         target = _find_target(dungeon, monsters, player, direction)
@@ -1224,7 +1256,6 @@ def use_stick(
             msgs.append(tr('The {name} slows down.', name=target.name))
         else:
             msgs.append(tr('The staff pulses.'))
-        knowledge.know(CH_STICK, which)
 
     elif which == WS_DRAIN:
         if player.hp <= 1:
@@ -1240,7 +1271,6 @@ def use_stick(
                         from combat import calc_exp
                         msgs.extend(player.gain_exp(calc_exp(m)))
                 msgs.append(tr('You feel your life force draining away!'))
-                knowledge.know(CH_STICK, which)
             else:
                 msgs.append(tr('You feel your life force draining away!'))
 
@@ -1256,7 +1286,6 @@ def use_stick(
             msgs.append(tr('The {name} disappears!', name=target.name))
         else:
             msgs.append(tr('The staff pulses.'))
-        knowledge.know(CH_STICK, which)
 
     elif which == WS_TELTO:
         target = _find_target(dungeon, monsters, player, direction)
@@ -1280,7 +1309,6 @@ def use_stick(
                     break
         else:
             msgs.append(tr('The staff pulses.'))
-        knowledge.know(CH_STICK, which)
 
     elif which == WS_CANCEL:
         target = _find_target(dungeon, monsters, player, direction)
@@ -1290,7 +1318,6 @@ def use_stick(
             msgs.append(tr('The {name} looks cancelled.', name=target.name))
         else:
             msgs.append(tr('The wand flashes.'))
-        knowledge.know(CH_STICK, which)
 
     if not was_known and knowledge.is_known(CH_STICK, which):
         info = STICK_INFO[which]
@@ -1441,8 +1468,7 @@ def put_on_ring(
     old = player.put_on_ring(item, slot)
     if old is not None:
         msgs.append(tr('You remove {item}.', item=knowledge.display_name(old)))
-    item.o_flags |= ISKNOW
-    knowledge.know(item.o_type, item.o_which)
+    # 5.4 ring_on は識別しない（正体は識別の巻物でしか分からない）
     msgs.append(tr('You put on {item}.', item=knowledge.display_name(item)))
     return msgs
 

@@ -53,6 +53,7 @@ KEY_MAP: dict[str, str] = {
     # 探索・情報
     '^': 'check_trap', '/': 'identify', 's': 'search',
     '.': 'rest',      '@': 'show_status', '?': 'help',
+    'D': 'discoveries',   # これまでに正体が分かった品（5.4 discovered）
     'Z': 'rest_well', # 回復するまで休む（状態異常が治り HP が満タンになるまで）
     # システム
     'Q': 'quit',      'S': 'save',
@@ -208,6 +209,7 @@ _HELP_LINES = [
     "  t  Throw item       z  Zap wand/staff",
     "  f  Fight monster    s  Search",
     "  .  Rest one turn    @  Show status",
+    "  D  Discoveries",
     "  ?/F1  This help      ^  Check for traps",
     "  /  Identify symbol Z  Rest until healed",
     "  S  Save & quit      Q  Quit (no save)",
@@ -1206,6 +1208,48 @@ class UI:
             pass
         self.stdscr.refresh()
         await self._getch()
+
+    async def show_discoveries(self, knowledge) -> None:
+        """'D' コマンド: これまでに正体が分かった薬・巻物・指輪・杖の一覧（5.4 discovered の「*」）"""
+        if self.stdscr is None:
+            return
+        from items import POTION_INFO, SCROLL_INFO, RING_INFO, STICK_INFO
+        from constants import CH_POTION, CH_SCROLL, CH_RING, CH_STICK
+        lines = [tr(" Discoveries"), " " + "─" * 30]
+        for title, ch, table, kind in (("Potions", CH_POTION, POTION_INFO, 'potion'),
+                                       ("Scrolls", CH_SCROLL, SCROLL_INFO, 'scroll'),
+                                       ("Rings", CH_RING, RING_INFO, 'ring'),
+                                       ("Wands and staffs", CH_STICK, STICK_INFO, 'stick')):
+            names: list[str] = []
+            for w, info in enumerate(table):
+                if knowledge.is_known(ch, w):
+                    n = tr_name(kind, info.name)
+                    if ch == CH_STICK:
+                        n = tr('{kind} of {name}', kind=tr_name('stick_kind', knowledge.stick_kind(w)), name=n)
+                    if n not in names:   # 識別の巻物 5 種は 1 つの名前
+                        names.append(n)
+            if names:
+                lines += ["", " " + tr(title)] + ["    " + n for n in names]
+        if len(lines) == 2:
+            lines += ["", tr("  You haven't found out what anything is yet.")]
+        lines += ["", tr(" Press any key...")]
+        if await self._lines_ja(lines, wait=self._getch):
+            await self._getch()
+            return
+        for start in range(0, len(lines), 23):   # 入りきらなければページを分ける
+            self.stdscr.clear()
+            for i, line in enumerate(lines[start:start + 23]):
+                try:
+                    self.stdscr.addstr(i, 0, _fit(line), curses.A_BOLD if start + i == 0 else 0)
+                except curses.error:
+                    pass
+            if start + 23 < len(lines):
+                try:
+                    self.stdscr.addstr(23, 0, tr(" Press any key..."), curses.A_DIM)
+                except curses.error:
+                    pass
+            self.stdscr.refresh()
+            await self._getch()
 
     async def identify_symbol(self) -> None:
         """'/' コマンド: 入力されたシンボルの意味を説明する。"""
