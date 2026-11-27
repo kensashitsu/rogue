@@ -1566,8 +1566,21 @@ class UI:
                 self.stdscr.addstr(top + i, 0, line, curses.A_BOLD if 6 <= i <= 10 else 0)
             except curses.error:
                 pass
+        below = top + len(art) + 2
+        if get_lang() == 'enja':   # 英語＋日本語: 墓の下に、日本語の墓に刻む文を灰色で添える
+            with lang_as('ja'):
+                ja = self.tomb_lines(name, cause, gold)
+            word = lambda i: ja[i].strip().strip('/|' + chr(92)).strip()
+            for k, t in enumerate((word(2) + word(3),
+                                   '　'.join([word(6), word(7), word(8) + word(9), word(10)]))):
+                try:
+                    self.stdscr.addstr(below + k, max(0, 28 - text_width(t) // 2), t,
+                                       self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
+                except curses.error:
+                    pass
+            below += 3
         try:
-            self.stdscr.addstr(top + len(art) + 2, 0, tr("  Press any key to continue..."), curses.A_DIM)
+            self.stdscr.addstr(below, 0, tr("  Press any key to continue..."), curses.A_DIM)
         except curses.error:
             pass
         self.stdscr.refresh()
