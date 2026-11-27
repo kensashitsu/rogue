@@ -33,7 +33,7 @@ from items import (
     init_knowledge, set_knowledge, GameKnowledge, Item,
     make_potion, make_scroll, make_weapon, make_armor,
     make_ring, make_stick, make_food, make_gold, make_amulet,
-    use_potion, use_scroll, use_stick, is_magic, _POTION_COLORS,
+    use_potion, use_scroll, use_stick, _POTION_COLORS,
     put_on_ring as _items_put_on_ring,
     remove_ring as _items_remove_ring,
 )
@@ -823,10 +823,7 @@ class Game:
         if item.o_which == P_MFIND and any(m.is_alive for m in self.monsters):
             await ui.show_all_monsters(self.dungeon, self.player, self.monsters)
         elif item.o_which == P_TFIND:
-            magic = [fi for fi in self.floor_items if is_magic(fi.item)]   # 5.4: 魔法の品だけ映す
-            if magic:
-                await ui.show_all_objects(self.dungeon, self.player, self.monsters, magic,
-                                          title_msg=tr('You sense the presence of magic on this level.'))
+            await ui.show_all_objects(self.dungeon, self.player, self.monsters, self.floor_items)
         await self._end_turn(ui)
 
     async def _do_read(self, ui: UI, slot: Optional[str] = None) -> None:

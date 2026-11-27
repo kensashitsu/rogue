@@ -335,9 +335,8 @@ Contents
 
   Potions (!), scrolls (?), rings (=) and wands/staffs (/) are found
   with an unknown appearance (color, title, gem, material).
-  If using one has a clear effect, you learn what it is. Ones with no
-  visible effect (all rings) stay unknown even after you use them.
-  The "D" command lists the ones you have found out.
+  Using one reveals what it is. The "D" command lists the ones you have
+  found out.
 
   ────────────────────────────────────────────────────────────────────────────
   [Potions (!)]  quaff with the "q" command
@@ -358,7 +357,7 @@ Contents
     raise level            Raises your level at once
     monster detection      Senses the monsters on this floor (shown over the
                            map)
-    magic detection        Senses where the magic items on this floor are (shown
+    magic detection        Senses where the items on this floor are (shown
                            over the map)
     blindness              You become blind (harmful; lasts about 50 turns)
     levitation             You float (you no longer step on traps)
@@ -460,7 +459,8 @@ Contents
     slow monster           Slows a monster down
     drain life             You lose HP//2, and each monster on this floor
                            takes that much damage
-                           * With no monsters around, you lose no HP
+                           * With no monsters around, you lose no HP and
+                             it is not identified
                            * Can't be used when your HP is 1 or less
     teleport away          Teleports a monster to a random place
     teleport to            Pulls a monster next to you

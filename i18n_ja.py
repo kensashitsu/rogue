@@ -486,12 +486,7 @@ JA: dict[str, str] = {
     "{kind} of {name}": "{name}の{kind}",
     "  You haven't found out what anything is yet.": "  まだ正体が分かった品はない。",
 
-    # ---- 5.4 の識別しない薬の文・不思議なわな ----
-    "This potion tastes like slime-mold juice.": "粘菌のジュースのような味がする。",
-    "Hey, this tastes great.  It makes you feel warm all over.": "おお、これはうまい。体じゅうが温まる。",
-    "You have a normal feeling for a moment, then it passes.": "一瞬ふつうの気分になったが、すぐに消えた。",
-    "You have a strange feeling for a moment, then it passes.": "一瞬妙な気分になったが、すぐに消えた。",
-    "You sense the presence of magic on this level.": "この階に魔法の気配を感じる。",
+    # ---- 不思議なわな（5.4 be_trapped） ----
     "You are suddenly in a parallel dimension.": "急に別の世界へ移ったような気がする。",
     "The light in here suddenly seems {color}.": "ここの明かりが急に{color}に見える。",
     "You feel a sting in the side of your neck.": "首筋がちくりとした。",
