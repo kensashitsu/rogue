@@ -2014,6 +2014,76 @@ function drawTerm() {
     if (amu) amuletGlow(o, performance.now());
   }
   tctx.globalAlpha = 1;
+  drawTomb(C, R, depthOf);
+}
+
+// ---------------------------------------------------------------------------
+// 墓標（死んだとき）: 倒れたマスに 5.4 の墓標（rip.c の字の絵に名前・金貨・死因・年を刻んだもの）を立て、
+// カメラが少し下がって手元の明かりで照らして見る。字の絵はそのまま立てた板として描き、石の面は壁と同じ点描
+// ---------------------------------------------------------------------------
+let tomb = null;   // { cells: [[{ch, w}]], t0, dir, back }
+const TOMB_MS = 2400, TOMB_H = 0.98;   // カメラが下がりきるまで・墓の絵の高さ（13 行。石の天辺が天井の少し下）
+const WIDE_RE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
+function tombCells(lines) {   // 行を升に分ける（全角は 2 升ぶん）
+  return lines.map(l => { const r = []; for (const ch of l) { const w = WIDE_RE.test(ch) ? 2 : 1; r.push({ ch, w }); if (w === 2) r.push(null); } return r; });
+}
+function tombView() {   // 後ろに一番広く下がれる向き（今の向きを優先）。下がれる升の数で離れる距離を決める
+  const [py, px] = player;
+  const open = (y, x) => { const c = lastGrid ? cellAt(lastGrid, y, x)[0] : ' '; return c !== ' ' && c !== '-' && c !== '|'; };
+  let best = { dir: facing, free: -1 };
+  for (let i = 0; i < 8; i++) {
+    const d = (facing + [0, 1, 7, 2, 6, 3, 5, 4][i]) % 8, [dy, dx] = DIRS[d];
+    let free = 0;
+    while (free < 2 && open(py - dy * (free + 1), px - dx * (free + 1))) free++;
+    if (free > best.free) best = { dir: d, free };
+  }
+  return { dir: best.dir, back: [0.95, 1.3, 1.6][best.free] };
+}
+const TOMB_COL = { text: '#ece6d6', edge: '#b9bdc2', stone: '#6b6f74', flower: '#7fd17a', grass: '#6f9a4e', earth: '#8a744c' };
+function drawTomb(C, R, depthOf) {
+  if (!tomb || !player) return;
+  const now = performance.now(), rows = tomb.cells.length;
+  const gx = player[1] + 0.5, gz = player[0] + 0.5;
+  const pr = y => { const v = new THREE.Vector3(gx, y, gz).project(camera); return { x: (v.x + 1) / 2 * C * tcw, y: (1 - v.y) / 2 * R * tch }; };
+  const v = new THREE.Vector3(gx, 0.4, gz).applyMatrix4(camera.matrixWorldInverse), dist = -v.z;
+  if (dist < 0.2) return;
+  const b = pr(-0.02), t = pr(TOMB_H), h = (b.y - t.y) / rows, gw = h / 2;
+  if (h < 2) return;
+  const x0 = b.x - 28 * gw;   // 石の真ん中は 5.4 の絵の 28 桁目
+  tctx.globalAlpha = Math.min(1, Math.max(0, ((now - tomb.t0) / TOMB_MS - 0.35) / 0.4));   // カメラが下がってから浮かび上がる
+  if (tctx.globalAlpha <= 0) return;
+  const L = { amb: 0.3, ls: [{ c: 2.3 * handFlick(TIME_U.value) / (1 + tune.torch * dist * dist), s: 0, fr: 1, warm: 0 }] };
+  const hidden = (px, py) => { const g = depthOf(Math.floor(px / tcw), Math.floor(py / tch)); return g < dist - 0.45; };
+  for (let r = 0; r < rows; r++) {
+    const row = tomb.cells[r];
+    // 石の中（輪郭の間）は後ろを消して、壁と同じ点描の面にする
+    let a = -1, z = -1;
+    if (r >= 1 && r <= 11) for (let c = 0; c < row.length; c++) if (row[c] && '/\\|'.includes(row[c].ch)) { if (a < 0) a = c; z = c; }
+    const y = t.y + r * h;
+    if (a >= 0 && z > a) for (let c = a; c <= z; c++) {
+      const x = x0 + c * gw;
+      if (hidden(x + gw / 2, y + h / 2)) continue;
+      tctx.fillStyle = '#000'; tctx.fillRect(x - 0.5, y, gw + 1, h);
+      const cell = row[c];
+      if (c > a && c < z && (!cell || cell.ch === ' ') && ((r * 7 + c * 3) % 5 === 0)) {   // 石の点描（, . : を散らす）
+        tctx.font = `400 ${fpx(h * 0.94)}px "BIZ UDGothic", monospace`;
+        tctx.fillStyle = litCol(TOMB_COL.stone, L, (c - 28) / 10);
+        tctx.fillText((r + c) % 3 ? '.' : ':', x + gw / 2, y + h / 2);
+      }
+    }
+    for (let c = 0; c < row.length; c++) {
+      const cell = row[c];
+      if (!cell || cell.ch === ' ') continue;
+      const x = x0 + c * gw, cw = gw * cell.w;
+      if (hidden(x + cw / 2, y + h / 2)) continue;
+      const text = r >= 2 && r <= 10 && !'/\\|'.includes(cell.ch);
+      const col = text ? TOMB_COL.text : r === 12 ? ('_'.includes(cell.ch) ? TOMB_COL.earth : TOMB_COL.grass) : cell.ch === '*' ? TOMB_COL.flower : TOMB_COL.edge;
+      tctx.font = `${text ? 700 : 400} ${fpx(h * 0.94)}px "BIZ UDGothic", monospace`;
+      tctx.fillStyle = litCol(col, L, (c - 28) / 10);
+      tctx.fillText(cell.ch, x + cw / 2, y + h / 2 + h * 0.04);
+    }
+  }
+  tctx.globalAlpha = 1;
 }
 
 // 魔除けの輝き: 周りに光の粒（. + *）がまたたき、消えては別の所に現れる（宝石が光を受けてきらめくように）。
@@ -2153,6 +2223,11 @@ function sizeFx(w, h) {
 
 export function effect(d) {
   const now = performance.now();
+  if (d.type === 'tombstone') {   // 死んだ: 倒れた所に墓を立てる（lines が無ければ片づける）
+    tomb = d.lines && player ? { cells: tombCells(d.lines), t0: now, ...tombView() } : null;
+    activeAt = now; draw();
+    return;
+  }
   if (d.type === 'hurtsoon') {   // くらった知らせはメッセージを読み進めてから来る。それまで状態行の HP が減っても揺らさない
     fx.hurtSoon = now;
   } else if (d.type === 'mattack') {   // 敵が殴りかかってくる: こちらへ踏み込んで戻る。当たれば踏み込みきった所で爪あと
@@ -2817,6 +2892,14 @@ function draw() {
   eye += ((mood.lev ? EYE + 0.3 : EYE) - eye) * 0.15;   // 浮遊中は視点を高く（ゆっくり上がり下がりする）
   camera.position.set(cam.x + Math.sin(cam.yaw) * back, eye - (cam.bob || 0), cam.z + Math.cos(cam.yaw) * back);
   camera.rotation.set(0, cam.yaw, 0, 'YXZ');
+  if (tomb) {
+    const k0 = Math.min(1, (now - tomb.t0) / TOMB_MS), k = k0 * k0 * (3 - 2 * k0);
+    let dy = yawOf(tomb.dir) - cam.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    const yaw = cam.yaw + dy * Math.min(1, k * 1.6), bk = back + (tomb.back - back) * k;
+    camera.position.set(cam.x + Math.sin(yaw) * bk, eye + 0.08 * k, cam.z + Math.cos(yaw) * bk);
+    camera.rotation.set(-0.08 * k, yaw, 0, 'YXZ');
+    if (k0 < 1) requestAnimationFrame(draw);
+  }
   const tc = transCamera(now);
   if (tc) { camera.position.set(tc.x, tc.y, tc.z); camera.rotation.set(tc.pitch, tc.yaw, 0, 'YXZ'); }
   if (mood.conf) {   // 混乱: 視界がふらふら傾いて揺れる

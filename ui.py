@@ -1472,6 +1472,112 @@ class UI:
         self.stdscr.refresh()
         await self._getch()
 
+    # 5.4 rip.c の墓標（日本語のときは上の 3 行だけ差し替える）
+    _RIP = [
+        "                       __________",
+        "                      /          \\",
+        "                     /    REST    \\",
+        "                    /      IN      \\",
+        "                   /     PEACE      \\",
+        "                  /                  \\",
+        "                  |                  |",
+        "                  |                  |",
+        "                  |                  |",
+        "                  |                  |",
+        "                  |                  |",
+        "                 *|     *  *  *      | *",
+        "         ________)/\\\\_//(\\/(/\\)/\\//\\/|_)_______",
+    ]
+    _RIP_JA_TOP = [
+        "                     /  安らかに  \\",
+        "                    /     眠れ     \\",
+        "                   /                \\",
+    ]
+
+    def tomb_lines(self, name: str, cause: str, gold: int) -> list[str]:
+        """5.4 death の墓標に、名前・金貨・死因・年を刻んだ行（見た目の幅で並べる。全角は 2 桁）"""
+        import time as _time
+        ja = get_lang() == 'ja'
+        art = list(self._RIP)
+        if ja:
+            art[2:5] = self._RIP_JA_TOP
+        # 死因 → 墓の 2 行（5.4: "killed by a" の下に怪物の名前。餓死は "killed by" / "starvation"）
+        if cause == "starved to death":
+            l1, l2 = (("飢えて", "死んだ") if ja else ("killed by", "starvation"))
+        else:
+            killer = cause[len("killed by "):] if cause.startswith("killed by ") else cause
+            art_word = ''
+            for a in ("an ", "a "):
+                if killer.startswith(a):
+                    art_word, killer = a.strip(), killer[len(a):]
+                    break
+            if ja:
+                k = tr_name('monster', killer)
+                if k == killer:
+                    k = {"monster": "怪物", "arrow": "矢", "dart": "ダーツ", "bolt": "跳ね返った光線"}.get(killer, killer)
+                l1, l2 = k, "に殺された"
+            else:
+                l1, l2 = ("killed by " + art_word).rstrip(), killer
+        gold_s = f"金貨{gold}枚" if ja else f"{gold} Au"
+
+        def cut(t: str, width: int = 18) -> str:   # 墓の中（18 桁）に収める
+            out, w = [], 0
+            for c in t:
+                if w + char_width(c) > width:
+                    break
+                out.append(c)
+                w += char_width(c)
+            return ''.join(out)
+
+        def put(line: str, col: int, t: str) -> str:   # 見た目の col 桁目から t を上書き
+            cells: list[str] = []
+            for c in line:
+                cells.append(c)
+                if char_width(c) == 2:
+                    cells.append('')
+            cells += [' '] * max(0, col + text_width(t) - len(cells))
+            pos = col
+            for c in t:
+                if cells[pos] == '' and pos > 0:   # 全角の右半分を上書きするなら、左半分も空ける
+                    cells[pos - 1] = ' '
+                cells[pos] = c
+                if char_width(c) == 2:
+                    cells[pos + 1] = ''
+                    pos += 2
+                else:
+                    pos += 1
+            return ''.join(cells)
+
+        for row, t in ((6, name), (7, gold_s), (8, l1), (9, l2)):
+            t = cut(t)
+            art[row] = put(art[row], max(19, 28 - (text_width(t) + 1) // 2), t)   # 5.4 center()
+        art[10] = put(art[10], 26, "%4d" % _time.localtime().tm_year)
+        return art
+
+    async def tombstone(self, name: str, cause: str, gold: int) -> None:
+        """死んだときの墓標（5.4 death）。3D 版では、倒れた場所に立つ墓を見せる"""
+        if self.stdscr is None:
+            return
+        art = self.tomb_lines(name, cause, gold)
+        if curses.variant() == '3d':   # 3D 版: 地図の画面のまま、3D の画面に墓を立てる（字の画面にはしない）
+            self.effect('tombstone', lines=art)
+            await self._wait_advance()
+            self.effect('tombstone', lines=None)
+            return
+        self.stdscr.clear()
+        top = 3 if curses.is_web() else 8   # スマホは上を詰める
+        for i, line in enumerate(art):
+            try:
+                self.stdscr.addstr(top + i, 0, line, curses.A_BOLD if 6 <= i <= 10 else 0)
+            except curses.error:
+                pass
+        try:
+            self.stdscr.addstr(top + len(art) + 2, 0, tr("  Press any key to continue..."), curses.A_DIM)
+        except curses.error:
+            pass
+        self.stdscr.refresh()
+        await self._wait_advance()
+
     async def game_over(
         self,
         player: "Player",

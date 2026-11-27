@@ -456,6 +456,8 @@ class Game:
         _delete_save()
         _write_gameover_log(self.player, self._player_name, self._death_cause, ui.get_event_log())
         await ui.effect_wait('died', 3000, dur=3000, cause=self._death_cause, floor=self.floor, score=score)   # 3D 版: Python のエラー表示のように死因を出す
+        if self._death_cause != "quit":   # 5.4: 死んだら墓標（やめたときは出さない）
+            await ui.tombstone(self._player_name, self._death_cause, self.player.gold)
         await ui.game_over(self.player, self._death_cause, rank, entries)
 
     # -------------------------------------------------------------------------
