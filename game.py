@@ -33,12 +33,17 @@ from items import (
     init_knowledge, set_knowledge, GameKnowledge, Item,
     make_potion, make_scroll, make_weapon, make_armor,
     make_ring, make_stick, make_food, make_gold, make_amulet,
-    use_potion, use_scroll, use_stick, _POTION_COLORS,
+    use_potion, use_scroll, use_stick, _POTION_COLORS, set_fruit, fruit_name, DEFAULT_FRUIT,
     put_on_ring as _items_put_on_ring,
     remove_ring as _items_remove_ring,
 )
 from combat import player_attacks_monster, calc_exp, roll_damage
 from i18n import tr, load_lang, name as tr_name
+
+
+def curses_is_web() -> bool:
+    import term
+    return term.is_web()
 
 
 def _cap(t: str) -> str:
@@ -315,6 +320,7 @@ class Game:
             'knowledge':    self.knowledge,
             'death_cause':  self._death_cause,
             'player_name':  self._player_name,
+            'fruit':        getattr(self, '_fruit', DEFAULT_FRUIT),
             'turn_count':        self._turn_count,
             'next_wander_turn':  self._next_wander_turn,
             'wander_between':    self._wander_between,
@@ -339,6 +345,8 @@ class Game:
         set_knowledge(g.knowledge)
         g._death_cause = data.get('death_cause', 'unknown cause')
         g._player_name = data.get('player_name', _get_player_name())
+        g._fruit       = data.get('fruit', DEFAULT_FRUIT)
+        set_fruit(g._fruit)
         g._running       = False
         g._is_loaded     = True
         g._quit          = False
@@ -357,9 +365,14 @@ class Game:
         self._running = True
 
         if not self._is_loaded:
-            name = await ui.name_entry_screen()
+            name, fruit = await ui.name_entry_screen()
             if name:
                 self._player_name = name
+            elif curses_is_web():
+                self._player_name = tr('Adventurer')   # ブラウザのログイン名は web_user になるので、入力欄の案内と同じ名前に
+            self._fruit = fruit
+            set_fruit(fruit)
+            await ui.greeting(self._player_name)   # 5.4: "Hello %s, just a moment while I dig the dungeon..."
             self._load_floor()
             self._setup_starting_inventory()
 
@@ -791,8 +804,8 @@ class Game:
         food_amount = random.randint(1100, 1500)
         msgs = self.player.eat(food_amount)
         # 味メッセージと経験値（Rogue 5.4仕様）
-        if item.o_which == 1:  # スライムモールド（粘菌）: 常においしい、経験値+1
-            msgs.append(tr('Yum, that tasted good.'))
+        if item.o_which == 1:  # スライムモールド（粘菌・好きな果物）: 常においしい、経験値+1
+            msgs.append(tr('My, that was a yummy {fruit}.', fruit=fruit_name()))   # 5.4 の文
             msgs.extend(self.player.gain_exp(1))
         elif random.randint(0, 9) < 7:  # 70%の確率でまずい、経験値+1
             msgs.append(tr('Yuk, this food tastes awful.'))

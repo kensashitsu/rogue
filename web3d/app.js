@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.83';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.84';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
 import * as snd from './sound.js?v=3d-1.80';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.83';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.84';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -137,6 +137,7 @@ function findPlayer() {
   return null;
 }
 
+let lastEntryHint = '';   // 入力欄を最後に作ったときの hint
 let view = 'follow', viewCols = 40, mode = 'map';
 let rowMap = [];   // 文字だけの画面で、描く行 → ゲーム画面の行
 // vx, vy は追従表示の視点。持ち物などほかの画面を開いても保つ（戻ったときに地図がずれないように）。
@@ -577,9 +578,11 @@ function updateControls() {
   c.hidden = cmd;
   $('dpad').classList.toggle('off', !(cmd || hint === 'direction'));
   if (!cmd) $('more').hidden = true;
-  if (cmd) return;
+  if (cmd) { lastEntryHint = ''; return; }
 
-  const keep = (hint === 'name' || hint === 'text') ? ($('txt')?.value || '') : '';   // 言語の切り替えで作り直しても入力を残す
+  // 言語の切り替えで作り直しても入力を残す。ただし別の問い（名前→好きな果物）に移ったら空にする
+  const keep = (hint === 'name' || hint === 'text') && hint === lastEntryHint ? ($('txt')?.value || '') : '';
+  lastEntryHint = hint;
   c.textContent = '';
   const note = s => { const p = document.createElement('div'); p.className = 'hint'; p.textContent = s; c.append(p); };
   const row = () => { const r = document.createElement('div'); r.className = 'row'; c.append(r); return r; };

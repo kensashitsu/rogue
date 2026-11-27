@@ -122,6 +122,7 @@ NAMES: dict[str, dict[str, str]] = {
         "slime": "ぬめった", "spruce": "唐檜の", "steel": "鋼の", "strange": "奇妙な",
         "teak": "チークの", "titanium": "チタンの", "twisted": "ねじれた", "willow": "柳の",
     },
+    'food': {"slime-mold": "粘菌"},
     'trap': {
         "trap door": "落とし穴", "arrow trap": "矢の罠", "sleeping gas trap": "眠りガスの罠",
         "bear trap": "トラバサミ", "teleport trap": "テレポートの罠", "dart trap": "毒矢の罠",
@@ -231,6 +232,7 @@ JA: dict[str, str] = {
     "Eat which food?": "どれを食べる？",
     "You're too full to eat more.": "満腹でもう食べられない。",
     "Yum, that tasted good.": "うまい！",
+    "My, that was a yummy {fruit}.": "ああ、おいしい{fruit}だった。",
     "Yuk, this food tastes awful.": "うっ、まずい。",
     "Quaff which potion?": "どの薬を飲む？",
     "Read which scroll?": "どの巻物を読む？",
@@ -419,6 +421,7 @@ JA: dict[str, str] = {
     "a {app} {kind}": "{app}{kind}",
     "a ration of food": "食料",
     "some slime-mold": "粘菌",
+    "a {fruit}": "{fruit}", "an {fruit}": "{fruit}",
     "{o_arm} gold pieces": "金貨{o_arm}枚",
     "the Amulet of Yendor": "イェンダーの魔除け",
     "cursed ": "呪われた",
@@ -549,6 +552,10 @@ JA: dict[str, str] = {
     "  Enter your name: ": "  名前を入力してください: ",
     "  (Up to {n} characters  |  Enter to confirm)": "  （{n}文字まで ｜ Enter で決定）",
     "  Tab: 日本語で遊ぶ": "  Tab: Play in English",
+    "  Favorite fruit: ": "  好きな果物: ",
+    "Adventurer": "冒険者",
+    "  (Enter with nothing typed: {fruit})": "  （何も打たずに Enter なら {fruit}）",
+    "Hello {name}, just a moment while I dig the dungeon...": "やあ、{name}。迷宮を掘るから、ちょっと待っててね...",
 
     # ---- ゲームオーバー・勝利 ----
     "  You have died.": "  あなたは死んだ。",

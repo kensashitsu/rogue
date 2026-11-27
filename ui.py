@@ -1282,13 +1282,14 @@ class UI:
     # ゲーム開始 / 終了画面
     # =========================================================================
 
-    async def name_entry_screen(self) -> str:
+    async def name_entry_screen(self) -> tuple[str, str]:
         """
         名前入力画面。最大 23 文字、Enter で確定。Tab で表示言語（英語 / 日本語）を切り替える。
-        空のまま Enter した場合は空文字を返す。
+        続けて好きな果物（5.4 の fruit。粘菌の名前になる）を聞く。空のまま Enter なら前回の果物（初めては slime-mold）。
+        (名前, 果物) を返す。名前を空のまま Enter した場合は名前は空文字。
         """
         if self.stdscr is None:
-            return ''
+            return '', cfg_get('fruit') or 'slime-mold'
 
         _MAX_NAME = 23
         buf: list[str] = []
@@ -1362,12 +1363,75 @@ class UI:
                   and len(buf) < _MAX_NAME):
                 buf.append(chr(ch))   # 日本語の名前も入れられる（Windows Terminal の IME・スマホのキーボード）
 
+        name = ''.join(buf)
+        fruit = await self._fruit_entry(row, prompt, name)
         try:
             curses.curs_set(0)
         except curses.error:
             pass
+        return name, fruit
 
-        return ''.join(buf)
+    async def _fruit_entry(self, row: int, name_prompt: str, name: str) -> str:
+        """名前の下で好きな果物を聞く（5.4 の fruit オプション）。空なら前回の果物"""
+        _MAX_FRUIT = 16
+        last = cfg_get('fruit')
+        last = last if isinstance(last, str) and last else 'slime-mold'
+        shown = tr_name('food', last) if last == 'slime-mold' else last
+        buf: list[str] = []
+        while True:
+            prompt = tr("  Favorite fruit: ")
+            for r in range(row, row + 5):
+                try:
+                    self.stdscr.move(r, 0)
+                    self.stdscr.clrtoeol()
+                except curses.error:
+                    pass
+            try:
+                self.stdscr.addstr(row, 0, name_prompt, curses.A_BOLD)
+                self.stdscr.addstr(row, text_width(name_prompt), name)
+                self.stdscr.addstr(row + 1, 0, prompt, curses.A_BOLD)
+                self.stdscr.addstr(row + 1, text_width(prompt), ''.join(buf))
+                self.stdscr.addstr(row + 3, 0, tr("  (Enter with nothing typed: {fruit})", fruit=shown))
+                self.stdscr.move(row + 1, text_width(prompt) + text_width(''.join(buf)))
+            except curses.error:
+                pass
+            self.stdscr.refresh()
+            ch = await self._getch('text')
+            if ch in (10, 13):
+                break
+            if ch == 27:
+                buf = []
+                break
+            if ch in (8, 127, curses.KEY_BACKSPACE):
+                if buf:
+                    buf.pop()
+            elif (ch >= 32 and ch not in _SPECIAL_KEY_CODES and chr(ch).isprintable()
+                  and len(buf) < _MAX_FRUIT):
+                buf.append(chr(ch))
+        fruit = ''.join(buf).strip() or last
+        cfg_set('fruit', fruit)
+        return fruit
+
+    async def greeting(self, name: str) -> None:
+        """5.4 の起動の挨拶。迷宮を作る前に、端末の左上に一行だけ出す"""
+        if self.stdscr is None:
+            return
+        self.stdscr.clear()
+        line = tr("Hello {name}, just a moment while I dig the dungeon...", name=name)
+        lines = [line]
+        if curses.is_web() and text_width(line) > 40:   # スマホの幅で切れないよう、名前の後ろで 2 行に
+            i = line.find(name) + len(name)
+            if line.find(name) >= 0 and i < len(line):
+                if line[i] in ',、。':
+                    i += 1
+                lines = [line[:i], line[i:].strip()]
+        for r, l in enumerate(lines):
+            try:
+                self.stdscr.addstr(r, 0, l)
+            except curses.error:
+                pass
+        self.stdscr.refresh()
+        await curses.napms(900)
 
     async def choose_language(self) -> bool:
         """'o' コマンド: 表示言語を切り替える。切り替えたら True。"""

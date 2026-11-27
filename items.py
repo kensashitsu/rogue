@@ -137,6 +137,21 @@ _WAND_METALS: list[str] = [   # 5.4 metal[]
 _MAXNAME = 40   # 5.4 init_names の MAXNAME
 
 
+# 好きな果物（5.4 の fruit オプション）。粘菌（o_which=1）の名前になる。既定は slime-mold
+DEFAULT_FRUIT = "slime-mold"
+fruit: str = DEFAULT_FRUIT
+
+
+def set_fruit(name: str) -> None:
+    global fruit
+    fruit = name.strip() or DEFAULT_FRUIT
+
+
+def fruit_name() -> str:
+    """表示用の果物の名前（既定の slime-mold は訳す）"""
+    return tr_name('food', fruit) if fruit == DEFAULT_FRUIT else fruit
+
+
 def _make_scroll_title() -> list[list[str]]:
     """巻物の題を 5.4 init_names どおりに作る。2〜4 語、1 語は 1〜3 音節をつないだもの。
     音節の区切りはカタカナにするときに使うので、語ごとの音節の並びで返す。"""
@@ -522,7 +537,12 @@ class GameKnowledge:
             return _armor_display_name(item)
 
         if ot == CH_FOOD:
-            return tr('a ration of food') if item.o_which == 0 else tr('some slime-mold')
+            if item.o_which == 0:
+                return tr('a ration of food')
+            if fruit == DEFAULT_FRUIT:
+                return tr('some slime-mold')
+            return (tr('an {fruit}', fruit=fruit) if fruit[:1].lower() in 'aeiou'
+                    else tr('a {fruit}', fruit=fruit))   # 5.4: "A%s %s", vowelstr(fruit), fruit
 
         if ot == CH_GOLD:
             return tr('{o_arm} gold pieces', o_arm=item.o_arm)

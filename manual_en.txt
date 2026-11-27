@@ -469,7 +469,9 @@ Contents
 
   ────────────────────────────────────────────────────────────────────────────
   [Food (:)]  eat with the "e" command
-    Two kinds: ration of food and slime-mold.
+    Two kinds: ration of food and slime-mold. The slime-mold takes the name of
+    the "favorite fruit" you are asked for after your name (empty = the last
+    one; slime-mold the first time).
 
   [Gold (*)]  picked up automatically when you step on it (takes no
               inventory slot; no limit)
