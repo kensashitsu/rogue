@@ -1555,15 +1555,10 @@ class UI:
         return art
 
     async def tombstone(self, name: str, cause: str, gold: int) -> None:
-        """死んだときの墓標（5.4 death）。3D 版では、倒れた場所に立つ墓を見せる"""
+        """死んだときの墓標（5.4 death）。3D 版も同じ字の画面（迷宮の中に墓を立てる案は違和感があり不採用。2026-11-27）"""
         if self.stdscr is None:
             return
         art = self.tomb_lines(name, cause, gold)
-        if curses.variant() == '3d':   # 3D 版: 地図の画面のまま、3D の画面に墓を立てる（字の画面にはしない）
-            self.effect('tombstone', lines=art)
-            await self._wait_advance()
-            self.effect('tombstone', lines=None)
-            return
         self.stdscr.clear()
         top = 3 if curses.is_web() else 8   # スマホは上を詰める
         for i, line in enumerate(art):
