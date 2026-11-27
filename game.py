@@ -373,6 +373,7 @@ class Game:
             self._fruit = fruit
             set_fruit(fruit)
             await ui.greeting(self._player_name)   # 5.4: "Hello %s, just a moment while I dig the dungeon..."
+            self._hello = True   # 3D 版: 最初の階を作る演出の頭に、この挨拶を流す
             self._load_floor()
             self._setup_starting_inventory()
 
@@ -389,7 +390,13 @@ class Game:
                 if getattr(self, '_secrets_sent', None) is not self.dungeon:
                     self._secrets_sent = self.dungeon
                     # 3D 版: 階を作るコードが端末に流れる演出（出来た階の部屋・モンスター・物・罠の数を添える）
-                    await ui.effect_wait('newlevel', 1300, dur=1300, depth=self.floor,
+                    hello = {}
+                    if getattr(self, '_hello', False):   # 新しく始めた最初の階だけ（続きから・階段では出さない）
+                        self._hello = False
+                        lines, ja = ui.greeting_lines(self._player_name)
+                        hello = {'hello': lines + ([ja] if ja else []), 'hello_ja': bool(ja)}
+                    ms = 2700 if hello else 1300
+                    await ui.effect_wait('newlevel', ms, dur=ms, depth=self.floor, **hello,
                                    rooms=sum(1 for r in self.dungeon.rooms if not r.is_gone),
                                    mons=len(self.monsters), items=len(self.floor_items), traps=len(self.dungeon.traps))
                     ui.effect('secrets', cells=[[y, x] for y, row in enumerate(self.dungeon.map)

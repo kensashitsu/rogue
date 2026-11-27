@@ -1412,11 +1412,9 @@ class UI:
         cfg_set('fruit', fruit)
         return fruit
 
-    async def greeting(self, name: str) -> None:
-        """5.4 の起動の挨拶。迷宮を作る前に、端末の左上に一行だけ出す"""
-        if self.stdscr is None:
-            return
-        self.stdscr.clear()
+    @staticmethod
+    def greeting_lines(name: str) -> tuple[list[str], Optional[str]]:
+        """5.4 の起動の挨拶の行と、英語＋日本語のときに下へ添える日本語（それ以外は None）"""
         line = tr("Hello {name}, just a moment while I dig the dungeon...", name=name)
         lines = [line]
         if curses.is_web() and text_width(line) > 40:   # スマホの幅で切れないよう、名前の後ろで 2 行に
@@ -1425,14 +1423,24 @@ class UI:
                 if line[i] in ',、。':
                     i += 1
                 lines = [line[:i], line[i:].strip()]
+        ja = None
+        if get_lang() == 'enja':
+            with lang_as('ja'):
+                ja = tr("Hello {name}, just a moment while I dig the dungeon...", name=name)
+        return lines, ja
+
+    async def greeting(self, name: str) -> None:
+        """5.4 の起動の挨拶。迷宮を作る前に、端末の左上に一行だけ出す（3D 版は階を作る演出の中に出すので、ここでは出さない）"""
+        if self.stdscr is None or curses.variant() == '3d':
+            return
+        self.stdscr.clear()
+        lines, ja = self.greeting_lines(name)
         for r, l in enumerate(lines):
             try:
                 self.stdscr.addstr(r, 0, l)
             except curses.error:
                 pass
-        if get_lang() == 'enja':   # 英語＋日本語: 下に日本語を灰色で添える
-            with lang_as('ja'):
-                ja = tr("Hello {name}, just a moment while I dig the dungeon...", name=name)
+        if ja:   # 英語＋日本語: 下に日本語を灰色で添える
             try:
                 self.stdscr.addstr(len(lines), 0, _fit(ja, 79), self._cp(_CP_SEEN) | curses.A_DIM | curses.A_SMALL)
             except curses.error:

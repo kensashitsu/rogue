@@ -8,11 +8,11 @@
 //   - セーブ・スコア・言語設定のファイルを端末内（localStorage）に保存する
 // を受け持つ。
 
-import * as r3d from './r3d.js?v=3d-1.88';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
+import * as r3d from './r3d.js?v=3d-1.89';   // ?v= は下の VERSION と揃える。付けないと、ブラウザが古い r3d.js を 10 分ほど使い続け、版番号だけ新しくなることがあった（2026-10-26）
 
 import * as snd from './sound.js?v=3d-1.80';   // 音（?v= は VERSION と揃える）
 
-const VERSION = '3d-1.88';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
+const VERSION = '3d-1.89';   // 画面右上に出す版番号。iPhone に新しい版が届いたか確かめる用。公開のたびに上げる
 const W = 80, H = 24, KEYQ = 64;
 
 // URL の末尾に #debug を付けて開くと、操作の出来事を画面の下に出す（実機で原因を調べる用）
@@ -974,7 +974,7 @@ window.__rain = rain;
 const termFx = (() => {
   const cv = $('termFx'), ctx = cv.getContext('2d');
   let lines = [], t0 = 0, until = 0, raf = 0, fading = 0;
-  const COL = { cmd: '240,198,82', out: '200,204,209', ok: '127,209,122', err: '255,106,92' };
+  const COL = { cmd: '240,198,82', out: '200,204,209', dim: '130,136,143', ok: '127,209,122', err: '255,106,92' };
   function show(list, ms) {
     const r = box.getBoundingClientRect();
     Object.assign(cv.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px', transition: 'none', opacity: 1 });
@@ -1029,8 +1029,18 @@ const termFx = (() => {
       const src = (sources['dungeon.py'] || []).map(asciiLine).filter(t => t !== null);
       const defs = src.map((l, i) => /^def /.test(l) ? i : -1).filter(i => i >= 0);
       const s = defs.length ? defs[Math.floor(Math.random() * defs.length)] : 0;
-      const list = [{ t: `>>> dungeon.new_level(${d.depth})`, at: 0, kind: 'cmd', type: 1 }];
-      let at = 330;
+      // 新しく始めた最初の階: 5.4 の起動の挨拶を先に一字ずつ打つ（英語＋日本語なら最後の行は灰色の日本語）
+      const list = [];
+      let at = 0;
+      const hello = d.hello || [];
+      hello.forEach((t, i) => {
+        const ja = d.hello_ja && i === hello.length - 1;
+        list.push({ t, at, kind: ja ? 'dim' : 'out', type: ja ? 0 : 1 });
+        at += ja ? 0 : t.length * 18 + 60;
+      });
+      if (hello.length) { list.push({ t: '', at, kind: 'out' }); at += 420; }
+      list.push({ t: `>>> dungeon.new_level(${d.depth})`, at, kind: 'cmd', type: 1 });
+      at += 330;
       for (const t of src.slice(s, s + 28)) { list.push({ t, at, kind: 'code' }); at += 10; }
       at += 60;
       for (const [k, v] of [['rooms', d.rooms], ['monsters', d.mons], ['objects', d.items], ['traps', d.traps]]) {
